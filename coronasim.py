@@ -8,12 +8,15 @@ Created on Wed May 25 19:13:05 2016
 
 import numpy as np
 import os
+import sys
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from mpl_toolkits.mplot3d import Axes3D
 from scipy import io
 from scipy import ndimage
 from scipy import interpolate as interp
+from scipy.stats import norm
+from scipy.optimize import curve_fit
 import skimage as ski
 import sklearn.neighbors as nb
 from collections import defaultdict
@@ -21,6 +24,7 @@ from skimage.feature import peak_local_max
 import gridgen as grid
 import progressBar as pb
 import math
+from astropy import units as u
 
 np.seterr(invalid = 'ignore')
 
@@ -41,6 +45,10 @@ class simpoint:
     B_thresh = 1.0
     fmax = 8.2
     theta0 = 28
+
+    mi = 1.6726219e-24 #grams per hydrogen
+    c = 2.998e10 #cm/second (base velocity unit is cm/s)
+    KB = 1.380e-16 #ergs/Kelvin
 
     streamRand = np.random.RandomState()
     thermRand = np.random.RandomState()
@@ -161,8 +169,7 @@ class simpoint:
         
     def minNumDense(self, rx):
         #Find the number density floor
-        return 6.0e4 * (5796./rx**33.9 + 1500./rx**16. + 
-            300./rx**8. + 25./rx**4. + 1./rx**2)
+        return 6.0e4 * (5796./rx**33.9 + 1500./rx**16. + 300./rx**8. + 25./rx**4. + 1./rx**2)
         
     def num2rho(self, num_den):
         #Convert number density to physical units (cgs)
@@ -184,20 +191,16 @@ class simpoint:
         self.vPh = self.findVPh()
         self.vRms = self.findvRms()
 
-            #self.streamTheta, self.streamPhi = self.findStreamU() #All Zeros for now
-            #self.randUr, self.randTheta, self.randPhi = self.findRandU() #All Zeros for now
-            #self.uTheta = self.streamTheta + self.randTheta + 0.05* self.vRms*self.xi(t - self.twave)
-            #self.uPhi = self.streamPhi + self.randPhi + 0.05*self.vRms*self.xi(t - self.twave) 
-
         simpoint.streamRand.seed(int(self.streamIndex))
         thisRand = simpoint.streamRand.random_sample(2)
         self.streamT =  thisRand[0] * simpoint.last_xi_t
         self.streamAngle = thisRand[1] * 2 * np.pi
+        self.findTSpeeds(t)
 
+    def findTSpeeds(self, t = 0):
         self.waveV = self.vRms*self.xi(t - self.twave + self.streamT)
         self.uTheta = self.waveV * np.sin(self.streamAngle)
         self.uPhi = self.waveV * np.cos(self.streamAngle)
-
         self.pU = [self.ur, self.uTheta, self.uPhi]
         self.cU = self.findCU()       
          
@@ -230,8 +233,9 @@ class simpoint:
         #streamPhi = 0.1*self.vRms*thisRand[1]
         return 0,0 #streamTheta, streamPhi
 
-    def findGradV(self, nGrad):
-        self.vGrad = np.dot(nGrad, self.cU)
+    def findGradV(self, nGrad = None):
+        if nGrad is not None: self.nGrad = nGrad
+        self.vGrad = np.dot(self.nGrad, self.cU)
         return self.vGrad
 
     def findCU(self):
@@ -257,14 +261,15 @@ class simpoint:
             rLine = radial.cLine(N)
             for cPos in rLine:
                 time += (1/simpoint(cPos, findT = False).vPh) / N
-            self.twave = time * self.r2rx(radial.norm) * 69.63e9 #radius of sun in cm ## or 54.254175e9 ##Number found empirically
+            self.twave = time * self.r2rx(radial.norm) * 69.63e9 #radius of sun in cm
         else:
             self.twave = self.twave_fit  
         self.twave_rat = self.twave/self.twave_fit
         
 
     def setTime(self,t):
-        self.findSpeeds(t)
+        self.findTSpeeds(t)
+        self.findGradV()
 
     def xi(self, t):
         if math.isnan(t):
@@ -277,25 +282,23 @@ class simpoint:
 
   ## Radiative Transfer ####################################################################
 
-    def findIntensity(self):
+####################################################################
+####################################################################
+
+    def findIntensity(self, lam0 = 1000, lam = 1001):
+        self.lam = lam #Angstroms
+        self.lam0 = lam0 #Angstroms
+
         self.qt = 1
-        self.c = 2.998e18 #Angstroms/second
-        self.lam0 = 1000 #Angstroms
-        self.lam = 1001 #Angstroms
-
-        self.mi = 1.6726219e-27 #kg
         self.T = 1e6 #Kelvin
-        self.KB = 1.380e-23 #Joules/Kelvin
 
-        self.lamLos = self.vGrad * self.lam0 / self.c
-        self.deltaLam = self.lam0 / self.c * np.sqrt(2 * self.KB * self.T / self.mi)
+        self.lamLos =  self.vGrad * self.lam0 / simpoint.c
+        self.deltaLam = self.lam0 / simpoint.c * np.sqrt(2 * simpoint.KB * self.T / simpoint.mi)
         self.lamPhi = 1/(self.deltaLam * np.sqrt(np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/self.deltaLam)**2)
+        self.intensity = self.num_den**2 * self.qt * self.lamPhi * 1e-11
+        return self.intensity
 
-####################################################################
-#################################################################### This is where I need to work
-####################################################################
-####################################################################
-                
+        
   ## Misc Methods ##########################################################################
 
     def r2rx(self, r):
@@ -425,6 +428,111 @@ class simulate:
         plt.title('mean and std of gradV over time')
         plt.show(block = False)
 
+
+####################################################################
+####################################################################
+
+
+    def evolveLine(self, t0 = 0, t1 = 1000, tn = 500, Ln = 50, lam0 = 1000, lamPm = 2.5):
+
+        print('Timestepping...')
+        
+        self.lam0 = lam0
+        self.times = np.linspace(t0, t1, tn)
+        self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
+        self.lineArray = np.zeros((tn, Ln))
+
+        bar = pb.ProgressBar(self.Npoints*len(self.times))
+        timeInd = 0
+        for tt in self.times:
+            for point in self.sPoints:
+                point.setTime(tt)
+                bar.increment()
+                bar.display()   
+            self.lineArray[timeInd][:] = self.lineProfile()
+            timeInd += 1       
+        bar.display(force = True)
+
+        self.plotLineArray()
+        self.fitGaussians()
+
+    def lineProfile(self):
+        intensity = np.zeros_like(self.lamAx)
+        index = 0
+        for lam in self.lamAx:
+            for point in self.sPoints:
+                intensity[index] += point.findIntensity(self.lam0, lam)
+            index += 1
+        return intensity
+
+    def fitGaussians(self):
+        lineList = self.lineArray.tolist()
+        self.amp = np.zeros_like(self.times)
+        self.mu = np.zeros_like(self.times)
+        self.std = np.zeros_like(self.times)
+
+        def gauss_function(x, a, x0, sigma):
+            return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+        lInd = 0
+        for line in lineList:
+            sig0 = sum((self.lamAx - self.lam0)**2)/len(line)
+            amp0 = np.max(line)
+            popt, pcov = curve_fit(gauss_function, self.lamAx, line, p0 = [amp0, self.lam0, sig0])
+            self.amp[lInd] = popt[0]
+            self.mu[lInd] = popt[1]
+            self.std[lInd] = popt[2]            #####This is where I'm working
+            ## Plot each line fit
+            #plt.plot(self.lamAx, gauss_function(self.lamAx, amp[lInd], mu[lInd], std[lInd]))
+            #plt.plot(self.lamAx,  lineList[lInd])
+            #plt.show()
+            lInd += 1
+
+        self.plotLineStats()
+
+    def plotLineStats(self):
+        f, (ax1, ax2, ax3) = plt.subplots(3,1, sharex=True)
+        ax1.plot(self.times, self.amp)
+        ax1.set_title('Amplitude')
+        ax2.plot(self.times, self.mu)
+        ax2.set_title('Mean')
+        ax2.set_ylabel('Angstroms')
+        ax3.plot(self.times, self.std)
+        ax3.set_title('Std')
+        ax3.set_xlabel('Time (s)')
+        plt.show()
+
+    def plotLineArray(self):
+        ## Plot the lineArray
+        print('')
+        print(np.shape(self.lineArray))
+        plt.pcolormesh(self.lamAx.astype('float32'), self.times, self.lineArray)
+        #ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
+        plt.xlabel('Angstroms')
+        plt.ylabel('Time (s)')
+        plt.show()
+
+
+
+
+    def peekLamTime(self, lam0 = 1000, lam = 1000, t = 0):
+        intensity = np.zeros_like(self.sPoints)
+        pInd = 0
+        for point in self.sPoints:
+            point.setTime(t)
+            intensity[pInd] = point.findIntensity(lam0, lam)
+            pInd += 1
+        plt.plot(intensity)
+        plt.show()
+
+        
+
+
+            
+
+
+
+
     def plot(self, property, dim = None, scaling = 'None'):
         scaleProp, datSum = self.get(property, dim, scaling)
         self.fig, ax = self.grid.plot(iL = self.iL)
@@ -483,12 +591,16 @@ class defGrid:
         #This line starts from north pole and goes out radially
         self.poleLine = grid.sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')
 
+    def gauss_function(x, a, x0, sigma):
+        return a*np.exp(-(x-x0)**2/(2*sigma**2))
 
 
 
 
-
-
+            #self.streamTheta, self.streamPhi = self.findStreamU() #All Zeros for now
+            #self.randUr, self.randTheta, self.randPhi = self.findRandU() #All Zeros for now
+            #self.uTheta = self.streamTheta + self.randTheta + 0.05* self.vRms*self.xi(t - self.twave)
+            #self.uPhi = self.streamPhi + self.randPhi + 0.05*self.vRms*self.xi(t - self.twave) 
 
 
 
