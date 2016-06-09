@@ -11,22 +11,29 @@ df = sim.defGrid()
 ##Simulate Common Grids
 #topSim = sim.simulate(df.topPlane, N = 1000)
 #poleSim = sim.simulate(df.polePlane, findT = True, step = 0.01)
-#bpoleSim = sim.simulate(df.bpolePlane, N = 500, findT = False)
+#bpoleSim = sim.simulate(df.bpolePlane, N = 400, findT = False)
+#bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
+#bpoleSim.plot('vLOS')
 
-#lineSim = sim.simulate(df.primeLine, N = 1500, findT = True)
-poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
 
+
+      
+
+
+lineSim = sim.simulate(df.primeLine, N = 1500, findT = True)
+#poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
+lineSim.plot('densfac')
 ## Useful Functions
     #mysim.plot('property')
     #mysim.Keys()
     #mysim.timeV(t0,t1,step)
 
 #topSim.plot('uPhi')
-#bpoleSim.plot('ur')
-
-poleLineSim.plot('ur')
+#bpoleSim.plot('streamIndex')
+#poleLineSim.plot('vGrad')
+#lineSim.evolveLine()
 #lineSim.timeV(t1 = 2000, step = 3)
-#lineSim.plot('twave')
+#bpoleSim.plot('T')
 #sim.simpoint()
 
 
@@ -59,4 +66,6 @@ poleLineSim.plot('ur')
 #import matplotlib
 #matplotlib.use('tkagg')
 
-    
+print('')
+print('Sim Name =')
+print([x for x in vars().keys() if "Sim" in x])

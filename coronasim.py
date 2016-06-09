@@ -6,6 +6,7 @@ Created on Wed May 25 19:13:05 2016
 @author: chgi7364
 """
 
+print('Loading Dependencies...')
 import numpy as np
 import os
 import sys
@@ -28,37 +29,45 @@ from astropy import units as u
 
 np.seterr(invalid = 'ignore')
 
-### Make the time stepper more real
 ### Figure out BThresh
 
 class simpoint:
     script_dir = os.path.dirname(os.path.abspath(__file__)) 
+
     rel_def_Bfile = '..\\dat\\mgram_iseed0033.sav'    
     def_Bfile = os.path.normpath(os.path.join(script_dir, rel_def_Bfile))
+
     rel_def_xiFile = '..\\dat\\xi_function.dat'    
     def_xiFile = os.path.normpath(os.path.join(script_dir, rel_def_xiFile))
 
+    rel_def_bkFile = '..\\dat\\plasma_background.dat'    
+    def_bkFile = os.path.normpath(os.path.join(script_dir, rel_def_bkFile))
+
+
     BMap = None
     xi_raw = None
+    bk_dat = None
     
     rstar = 1
-    B_thresh = 1.0
+    B_thresh = 6.0
     fmax = 8.2
     theta0 = 28
 
     mi = 1.6726219e-24 #grams per hydrogen
+    #mi = 9.2732796e-23 #grams per Iron
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
     KB = 1.380e-16 #ergs/Kelvin
 
     streamRand = np.random.RandomState()
-    thermRand = np.random.RandomState()
+    #thermRand = np.random.RandomState()
     
-    def __init__(self, cPos = [0,0,1.5], findT = False, Bfile = None, xiFile = None):
+    def __init__(self, cPos = [0,0,1.5], findT = False, grid = None, Bfile = None, xiFile = None, bkFile = None):
  
         #Inputs
         self.cPos = cPos
         self.pPos = self.cart2sph(self.cPos)
         self.rx = self.r2rx(self.pPos[0])
+        self.grid = grid
 
         #Load Bmap
         if Bfile is None: self.Bfile = simpoint.def_Bfile 
@@ -74,12 +83,37 @@ class simpoint:
             simpoint.xi_raw = x[:,1]
             simpoint.last_xi_t = x[-1,0]
 
+        #Load Plasma Background
+        if bkFile is None: self.bkFile = simpoint.def_bkFile 
+        else: self.bkFile = self.relPath(bkFile)
+        if simpoint.bk_dat is None:
+            x = np.loadtxt(self.bkFile, skiprows=10)
+            simpoint.bk_dat = x
+            simpoint.rx_raw = x[:,0]
+            simpoint.rho_raw = x[:,1]
+            simpoint.ur_raw = x[:,2]
+            simpoint.vAlf_raw = x[:,3]
+            simpoint.T_raw = x[:,4]
+
         #Initialization
+        self.findTemp()
         self.findFootB()
         self.findDensity()
         self.findTwave(findT)
         self.findStreamIndex()
         self.findSpeeds()
+        self.findVLOS(self.grid.ngrad)
+        self.findIntensity()
+
+
+
+
+  ## Temperature ######################################################################
+
+    def findTemp(self):
+        self.T = self.interp_rx_dat(simpoint.T_raw)
+
+
 
 
   ## Magnets ##########################################################################
@@ -111,6 +145,10 @@ class simpoint:
 
         simpoint.label_im, simpoint.nb_labels = self.voronoify_sklearn(label_im, coordinates)
         simpoint.label_im *= validMask
+        plt.imshow(simpoint.label_im, cmap = 'prism')
+        for co in coordinates:
+            plt.scatter(*co)
+        plt.show()
 
     def voronoify_sklearn(self, I, seeds):
         #Uses the voronoi algorithm to assign stream labels
@@ -131,9 +169,7 @@ class simpoint:
             I2[idx[:,0], idx[:,1]] = label
         return I2, label
 
- 
     def findfoot_Pos(self):
-
         #Find the footpoint of the field line
         Hfit  = 2.2*(self.fmax/10.)**0.62
         self.f     = self.fmax + (1.-self.fmax)*np.exp(-((self.rx-1.)/Hfit)**1.1)
@@ -149,38 +185,47 @@ class simpoint:
         self.findfoot_Pos()
         self.footB = self.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
 
-    def find_nearest(self,array,value):
-        idx = (np.abs(array-value)).argmin()
-        return idx
-
     def findStreamIndex(self):
         self.streamIndex = self.label_im[self.find_nearest(self.BMap_x, self.foot_cPos[0])][
                                             self.find_nearest(self.BMap_y, self.foot_cPos[1])]
 
-        
+ 
+
+       
   ## Density ##########################################################################
  
     def findDensity(self):
         #Find the densities of the grid point
-        self.num_den_min = self.minNumDense(self.rx)
-        self.num_den = self.actualDensity(self.num_den_min)
-        self.rho_min = self.num2rho(self.num_den_min)
-        self.rho = self.num2rho(self.num_den)
-        
-    def minNumDense(self, rx):
-        #Find the number density floor
-        return 6.0e4 * (5796./rx**33.9 + 1500./rx**16. + 300./rx**8. + 25./rx**4. + 1./rx**2)
-        
-    def num2rho(self, num_den):
-        #Convert number density to physical units (cgs)
-        return (1.841e-24) * num_den  
-        
-    def actualDensity(self, density):
-        # Increase density as function of B field
+        self.densfac = self.findDensFac()
+        self.rho = self.findRho()
+
+        #self.num_den_min = self.minNumDense(self.rx)
+        #self.num_den = self.densfac * self.num_den_min
+        #self.rho_min = self.num2rho(self.num_den_min)
+        #self.rho = self.num2rho(self.num_den)
+
+    def findDensFac(self):
+        # Find the density factor
         if np.abs(self.footB) < np.abs(self.B_thresh):
-            return density
+            return 1
         else:
-            return density * (np.abs(self.footB) / self.B_thresh)**0.5   
+            return (np.abs(self.footB) / self.B_thresh)**0.5
+
+    def findRho(self):
+        return self.interp_rx_dat(self.rho_raw) * self.densfac
+        
+    #def minNumDense(self, rx):
+    #    #Find the number density floor
+    #    return self.interp_rx_dat(self.num_dens_raw)
+    #    #return 6.0e4 * (5796./rx**33.9 + 1500./rx**16. + 300./rx**8. + 25./rx**4. + 1./rx**2)
+        
+    #def num2rho(self, num_den):
+    #    #Convert number density to physical units (cgs)
+    #    return (1.841e-24) * num_den  
+        
+   
+
+
  
   ## Velocity ##########################################################################
 
@@ -198,45 +243,37 @@ class simpoint:
         self.findTSpeeds(t)
 
     def findTSpeeds(self, t = 0):
+        #Find all of the time dependent velocities
         self.waveV = self.vRms*self.xi(t - self.twave + self.streamT)
         self.uTheta = self.waveV * np.sin(self.streamAngle)
         self.uPhi = self.waveV * np.cos(self.streamAngle)
         self.pU = [self.ur, self.uTheta, self.uPhi]
         self.cU = self.findCU()       
-         
+       
     def findUr(self):
-        return (1.7798e13) * self.fmax / (self.num_den * self.rx * self.rx * self.f)
+        #Wind Velocity
+        return self.interp_rx_dat(self.ur_raw) / self.densfac
+        #return (1.7798e13) * self.fmax / (self.num_den * self.rx * self.rx * self.f)
 
     def findAlf(self):
-        return 10.0 / (self.f * self.rx * self.rx * np.sqrt(4.*np.pi*self.rho))
+        #Alfen Velocity
+        return self.interp_rx_dat(self.vAlf_raw) / np.sqrt(self.densfac)
+        #return 10.0 / (self.f * self.rx * self.rx * np.sqrt(4.*np.pi*self.rho))
     
     def findVPh(self):
+        #Phase Velocity
         return self.vAlf + self.ur 
     
     def findvRms(self):
+        #RMS Velocity
         self.S0 = 7.0e5
         return np.sqrt(self.S0*self.vAlf/((self.vPh)**2 * 
             self.rx**2*self.f*self.rho))
 
-    def findRandU(self):
-        #Wrong
-        #amp = 0.01 * self.vRms * (self.rho / self.rho_min)**1.2
-        #rand = simpoint.thermRand.standard_normal(3)
-        return 0,0,0 #amp*rand
-
-    def findStreamU(self):
-        #if self.streamIndex == 0: return 0.0, 0.0 #Velocities for the regions between streams
-        #simpoint.streamRand.seed(int(self.streamIndex))
-        #thisRand = simpoint.streamRand.standard_normal(2)
-        ##Wrong scaling
-        #streamTheta = 0.1*self.vRms*thisRand[0]
-        #streamPhi = 0.1*self.vRms*thisRand[1]
-        return 0,0 #streamTheta, streamPhi
-
-    def findGradV(self, nGrad = None):
+    def findVLOS(self, nGrad = None):
         if nGrad is not None: self.nGrad = nGrad
-        self.vGrad = np.dot(self.nGrad, self.cU)
-        return self.vGrad
+        self.vLOS = np.dot(self.nGrad, self.cU)
+        return self.vLOS
 
     def findCU(self):
         #Finds the cartesian velocity components
@@ -245,13 +282,31 @@ class simpoint:
         self.uz = self.ur*np.cos(self.pPos[1]) - self.uTheta*np.sin(self.pPos[1])
         return [self.ux, self.uy, self.uz]
     
+    #def findRandU(self):
+    #    #Wrong
+    #    #amp = 0.01 * self.vRms * (self.rho / self.rho_min)**1.2
+    #    #rand = simpoint.thermRand.standard_normal(3)
+    #    return 0,0,0 #amp*rand
+
+    #def findStreamU(self):
+    #    #if self.streamIndex == 0: return 0.0, 0.0 #Velocities for the regions between streams
+    #    #simpoint.streamRand.seed(int(self.streamIndex))
+    #    #thisRand = simpoint.streamRand.standard_normal(2)
+    #    ##Wrong scaling
+    #    #streamTheta = 0.1*self.vRms*thisRand[0]
+    #    #streamPhi = 0.1*self.vRms*thisRand[1]
+    #    return 0,0 #streamTheta, streamPhi
+
+
+
+
   ## Time Dependence ##########################################################################    
 
     def findTwave(self, findT):
+        #Finds the wave travel time to this point
         #Approximate Version
         twave_min = 161.4 * (self.rx**1.423 - 1.0)**0.702741
-        denFac = np.sqrt(self.num_den / self.num_den_min)
-        self.twave_fit = twave_min * denFac
+        self.twave_fit = twave_min * self.densfac
         
         if findT:
             #Real Version 
@@ -260,7 +315,7 @@ class simpoint:
             time = 0
             rLine = radial.cLine(N)
             for cPos in rLine:
-                time += (1/simpoint(cPos, findT = False).vPh) / N
+                time += (1/simpoint(cPos, False, radial).vPh) / N
             self.twave = time * self.r2rx(radial.norm) * 69.63e9 #radius of sun in cm
         else:
             self.twave = self.twave_fit  
@@ -268,10 +323,12 @@ class simpoint:
         
 
     def setTime(self,t):
+        #Updates velocities to input time
         self.findTSpeeds(t)
-        self.findGradV()
+        self.findVLOS()
 
     def xi(self, t):
+        #Returns xi(t)
         if math.isnan(t):
             return math.nan
         else:
@@ -280,26 +337,45 @@ class simpoint:
             xi2 = self.xi_raw[t_int+1]
             return xi1+( (t%simpoint.last_xi_t) - t_int )*(xi2-xi1)
 
+
+
+
   ## Radiative Transfer ####################################################################
 
-####################################################################
-####################################################################
-
-    def findIntensity(self, lam0 = 1000, lam = 1001):
+    def findIntensity(self, lam0 = 1000, lam = 1000):
         self.lam = lam #Angstroms
         self.lam0 = lam0 #Angstroms
 
         self.qt = 1
-        self.T = 1e6 #Kelvin
 
-        self.lamLos =  self.vGrad * self.lam0 / simpoint.c
+        self.lamLos =  self.vLOS * self.lam0 / simpoint.c
         self.deltaLam = self.lam0 / simpoint.c * np.sqrt(2 * simpoint.KB * self.T / simpoint.mi)
         self.lamPhi = 1/(self.deltaLam * np.sqrt(np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/self.deltaLam)**2)
-        self.intensity = self.num_den**2 * self.qt * self.lamPhi * 1e-11
+        self.intensity = self.rho**2 * self.qt * self.lamPhi * 1e32
         return self.intensity
+
+
 
         
   ## Misc Methods ##########################################################################
+
+    def find_nearest(self,array,value):
+        #Returns the index of the point most similar to a given value
+        idx = (np.abs(array-value)).argmin()
+        return idx
+
+    def interp_rx_dat(self, array):
+        #Interpolates an array(rx)
+        if self.rx < 1. : return math.nan
+        rxInd = int(self.find_nearest(simpoint.rx_raw, self.rx))
+        val1 = array[rxInd]
+        val2 = array[rxInd+1]
+        slope = val2 - val1
+        step = simpoint.rx_raw[rxInd+1] - simpoint.rx_raw[rxInd]
+        discreteRx = simpoint.rx_raw[rxInd]
+        diff = self.rx - discreteRx
+        diffstep = diff / step
+        return val1+ diffstep*(slope)
 
     def r2rx(self, r):
         return r/self.rstar
@@ -324,12 +400,13 @@ class simpoint:
         return [rho, theta, phi]
         
     def relPath(self, path):
+        #Converts a relative path to an absolute path
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         rel = os.path.join(script_dir, path)    
         return rel
             
     def show(self):
-        #Print all porperties and values
+        #Print all properties and values
         myVars = vars(self)
         print("\nSimpoint Properties")
         for ii in sorted(myVars.keys()):
@@ -345,6 +422,7 @@ class simulate:
     def __init__(self, gridobj, N = None, iL = None, findT = False):
         print("Initializing Simulation...")
         self.grid  = gridobj
+        print(self.grid.ngrad)
         self.findT = findT
         if iL is None: self.iL = self.grid.iL
         else: self.iL = iL
@@ -367,16 +445,12 @@ class simulate:
         self.simulate_now()
 
     def simulate_now(self):
-        print("Beginning Simulation...")
         bar = pb.ProgressBar(self.Npoints)
-
+        print("Beginning Simulation...")
         self.sPoints = []
         self.pData = []
         for cPos in self.cPoints:
-            thisPoint = simpoint(cPos, self.findT) 
-            if type(self.grid) is grid.sightline:
-                thisPoint.findGradV(self.grid.ngrad)
-                thisPoint.findIntensity()   
+            thisPoint = simpoint(cPos, self.findT, self.grid) 
             self.sPoints.append(thisPoint)
             self.pData.append(thisPoint.Vars())
             bar.increment()
@@ -396,44 +470,88 @@ class simulate:
             scaleProp = np.log10(prop)
         elif scaling == 'sqrt':
             scaleProp = np.sqrt(prop)
+        else: print('Bad Scaling')
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
-    def timeV(self, t0 = 0, t1 = 100, tstep = 2):
-        print('Timestepping...')
-        self.times = np.arange(t0, t1, tstep)
-        bar = pb.ProgressBar(self.Npoints*len(self.times))
-        stdList = []
-        vMeanList = []
-        for tt in self.times:
-            thisV = []
-            for point in self.sPoints:
-                point.setTime(tt)
-                thisV.append(point.gradV(self.grid.ngrad))
-                bar.increment()
-                bar.display()
-            stdList.append(np.std(np.array(thisV)))
-            vMeanList.append(np.mean(np.array(thisV)))           
-        bar.display(force = True)
-        self.vStd = np.array(stdList)
-        self.vStdErr = self.vStd / np.sqrt(len(stdList))
-        self.vMean = np.array(vMeanList)
-        self.timePlot()
+    def plot(self, property, dim = None, scaling = 'None'):
+        scaleProp, datSum = self.get(property, dim, scaling)
+        self.fig, ax = self.grid.plot(iL = self.iL)
+ 
+        if type(self.grid) is grid.sightline:
+            #Line Plot
+            im = ax.plot(scaleProp)
+            datSum = datSum / self.N
+        elif type(self.grid) is grid.plane:
+            #Image Plot
+            im = ax.imshow(scaleProp, interpolation='none')
+            self.fig.subplots_adjust(right=0.89)
+            cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
+            self.fig.colorbar(im, cax=cbar_ax)
+            datSum = datSum / self.N ** 2
+        else: 
+            print("Invalid Grid")
+            return
 
-    def timePlot(self):
-        #plt.semilogy(self.times, np.abs(self.vStd), self.times, np.abs(self.vSum))
-        plt.figure()
-        plt.plot(self.times, self.vMean)
-        plt.plot(self.times, self.vStdErr)
-        plt.title('mean and std of gradV over time')
+        if dim is None:
+            ax.set_title(property + ", scaling = " + scaling + ', sum = {}'.format(datSum))
+        else:
+            ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling + ', sum = {}'.format(datSum))
+
+        grid.maximizePlot()
         plt.show(block = False)
 
+    def compare(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None):
+        scaleprop = []
+        scaleprop.append(self.get(p1, p1Dim, p1Scaling)[0])
+        scaleprop.append(self.get(p2, p2Dim, p2Scaling)[0])
+        fig, ax = self.grid.plot(iL = self.iL)
+        fig.subplots_adjust(right=0.89)
+        cbar_ax = fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
+      
+        global cur_plot
+        cur_plot = 0
 
-####################################################################
-####################################################################
+        def plot1():
+            im = ax.imshow(scaleprop[0], interpolation = 'none')
+            ax.set_title(p1)
+            fig.colorbar(im, cax=cbar_ax)
+            fig.canvas.draw()
+
+        def plot2():
+            im = ax.imshow(scaleprop[1], interpolation = 'none')
+            ax.set_title(p2)
+            fig.colorbar(im, cax=cbar_ax)
+            fig.canvas.draw()
+
+        plots = [plot1, plot2]
+
+        def onKeyDown(event):
+            global cur_plot
+            cur_plot = 1 - cur_plot
+            plots[cur_plot]()
+
+        cid = fig.canvas.mpl_connect('key_press_event', onKeyDown)
+       
+        grid.maximizePlot()
+        plt.show()    
+   
 
 
-    def evolveLine(self, t0 = 0, t1 = 1000, tn = 500, Ln = 50, lam0 = 1000, lamPm = 2.5):
+    def Vars(self):
+        #Returns the vars of the simpoints
+        return self.sPoints[0].Vars()
+
+    def Keys(self):
+        #Returns the keys of the simpoints
+        return self.sPoints[0].Vars().keys()
+
+
+    ####################################################################
+    ####################################################################
+
+
+    def evolveLine(self, t0 = 0, t1 = 1600, tn = 150, Ln = 50, lam0 = 1000, lamPm = 2):
 
         print('Timestepping...')
         
@@ -480,7 +598,7 @@ class simulate:
             amp0 = np.max(line)
             popt, pcov = curve_fit(gauss_function, self.lamAx, line, p0 = [amp0, self.lam0, sig0])
             self.amp[lInd] = popt[0]
-            self.mu[lInd] = popt[1]
+            self.mu[lInd] = popt[1] - self.lam0
             self.std[lInd] = popt[2]            #####This is where I'm working
             ## Plot each line fit
             #plt.plot(self.lamAx, gauss_function(self.lamAx, amp[lInd], mu[lInd], std[lInd]))
@@ -498,21 +616,25 @@ class simulate:
         ax2.set_title('Mean')
         ax2.set_ylabel('Angstroms')
         ax3.plot(self.times, self.std)
+        ax3.set_ylabel('Angstroms')
         ax3.set_title('Std')
         ax3.set_xlabel('Time (s)')
         plt.show()
 
     def plotLineArray(self):
         ## Plot the lineArray
-        print('')
-        print(np.shape(self.lineArray))
-        plt.pcolormesh(self.lamAx.astype('float32'), self.times, self.lineArray)
+        self.fig, ax = self.grid.plot(iL = self.iL)
+        #print('')
+        #print(np.shape(self.lineArray))
+        im = ax.pcolormesh(self.lamAx.astype('float32'), self.times, self.lineArray)
         #ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
-        plt.xlabel('Angstroms')
-        plt.ylabel('Time (s)')
-        plt.show()
-
-
+        ax.set_xlabel('Angstroms')
+        ax.set_ylabel('Time (s)')
+        self.fig.subplots_adjust(right=0.89)
+        cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
+        self.fig.colorbar(im, cax=cbar_ax)
+        grid.maximizePlot()
+        plt.show(False)
 
 
     def peekLamTime(self, lam0 = 1000, lam = 1000, t = 0):
@@ -525,48 +647,7 @@ class simulate:
         plt.plot(intensity)
         plt.show()
 
-        
 
-
-            
-
-
-
-
-    def plot(self, property, dim = None, scaling = 'None'):
-        scaleProp, datSum = self.get(property, dim, scaling)
-        self.fig, ax = self.grid.plot(iL = self.iL)
- 
-        if type(self.grid) is grid.sightline:
-            #Line Plot
-            im = ax.plot(scaleProp)
-            datSum = datSum / self.N
-        elif type(self.grid) is grid.plane:
-            #Image Plot
-            im = ax.imshow(scaleProp, interpolation='none')
-            self.fig.subplots_adjust(right=0.89)
-            cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
-            self.fig.colorbar(im, cax=cbar_ax)
-            datSum = datSum / self.N ** 2
-        else: 
-            print("Invalid Grid")
-            return
-
-        if dim is None:
-            ax.set_title(property + ", scaling = " + scaling + ', sum = {}'.format(datSum))
-        else:
-            ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling + ', sum = {}'.format(datSum))
-
-        grid.maximizePlot()
-        plt.show(block = False)
-
-    def Vars(self):
-        #Returns the vars of the simpoints
-        return self.sPoints[0].Vars()
-
-    def Keys(self):
-        #Returns the keys of the simpoints
-        return self.sPoints[0].Vars().keys()
 
 class defGrid:
 
@@ -591,8 +672,12 @@ class defGrid:
         #This line starts from north pole and goes out radially
         self.poleLine = grid.sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')
 
-    def gauss_function(x, a, x0, sigma):
-        return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+
+
+
+    #def gauss_function(x, a, x0, sigma):
+    #    return a*np.exp(-(x-x0)**2/(2*sigma**2))
 
 
 
@@ -604,7 +689,34 @@ class defGrid:
 
 
 
+    ##def timeV(self, t0 = 0, t1 = 100, tstep = 2):
+    ##    print('Timestepping...')
+    ##    self.times = np.arange(t0, t1, tstep)
+    ##    bar = pb.ProgressBar(self.Npoints*len(self.times))
+    ##    stdList = []
+    ##    vMeanList = []
+    ##    for tt in self.times:
+    ##        thisV = []
+    ##        for point in self.sPoints:
+    ##            point.setTime(tt)
+    ##            thisV.append(point.gradV(self.grid.ngrad))
+    ##            bar.increment()
+    ##            bar.display()
+    ##        stdList.append(np.std(np.array(thisV)))
+    ##        vMeanList.append(np.mean(np.array(thisV)))           
+    ##    bar.display(force = True)
+    ##    self.vStd = np.array(stdList)
+    ##    self.vStdErr = self.vStd / np.sqrt(len(stdList))
+    ##    self.vMean = np.array(vMeanList)
+    ##    self.timePlot()
 
+    ##def timePlot(self):
+    ##    #plt.semilogy(self.times, np.abs(self.vStd), self.times, np.abs(self.vSum))
+    ##    plt.figure()
+    ##    plt.plot(self.times, self.vMean)
+    ##    plt.plot(self.times, self.vStdErr)
+    ##    plt.title('mean and std of gradV over time')
+    ##    plt.show(block = False)
 
 
 

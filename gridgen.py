@@ -203,6 +203,7 @@ class plane(generator):
         
         self.ngrad1 = grad1 / np.linalg.norm(grad1)
         self.ngrad2 = grad2 / np.linalg.norm(grad2)
+        self.ngrad = self.ngrad2
         self.nnormal = self.normal / np.linalg.norm(self.normal)
         self.noffset = self.nnormal*self.offset[0] + self.ngrad1*self.offset[1] + self.ngrad2*self.offset[2]
 
