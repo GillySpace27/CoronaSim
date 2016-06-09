@@ -20,9 +20,9 @@ df = sim.defGrid()
       
 
 
-lineSim = sim.simulate(df.primeLine, N = 1500, findT = True)
+lineSim = sim.simulate(df.primeLine, N = 1000, findT = True)
 #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
-lineSim.plot('densfac')
+#lineSim.plot('densfac')
 ## Useful Functions
     #mysim.plot('property')
     #mysim.Keys()
@@ -31,7 +31,7 @@ lineSim.plot('densfac')
 #topSim.plot('uPhi')
 #bpoleSim.plot('streamIndex')
 #poleLineSim.plot('vGrad')
-#lineSim.evolveLine()
+lineSim.evolveLine()
 #lineSim.timeV(t1 = 2000, step = 3)
 #bpoleSim.plot('T')
 #sim.simpoint()

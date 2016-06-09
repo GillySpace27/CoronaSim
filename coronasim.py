@@ -17,6 +17,7 @@ from scipy import io
 from scipy import ndimage
 from scipy import interpolate as interp
 from scipy.stats import norm
+import scipy.stats as stats
 from scipy.optimize import curve_fit
 import skimage as ski
 import sklearn.neighbors as nb
@@ -49,7 +50,7 @@ class simpoint:
     bk_dat = None
     
     rstar = 1
-    B_thresh = 6.0
+    B_thresh = 1.#6.0
     fmax = 8.2
     theta0 = 28
 
@@ -145,10 +146,10 @@ class simpoint:
 
         simpoint.label_im, simpoint.nb_labels = self.voronoify_sklearn(label_im, coordinates)
         simpoint.label_im *= validMask
-        plt.imshow(simpoint.label_im, cmap = 'prism')
-        for co in coordinates:
-            plt.scatter(*co)
-        plt.show()
+        #plt.imshow(simpoint.label_im, cmap = 'prism')
+        #for co in coordinates:
+        #    plt.scatter(*co)
+        #plt.show()
 
     def voronoify_sklearn(self, I, seeds):
         #Uses the voronoi algorithm to assign stream labels
@@ -165,7 +166,7 @@ class simpoint:
         for idx in cells.values():
             idx = np.array(idx)
             label += 1
-            #mean_col = I[idx[:,0], idx[:,1]].mode(axis=0)
+            #mean_col = I[idx[:,0], idx[:,1]].mode(axis=0) #The pretty pictures part
             I2[idx[:,0], idx[:,1]] = label
         return I2, label
 
@@ -422,7 +423,7 @@ class simulate:
     def __init__(self, gridobj, N = None, iL = None, findT = False):
         print("Initializing Simulation...")
         self.grid  = gridobj
-        print(self.grid.ngrad)
+        #print(self.grid.ngrad)
         self.findT = findT
         if iL is None: self.iL = self.grid.iL
         else: self.iL = iL
@@ -549,10 +550,18 @@ class simulate:
 
     ####################################################################
     ####################################################################
+    def lineProfile(self):
+        #Get a line profile at the current time
+        intensity = np.zeros_like(self.lamAx)
+        index = 0
+        for lam in self.lamAx:
+            for point in self.sPoints:
+                intensity[index] += point.findIntensity(self.lam0, lam)
+            index += 1
+        return intensity
 
-
-    def evolveLine(self, t0 = 0, t1 = 1600, tn = 150, Ln = 50, lam0 = 1000, lamPm = 2):
-
+    def evolveLine(self, t0 = 0, t1 = 1600, tn = 100, Ln = 100, lam0 = 1000, lamPm = 2):
+        #Get the line profile over time and store in LineArray
         print('Timestepping...')
         
         self.lam0 = lam0
@@ -571,55 +580,63 @@ class simulate:
             timeInd += 1       
         bar.display(force = True)
 
+        self.lineList = self.lineArray.tolist()
+
         self.plotLineArray()
         self.fitGaussians()
+        self.findMoments()
 
-    def lineProfile(self):
-        intensity = np.zeros_like(self.lamAx)
-        index = 0
-        for lam in self.lamAx:
-            for point in self.sPoints:
-                intensity[index] += point.findIntensity(self.lam0, lam)
-            index += 1
-        return intensity
+    def findMoments(self):
+        #Find the moments of each line in lineList
+        self.maxMoment = 3
+        self.moment = []
+        lineInd = 0
+        for mm in np.arange(self.maxMoment):
+            self.moment.append(np.zeros_like(self.times))
 
-    def fitGaussians(self):
-        lineList = self.lineArray.tolist()
-        self.amp = np.zeros_like(self.times)
-        self.mu = np.zeros_like(self.times)
-        self.std = np.zeros_like(self.times)
+        for line in self.lineList:
+            for mm in np.arange(self.maxMoment):
+                self.moment[mm][lineInd] = np.dot(line, self.lamAx**mm)
+            lineInd += 1
 
-        def gauss_function(x, a, x0, sigma):
-            return a*np.exp(-(x-x0)**2/(2*sigma**2))
+        self.findMomentStats()
+        #self.plotMoments()
 
-        lInd = 0
-        for line in lineList:
-            sig0 = sum((self.lamAx - self.lam0)**2)/len(line)
-            amp0 = np.max(line)
-            popt, pcov = curve_fit(gauss_function, self.lamAx, line, p0 = [amp0, self.lam0, sig0])
-            self.amp[lInd] = popt[0]
-            self.mu[lInd] = popt[1] - self.lam0
-            self.std[lInd] = popt[2]            #####This is where I'm working
-            ## Plot each line fit
-            #plt.plot(self.lamAx, gauss_function(self.lamAx, amp[lInd], mu[lInd], std[lInd]))
-            #plt.plot(self.lamAx,  lineList[lInd])
-            #plt.show()
-            lInd += 1
+    def findMomentStats(self):
+        self.power = self.moment[0]
+        self.centroid = self.moment[1] / self.moment[0]
+        self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
+        self.plotMomentStats()
 
-        self.plotLineStats()
-
-    def plotLineStats(self):
+    def plotMomentStats(self):
         f, (ax1, ax2, ax3) = plt.subplots(3,1, sharex=True)
-        ax1.plot(self.times, self.amp)
-        ax1.set_title('Amplitude')
-        ax2.plot(self.times, self.mu)
-        ax2.set_title('Mean')
+        f.suptitle('Moments Method')
+        ax1.plot(self.times, self.power)
+        ax1.set_title('0th Moment')
+        ax1.get_yaxis().get_major_formatter().set_useOffset(False)
+        ax1.get_yaxis().get_major_formatter().set_scientific(True)
+
+        ax2.plot(self.times, self.centroid)
+        ax2.set_title('Centroid')
         ax2.set_ylabel('Angstroms')
-        ax3.plot(self.times, self.std)
+
+        ax3.plot(self.times, self.sigma)
         ax3.set_ylabel('Angstroms')
         ax3.set_title('Std')
         ax3.set_xlabel('Time (s)')
-        plt.show()
+        plt.show(False)
+
+    def plotMoments(self):
+        f, axArray = plt.subplots(self.maxMoment, 1, sharex=True)
+        mm = 0
+        for ax in axArray:
+            ax.plot(self.times, self.moment[mm])
+            ax.set_title(str(mm)+" Moment")
+            ax.set_ylabel('Angstroms')
+            mm += 1
+        ax.set_xlabel('Time (s)')
+        plt.show(False)
+
 
     def plotLineArray(self):
         ## Plot the lineArray
@@ -647,7 +664,49 @@ class simulate:
         plt.plot(intensity)
         plt.show()
 
+    def fitGaussians(self):
+        
+        self.amp = np.zeros_like(self.times)
+        self.mu = np.zeros_like(self.times)
+        self.std = np.zeros_like(self.times)
+        self.area = np.zeros_like(self.times)
 
+        def gauss_function(x, a, x0, sigma):
+            return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+        lInd = 0
+        for line in self.lineList:
+            sig0 = sum((self.lamAx - self.lam0)**2)/len(line)
+            amp0 = np.max(line)
+            popt, pcov = curve_fit(gauss_function, self.lamAx, line, p0 = [amp0, self.lam0, sig0])
+            self.amp[lInd] = popt[0]
+            self.mu[lInd] = popt[1] - self.lam0
+            self.std[lInd] = popt[2] 
+            self.area[lInd] = popt[0] * popt[2]  
+
+            ## Plot each line fit
+            #plt.plot(self.lamAx, gauss_function(self.lamAx, amp[lInd], mu[lInd], std[lInd]))
+            #plt.plot(self.lamAx,  lineList[lInd])
+            #plt.show()
+            lInd += 1
+
+        self.plotGaussStats()
+
+    def plotGaussStats(self):
+        f, (ax1, ax2, ax3, ax4) = plt.subplots(4,1, sharex=True)
+        f.suptitle('Gaussian method')
+        ax1.plot(self.times, self.amp)
+        ax1.set_title('Amplitude')
+        ax2.plot(self.times, self.mu)
+        ax2.set_title('Mean')
+        ax2.set_ylabel('Angstroms')
+        ax3.plot(self.times, self.std)
+        ax3.set_ylabel('Angstroms')
+        ax3.set_title('Std')
+        ax4.plot(self.times, self.area)
+        ax4.set_title('Area')
+        ax4.set_xlabel('Time (s)')
+        plt.show(False)
 
 class defGrid:
 
