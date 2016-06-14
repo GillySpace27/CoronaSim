@@ -81,11 +81,11 @@ class generator:
 
         n = 0   
         if type(self) is sightline:      
-            thisGrid = self.cLine(N = 10, smax = iL)
+            thisGrid = self.cLine(N = N, smax = iL)
             fig.suptitle('Sightline at Position = ({:0.2f}, {:0.2f}, {:0.2f}), \
                 Target = ({:0.2f}, {:0.2f}, {:0.2f})'.format(*(self.cPos + self.cTarg)))
         elif type(self) is plane:
-            thisGrid = self.cPlane(N = 10, iL = iL)
+            thisGrid = self.cPlane(N = N, iL = iL)
             fig.suptitle('Plane with Normal = ({:0.2f}, {:0.2f}, {:0.2f}),\
                 Offset = ({:0.2f}, {:0.2f}, {:0.2f})'.format(*(self.normal.tolist() + self.offset)))
         nax = 1
@@ -232,7 +232,37 @@ class plane(generator):
         #Return a list of points in the plane in polar Coords
         return [self.cart2sph(pos) for pos in self.cPlane(N, iL)]
 
+class defGrid:
 
+    def __init__(self):
+        print('Generating Default Grids...')
+        #Above the Pole        
+        iL = 1
+        normal1 = [0,0,1] 
+        offset1 = [1.5, 0, 0]
+
+        self.topPlane = plane(normal1, offset1, iL)
+
+        #Slice of the Pole
+        self.polePlane = plane()
+
+        #Bigger Slice of the Pole
+        self.bpolePlane = plane(iL = 8)
+
+        #This line goes over the pole without touching it
+        position, target = [2, np.pi/4, 0.01], [2, -np.pi/4, -0.01]
+        self.primeLine = sightline(position, target, coords = 'sphere')
+
+        #This line starts from north pole and goes out radially
+        self.poleLine = sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')
+
+    def impactLines(self, b0 = 1.05, b1= 1.5, N=5):
+        lines = []
+        x = 20
+        y = 1e-8
+        for zz in np.linspace(b0,b1,N):
+            lines.append(sightline([x,y,zz], [-x,y,zz]))
+        return lines
        
                         
 def maximizePlot():

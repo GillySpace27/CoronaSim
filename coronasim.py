@@ -28,6 +28,9 @@ import progressBar as pb
 import math
 from astropy import units as u
 
+
+
+
 np.seterr(invalid = 'ignore')
 
 ### Figure out BThresh
@@ -560,13 +563,17 @@ class simulate:
             index += 1
         return intensity
 
+    def makeLamAxis(self, Ln = 100, lam0 = 1000, lamPm = 2):
+        self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
+        return self.lamAx
+
     def evolveLine(self, t0 = 0, t1 = 1600, tn = 100, Ln = 100, lam0 = 1000, lamPm = 2):
         #Get the line profile over time and store in LineArray
         print('Timestepping...')
         
         self.lam0 = lam0
         self.times = np.linspace(t0, t1, tn)
-        self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
+        self.makeLamAxis(self, Ln, lam0, lamPm)
         self.lineArray = np.zeros((tn, Ln))
 
         bar = pb.ProgressBar(self.Npoints*len(self.times))
@@ -665,7 +672,6 @@ class simulate:
         plt.show()
 
     def fitGaussians(self):
-        
         self.amp = np.zeros_like(self.times)
         self.mu = np.zeros_like(self.times)
         self.std = np.zeros_like(self.times)
@@ -708,28 +714,7 @@ class simulate:
         ax4.set_xlabel('Time (s)')
         plt.show(False)
 
-class defGrid:
 
-    def __init__(self):
-        #Above the Pole        
-        iL = 1
-        normal1 = [0,0,1] 
-        offset1 = [1.5, 0, 0]
-
-        self.topPlane = grid.plane(normal1, offset1, iL)
-
-        #Slice of the Pole
-        self.polePlane = grid.plane()
-
-        #Bigger Slice of the Pole
-        self.bpolePlane = grid.plane(iL = 8)
-
-        #This line goes over the pole without touching it
-        position, target = [2, np.pi/4, 0.01], [2, -np.pi/4, -0.01]
-        self.primeLine = grid.sightline(position, target, coords = 'sphere')
-
-        #This line starts from north pole and goes out radially
-        self.poleLine = grid.sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')
 
 
 

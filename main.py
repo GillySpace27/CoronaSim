@@ -6,21 +6,30 @@ import gridgen as grid
 import coronasim as sim
 
 ##Creates an object with some common grids
-df = sim.defGrid()
+df = grid.defGrid()
 
 ##Simulate Common Grids
+
 #topSim = sim.simulate(df.topPlane, N = 1000)
 #poleSim = sim.simulate(df.polePlane, findT = True, step = 0.01)
-#bpoleSim = sim.simulate(df.bpolePlane, N = 400, findT = False)
+bpoleSim = sim.simulate(df.bpolePlane, N = 1000, findT = False)
 #bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-#bpoleSim.plot('vLOS')
+bpoleSim.plot('vLOS')
 
-
+#Need to make this work for several lines, not one line at several times
+#lines = df.impactLines()
+#impactSim = []
+#moments = []
+#for lin in lines:
+#    thisSim = sim.simulate(lin, findT = True, N = 1000)
+#    thisSim.makeLamAxis()
+#    thisSim.lineProfile()   
+#    impactSim.append()
 
       
 
 
-lineSim = sim.simulate(df.primeLine, N = 1000, findT = True)
+#lineSim = sim.simulate(df.primeLine, N = 1000, findT = True)
 #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
 #lineSim.plot('densfac')
 ## Useful Functions
@@ -29,9 +38,9 @@ lineSim = sim.simulate(df.primeLine, N = 1000, findT = True)
     #mysim.timeV(t0,t1,step)
 
 #topSim.plot('uPhi')
-#bpoleSim.plot('streamIndex')
+#bpoleSim.plot('uPhi')
 #poleLineSim.plot('vGrad')
-lineSim.evolveLine()
+#lineSim.evolveLine()
 #lineSim.timeV(t1 = 2000, step = 3)
 #bpoleSim.plot('T')
 #sim.simpoint()
@@ -42,22 +51,7 @@ lineSim.evolveLine()
 
 
 
-#myPoint = sim.simpoint()
 
-#bmap = myPoint.BMap_raw
-
-
-#xpoints = bmap.x_cap
-#ypoints = bmap.y_cap
-#plt.imshow(bdata)
-#plt.show()
-#print(type(bdata))
-
-#sx = ndimage.sobel(bdata, axis = 0, mode  = 'constant')
-#sy = ndimage.sobel(bdata, axis = 1, mode  = 'constant')
-#sob = np.hypot(sx, sy)
-#plt.imshow((sob))
-#plt.show()
 
 
 
