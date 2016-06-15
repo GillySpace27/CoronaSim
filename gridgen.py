@@ -74,7 +74,7 @@ class generator:
 
         return fig, dataAxis, quadAxis
 
-    def plot(self, N = 20, iL = 1, show = False):
+    def plot(self, N = 10, iL = 1, show = False):
         #Plot the quadGrid with a sphere for the sun
 
         fig, dataAxis, quadAxis = self.quadAx(True)

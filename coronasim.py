@@ -6,7 +6,7 @@ Created on Wed May 25 19:13:05 2016
 @author: chgi7364
 """
 
-print('Loading Dependencies...')
+#print('Loading Dependencies...')
 import numpy as np
 import os
 import sys
@@ -28,7 +28,9 @@ import progressBar as pb
 import math
 from astropy import units as u
 
-
+from multiprocessing import Pool
+from multiprocessing.dummy import Pool as ThreadPool
+from functools import partial
 
 
 np.seterr(invalid = 'ignore')
@@ -65,7 +67,7 @@ class simpoint:
     streamRand = np.random.RandomState()
     #thermRand = np.random.RandomState()
     
-    def __init__(self, cPos = [0,0,1.5], findT = False, grid = None, Bfile = None, xiFile = None, bkFile = None):
+    def __init__(self, cPos = [0,0,1.5], findT = False, grid = None, Bfile = None, xiFile = None, bkFile = None, pbar = None):
  
         #Inputs
         self.cPos = cPos
@@ -108,6 +110,9 @@ class simpoint:
         self.findSpeeds()
         self.findVLOS(self.grid.ngrad)
         self.findIntensity()
+        if pbar is not None:
+            pbar.increment()
+            pbar.display()
 
 
 
@@ -453,13 +458,26 @@ class simulate:
         print("Beginning Simulation...")
         self.sPoints = []
         self.pData = []
-        for cPos in self.cPoints:
-            thisPoint = simpoint(cPos, self.findT, self.grid) 
-            self.sPoints.append(thisPoint)
-            self.pData.append(thisPoint.Vars())
+        #Serial Way
+        #for cPos in self.cPoints:
+        #    thisPoint = simpoint(cPos, self.findT, self.grid) 
+        #    self.sPoints.append(thisPoint)
+        #    self.pData.append(thisPoint.Vars())
+        #    bar.increment()
+        #    bar.display()
+        #bar.display(force = True)
+
+        #Parallel Way
+        pool = Pool(7)
+        for pnt in pool.imap(partial(simpoint, findT = self.findT, grid = self.grid), self.cPoints, 100):
+            self.sPoints.append(pnt)
+            self.pData.append(pnt.Vars())
             bar.increment()
             bar.display()
         bar.display(force = True)
+        pool.close()
+        pool.join()
+
         print('')
         print('')
 
