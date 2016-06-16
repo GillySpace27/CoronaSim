@@ -68,7 +68,6 @@ class simpoint:
     #thermRand = np.random.RandomState()
     
     def __init__(self, cPos = [0,0,1.5], findT = False, grid = None, Bfile = None, xiFile = None, bkFile = None, pbar = None):
- 
         #Inputs
         self.cPos = cPos
         self.pPos = self.cart2sph(self.cPos)
@@ -78,7 +77,9 @@ class simpoint:
         #Load Bmap
         if Bfile is None: self.Bfile = simpoint.def_Bfile 
         else: self.Bfile = self.relPath(Bfile)
-        if simpoint.BMap is None: self.loadBMap()
+        if simpoint.BMap is None: 
+            print('    Loading Data Files...', end = '', flush = True)
+            self.loadBMap()
 
         #Load Xi
         if xiFile is None: self.xiFile = simpoint.def_xiFile 
@@ -100,6 +101,7 @@ class simpoint:
             simpoint.ur_raw = x[:,2]
             simpoint.vAlf_raw = x[:,3]
             simpoint.T_raw = x[:,4]
+            
 
         #Initialization
         self.findTemp()
@@ -330,7 +332,6 @@ class simpoint:
             self.twave = self.twave_fit  
         self.twave_rat = self.twave/self.twave_fit
         
-
     def setTime(self,t):
         #Updates velocities to input time
         self.findTSpeeds(t)
@@ -360,7 +361,7 @@ class simpoint:
         self.lamLos =  self.vLOS * self.lam0 / simpoint.c
         self.deltaLam = self.lam0 / simpoint.c * np.sqrt(2 * simpoint.KB * self.T / simpoint.mi)
         self.lamPhi = 1/(self.deltaLam * np.sqrt(np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/self.deltaLam)**2)
-        self.intensity = self.rho**2 * self.qt * self.lamPhi * 1e32
+        self.intensity = self.rho**2 * self.qt * self.lamPhi * 1e33
         return self.intensity
 
 
@@ -425,11 +426,16 @@ class simpoint:
         return vars(self) 
 
 
+####################################################################
+####################################################################
+####################################################################
+####################################################################
+
 
 class simulate:
 
     def __init__(self, gridobj, N = None, iL = None, findT = False):
-        print("Initializing Simulation...")
+        #print("Initializing Simulation...")
         self.grid  = gridobj
         #print(self.grid.ngrad)
         self.findT = findT
@@ -437,7 +443,6 @@ class simulate:
         else: self.iL = iL
         if N is None: self.N = self.grid.default_N/100
         else: self.N = N
-        print("     Loading Grid...")
         if type(gridobj) is grid.sightline:
             self.cPoints = self.grid.cLine(self.N, smax = self.iL)
 
@@ -455,28 +460,32 @@ class simulate:
 
     def simulate_now(self):
         bar = pb.ProgressBar(self.Npoints)
-        print("Beginning Simulation...")
         self.sPoints = []
         self.pData = []
-        #Serial Way
-        #for cPos in self.cPoints:
-        #    thisPoint = simpoint(cPos, self.findT, self.grid) 
-        #    self.sPoints.append(thisPoint)
-        #    self.pData.append(thisPoint.Vars())
-        #    bar.increment()
-        #    bar.display()
-        #bar.display(force = True)
-
-        #Parallel Way
-        pool = Pool(7)
-        for pnt in pool.imap(partial(simpoint, findT = self.findT, grid = self.grid), self.cPoints, 100):
-            self.sPoints.append(pnt)
-            self.pData.append(pnt.Vars())
-            bar.increment()
-            bar.display()
-        bar.display(force = True)
-        pool.close()
-        pool.join()
+        print("Beginning Simulation...")
+        chunkSize = 1e5
+        if self.Npoints < chunkSize:
+            #Serial Way
+            for cPos in self.cPoints: 
+                thisPoint = simpoint(cPos, self.findT, self.grid) 
+                self.sPoints.append(thisPoint)
+                self.pData.append(thisPoint.Vars())
+                bar.increment()
+                bar.display()
+            bar.display(force = True)
+        else:
+            #Parallel Way
+            print('    Initializing Pool...')
+            pool = Pool()
+            #thisPoint = simpoint(grid = self.grid)
+            for pnt in pool.imap(partial(simpoint, findT = self.findT, grid = self.grid), self.cPoints, 1000):
+                self.sPoints.append(pnt)
+                self.pData.append(pnt.Vars())
+                bar.increment()
+                bar.display()
+            bar.display(force = True)
+            pool.close()
+            pool.join()
 
         print('')
         print('')
@@ -558,8 +567,6 @@ class simulate:
         grid.maximizePlot()
         plt.show()    
    
-
-
     def Vars(self):
         #Returns the vars of the simpoints
         return self.sPoints[0].Vars()
@@ -568,22 +575,60 @@ class simulate:
         #Returns the keys of the simpoints
         return self.sPoints[0].Vars().keys()
 
+    ####################################################################
 
-    ####################################################################
-    ####################################################################
+    def getStats(self):
+        self.makeLamAxis()
+        self.lineProfile()
+        self.findMoments()
+        return self.findMomentStats()
+
+    def makeLamAxis(self, Ln = 100, lam0 = 1000, lamPm = 2):
+        self.lam0 = lam0
+        self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
+        return self.lamAx
+
     def lineProfile(self):
         #Get a line profile at the current time
-        intensity = np.zeros_like(self.lamAx)
+        self.profile = np.zeros_like(self.lamAx)
         index = 0
         for lam in self.lamAx:
             for point in self.sPoints:
-                intensity[index] += point.findIntensity(self.lam0, lam)
+                self.profile[index] += point.findIntensity(self.lam0, lam)
             index += 1
-        return intensity
+        return self.profile
 
-    def makeLamAxis(self, Ln = 100, lam0 = 1000, lamPm = 2):
-        self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
-        return self.lamAx
+    def findMoments(self):
+        self.maxMoment = 3
+        self.moment = np.zeros(self.maxMoment)
+        for mm in np.arange(self.maxMoment):
+                self.moment[mm] = np.dot(self.profile, self.lamAx**mm)
+        return self.moment
+
+    def findMomentStats(self):
+        self.power = self.moment[0] / self.Npoints
+        self.centroid = self.moment[1] / self.moment[0]
+        self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
+        return [self.power, self.centroid, self.sigma]
+
+
+
+
+
+## Time Dependence ######################################################
+    def setTime(self, tt):
+        for point in self.sPoints:
+            point.setTime(tt)
+
+    def peekLamTime(self, lam0 = 1000, lam = 1000, t = 0):
+        intensity = np.zeros_like(self.sPoints)
+        pInd = 0
+        for point in self.sPoints:
+            point.setTime(t)
+            intensity[pInd] = point.findIntensity(lam0, lam)
+            pInd += 1
+        plt.plot(intensity)
+        plt.show()
 
     def evolveLine(self, t0 = 0, t1 = 1600, tn = 100, Ln = 100, lam0 = 1000, lamPm = 2):
         #Get the line profile over time and store in LineArray
@@ -607,11 +652,11 @@ class simulate:
 
         self.lineList = self.lineArray.tolist()
 
-        self.plotLineArray()
-        self.fitGaussians()
-        self.findMoments()
+        self.plotLineArray_t()
+        self.fitGaussians_t()
+        self.findMoments_t()
 
-    def findMoments(self):
+    def findMoments_t(self):
         #Find the moments of each line in lineList
         self.maxMoment = 3
         self.moment = []
@@ -624,16 +669,16 @@ class simulate:
                 self.moment[mm][lineInd] = np.dot(line, self.lamAx**mm)
             lineInd += 1
 
-        self.findMomentStats()
+        self.findMomentStats_t()
         #self.plotMoments()
 
-    def findMomentStats(self):
+    def findMomentStats_t(self):
         self.power = self.moment[0]
         self.centroid = self.moment[1] / self.moment[0]
         self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
-        self.plotMomentStats()
+        self.plotMomentStats_t()
 
-    def plotMomentStats(self):
+    def plotMomentStats_t(self):
         f, (ax1, ax2, ax3) = plt.subplots(3,1, sharex=True)
         f.suptitle('Moments Method')
         ax1.plot(self.times, self.power)
@@ -651,7 +696,7 @@ class simulate:
         ax3.set_xlabel('Time (s)')
         plt.show(False)
 
-    def plotMoments(self):
+    def plotMoments_t(self):
         f, axArray = plt.subplots(self.maxMoment, 1, sharex=True)
         mm = 0
         for ax in axArray:
@@ -662,8 +707,7 @@ class simulate:
         ax.set_xlabel('Time (s)')
         plt.show(False)
 
-
-    def plotLineArray(self):
+    def plotLineArray_t(self):
         ## Plot the lineArray
         self.fig, ax = self.grid.plot(iL = self.iL)
         #print('')
@@ -678,18 +722,7 @@ class simulate:
         grid.maximizePlot()
         plt.show(False)
 
-
-    def peekLamTime(self, lam0 = 1000, lam = 1000, t = 0):
-        intensity = np.zeros_like(self.sPoints)
-        pInd = 0
-        for point in self.sPoints:
-            point.setTime(t)
-            intensity[pInd] = point.findIntensity(lam0, lam)
-            pInd += 1
-        plt.plot(intensity)
-        plt.show()
-
-    def fitGaussians(self):
+    def fitGaussians_t(self):
         self.amp = np.zeros_like(self.times)
         self.mu = np.zeros_like(self.times)
         self.std = np.zeros_like(self.times)
@@ -714,9 +747,9 @@ class simulate:
             #plt.show()
             lInd += 1
 
-        self.plotGaussStats()
+        self.plotGaussStats_t()
 
-    def plotGaussStats(self):
+    def plotGaussStats_t(self):
         f, (ax1, ax2, ax3, ax4) = plt.subplots(4,1, sharex=True)
         f.suptitle('Gaussian method')
         ax1.plot(self.times, self.amp)
@@ -732,9 +765,50 @@ class simulate:
         ax4.set_xlabel('Time (s)')
         plt.show(False)
 
+####################################################################
+####################################################################
+####################################################################
+####################################################################
 
 
+class coronasim:
 
+    def __init__(self, lineObj, N = None, findT = False):
+        self.simList = []
+        self.gridList = lineObj[0]
+        self.gridLabels = lineObj[1]
+        nn = 0
+        for grd in self.gridList:
+            print('b = ' + str(self.gridLabels[nn]))
+            self.simList.append(simulate(grd, N, findT = findT))
+            nn += 1
+
+    def findLineStats(self):
+        print('Calculating Line Statistics...')
+        bar = pb.ProgressBar(len(self.simList))
+        self.lineStats = []
+        for line in self.simList:
+            self.lineStats.append(line.getStats())
+            bar.increment()
+            bar.display()
+        bar.display(force = True)
+        return self.lineStats
+
+    def plotStats(self):
+        f, axArray = plt.subplots(3, 1, sharex=True)
+        mm = 0
+        titles = ['amp', 'mean', 'sigma']
+        ylabels = ['', 'Angstroms', 'Angstroms']
+        for ax in axArray:
+            if mm == 0:
+                ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
+            else:
+                ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
+            ax.set_title(titles[mm])
+            ax.set_ylabel(ylabels[mm])
+            mm += 1
+        ax.set_xlabel('Impact Parameter')
+        plt.show(False)
 
 
 

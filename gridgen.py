@@ -74,7 +74,7 @@ class generator:
 
         return fig, dataAxis, quadAxis
 
-    def plot(self, N = 10, iL = 1, show = False):
+    def plot(self, N = 25, iL = 1, show = False):
         #Plot the quadGrid with a sphere for the sun
 
         fig, dataAxis, quadAxis = self.quadAx(True)
@@ -118,6 +118,7 @@ class generator:
         print("\nGenerator Properties")
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
+
             
 
 class sightline(generator):
@@ -174,7 +175,7 @@ class sightline(generator):
         self.shape = [len(line), 1]         
         return line
 
-   
+
 
 class plane(generator):
     
@@ -232,6 +233,8 @@ class plane(generator):
         #Return a list of points in the plane in polar Coords
         return [self.cart2sph(pos) for pos in self.cPlane(N, iL)]
 
+
+
 class defGrid:
 
     def __init__(self):
@@ -256,13 +259,14 @@ class defGrid:
         #This line starts from north pole and goes out radially
         self.poleLine = sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')
 
-    def impactLines(self, b0 = 1.05, b1= 1.5, N=5):
+    def impactLines(self, N=5, b0 = 1.05, b1= 1.5):
         lines = []
         x = 20
         y = 1e-8
-        for zz in np.linspace(b0,b1,N):
+        bax = np.linspace(b0,b1,N)
+        for zz in bax:
             lines.append(sightline([x,y,zz], [-x,y,zz]))
-        return lines
+        return [lines, bax]
        
                         
 def maximizePlot():
