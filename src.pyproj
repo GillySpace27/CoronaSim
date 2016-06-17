@@ -23,9 +23,6 @@
     <PtvsTargetsFile>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets</PtvsTargetsFile>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="density.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <Compile Include="coronasim.py" />
     <Compile Include="gridgen.py" />
     <Compile Include="main.py" />
