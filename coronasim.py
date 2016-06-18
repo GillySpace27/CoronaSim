@@ -81,7 +81,7 @@ class simpoint:
         if Bfile is None: self.Bfile = simpoint.def_Bfile 
         else: self.Bfile = self.relPath(Bfile)
         if simpoint.BMap is None: 
-            print('    Loading Data Files...', end = '', flush = True)
+            #print('    Loading Data Files...', end = '', flush = True)
             self.loadBMap()
 
         #Load Xi
@@ -506,22 +506,22 @@ class simulate:
         
 
     def simulate_now(self):
-        bar = pb.ProgressBar(self.Npoints)
+        #bar = pb.ProgressBar(self.Npoints)
         self.sPoints = []
         self.pData = []
-        print("Beginning Simulation...")
+        #print("Beginning Simulation...")
         chunkSize = 1e5
         if True: #self.Npoints < chunkSize:
             #Serial Way
-            t = time.time()
+            #t = time.time()
             for cPos in self.cPoints: 
                 thisPoint = simpoint(cPos, self.findT, self.grid) 
                 self.sPoints.append(thisPoint)
                 self.pData.append(thisPoint.Vars())
-                bar.increment()
-                bar.display()
-            bar.display(force = True)
-            print('Elapsed Time: ' + str(time.time() - t))
+                #bar.increment()
+                #bar.display()
+            #bar.display(force = True)
+            #print('Elapsed Time: ' + str(time.time() - t))
         else:
             #Parallel Way
             print('    Initializing Pool...')
@@ -536,8 +536,8 @@ class simulate:
             pool.close()
             pool.join()
 
-        print('')
-        print('')
+        #print('')
+        #print('')
 
     def get(self, myProperty, dim = None, scaling = 'None'):
         propp = np.array([x[myProperty] for x in self.pData])
@@ -861,6 +861,104 @@ class coronasim:
 
 
 
+class coronasim_MPI:
+
+    def __init__(self, lineObj, N = None, findT = False):
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.root = self.rank == 0
+        self.size = self.comm.Get_size()
+
+        self.gridLabels = lineObj[1]
+
+        if self.root: 
+            print('Beginning Program')
+            t = time.time()
+
+        gridList = self.seperate(lineObj[0], self.size)
+        self.gridList = gridList[self.rank]
+
+        #print("Process " + str(self.rank) + " has " + str(len(self.gridList)) + " lines.")
+        self.simList = []
+
+        nn = 0
+
+        if self.root: bar = pb.ProgressBar(len(self.gridList))
+
+        for grd in self.gridList:
+            #if self.root: print('b = ' + str(self.gridLabels[nn]))
+            self.simList.append(simulate(grd, N, findT = findT))
+            if self.root:
+                bar.increment()
+                bar.display()
+            nn += 1
+        if self.root: bar.display(force = True)
+        #print("Process " + str(self.rank) + " complete.")
+        
+        self.findLineStats()
+        
+        lineStats = self.comm.gather(self.lineStats, root = 0)
+
+        if self.root:
+            self.lineStats = []
+            for stat in lineStats:
+                self.lineStats.extend(stat)
+            print('')
+            print(len(lineStats))
+            print(len(self.lineStats))
+            print('Elapsed Time: ' + str(time.time() - t))
+            self.plotStats()
+
+        #if self.root: 
+        #    print("Stats")
+        #    print(len(self.lineStats))
+        #    print("List")
+        #    print(len(self.gridList))
+        #    print("Labels")
+        #    print(len(self.gridLabels))
+
+            #self.plotStats()
+
+   
+    def seperate(self, list, N):
+        chunkSize = len(list)/N
+        chunkSizeInt = int(chunkSize) + 1
+        #print(chunkSizeInt)
+        return self.make_chunks(list, chunkSizeInt)
+    
+    def make_chunks(self, list, n):
+        n = max(1, n)
+        return [list[i:i + n] for i in range(0, len(list), n)]
+
+
+    def findLineStats(self):
+        if self.root: 
+            print('Calculating Line Statistics...')
+            bar = pb.ProgressBar(len(self.simList))
+        self.lineStats = []
+        for line in self.simList:
+            self.lineStats.append(line.getStats())
+            if self.root:
+                bar.increment()
+                bar.display()
+        if self.root: bar.display(force = True)
+        return self.lineStats
+
+    def plotStats(self):
+        f, axArray = plt.subplots(3, 1, sharex=True)
+        mm = 0
+        titles = ['amp', 'mean', 'sigma']
+        ylabels = ['', 'Angstroms', 'Angstroms']
+        for ax in axArray:
+            if mm == 0:
+                ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
+            else:
+                ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
+            ax.set_title(titles[mm])
+            ax.set_ylabel(ylabels[mm])
+            mm += 1
+        ax.set_xlabel('Impact Parameter')
+        plt.show()
     #def gauss_function(x, a, x0, sigma):
     #    return a*np.exp(-(x-x0)**2/(2*sigma**2))
 

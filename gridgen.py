@@ -238,7 +238,7 @@ class plane(generator):
 class defGrid:
 
     def __init__(self):
-        print('Generating Default Grids...')
+        #print('Generating Default Grids...')
         #Above the Pole        
         iL = 1
         normal1 = [0,0,1] 

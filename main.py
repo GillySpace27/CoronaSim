@@ -15,8 +15,8 @@ if __name__ == '__main__':
 
     ##Simulate Common Grids
     df = grid.defGrid()
-
-    ### Level 0 ### Simpoint 
+ 
+   ### Level 0 ### Simpoint 
     ###############
 
     #thisPoint = sim.simPoint(grid = df.bpolePlane) 
@@ -31,7 +31,7 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    bpoleSim = sim.simulate(df.bpolePlane, N = 1000, findT = False)
+    #bpoleSim = sim.simulate(df.bpolePlane, N = 1000, findT = False)
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     ##bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
@@ -40,11 +40,13 @@ if __name__ == '__main__':
 
     ### Level 2 ### CoronaSim
     ###############
-
-    #lines = df.impactLines(50)
-    #impactSims = sim.coronasim(lines, 1e4, False)
-    #impactSims.findLineStats()
-    #impactSims.plotStats()
+    
+    t = time.time()
+    lines = df.impactLines(50)
+    impactSims = sim.coronasim(lines, N = 1000, findT = True)
+    impactSims.findLineStats()
+    print('Elapsed Time: ' + str(time.time() - t))
+    impactSims.plotStats()
     
 
 
