@@ -32,9 +32,10 @@ if __name__ == '__main__':
     ## bpoleSim ##
     #t = time.time()
     bpoleSim = sim.simulate(df.bpolePlane, N = 1000, findT = False)
+    #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     ##bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    bpoleSim.plot('twave')
+    #bpoleSim.plot('twave')
 
 
     ### Level 2 ### CoronaSim

@@ -26,6 +26,9 @@
     <Compile Include="coronasim.py" />
     <Compile Include="gridgen.py" />
     <Compile Include="main.py" />
+    <Compile Include="MPI_main.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="scripts\density_sim.py" />
   </ItemGroup>
   <ItemGroup>

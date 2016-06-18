@@ -26,13 +26,14 @@ from skimage.feature import peak_local_max
 import gridgen as grid
 import progressBar as pb
 import math
+import time
 from astropy import units as u
 
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 from functools import partial
 
-
+from mpi4py import MPI
 
 
 np.seterr(invalid = 'ignore')
@@ -460,14 +461,59 @@ class simulate:
 
         self.simulate_now()
 
+    def simulate_MPI(self):
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        assert len(self.cPoints) % size == 0
+        chunksize = len(self.cPoints) / size
+        if rank == 0: t = time.time()
+        local_data = []
+        local_simpoints = []
+        local_pdata = []
+        #if rank ==0:
+        #    data = self.cPoints
+        #else:
+        #    data = None
+        #local_data = comm.scatter(data, root = 0)
+        #if rank == 0:
+        low = int(rank*chunksize)
+        high = int(((rank+1)*chunksize))
+        local_data = self.cPoints[low:high]
+        #else: local_data = self.cPoints[int(rank*chunksize+1):int(((rank+1)*chunksize))]
+        for cPos in local_data:
+            thisPoint = simpoint(cPos, self.findT, self.grid) 
+            local_simpoints.append(thisPoint)
+            local_pdata.append(thisPoint.Vars())
+
+        sListList = comm.gather(local_simpoints, root=0)
+        pdatList = comm.gather(local_pdata, root=0)
+        if rank ==0:
+            self.sPoints = []
+            self.pData = []
+            for list in sListList:
+                self.sPoints.extend(list)
+            for pdat in pdatList:
+                self.pData.extend(pdat)
+            print("length = ")
+            print(len(self.pData))
+            print('GO')
+            print('Elapsed Time: ' + str(time.time() - t))
+
+        else: 
+            print("Proccess " + str(rank) + " Complete")
+            sys.exit(0)
+        
+
     def simulate_now(self):
         bar = pb.ProgressBar(self.Npoints)
         self.sPoints = []
         self.pData = []
         print("Beginning Simulation...")
         chunkSize = 1e5
-        if self.Npoints < chunkSize:
+        if True: #self.Npoints < chunkSize:
             #Serial Way
+            t = time.time()
             for cPos in self.cPoints: 
                 thisPoint = simpoint(cPos, self.findT, self.grid) 
                 self.sPoints.append(thisPoint)
@@ -475,6 +521,7 @@ class simulate:
                 bar.increment()
                 bar.display()
             bar.display(force = True)
+            print('Elapsed Time: ' + str(time.time() - t))
         else:
             #Parallel Way
             print('    Initializing Pool...')
