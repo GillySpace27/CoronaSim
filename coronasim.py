@@ -876,6 +876,7 @@ class coronasim_MPI:
             t = time.time()
 
         gridList = self.seperate(lineObj[0], self.size)
+        #print(len(gridList))
         self.gridList = gridList[self.rank]
 
         #print("Process " + str(self.rank) + " has " + str(len(self.gridList)) + " lines.")
@@ -904,9 +905,8 @@ class coronasim_MPI:
             for stat in lineStats:
                 self.lineStats.extend(stat)
             print('')
-            print(len(lineStats))
-            print(len(self.lineStats))
             print('Elapsed Time: ' + str(time.time() - t))
+            sys.stdout.flush()
             self.plotStats()
 
         #if self.root: 
@@ -922,9 +922,13 @@ class coronasim_MPI:
    
     def seperate(self, list, N):
         chunkSize = len(list)/N
-        chunkSizeInt = int(chunkSize) + 1
+        chunkSizeInt = int(chunkSize)
         #print(chunkSizeInt)
-        return self.make_chunks(list, chunkSizeInt)
+        chunks =  self.make_chunks(list, chunkSizeInt)
+        while len(chunks) > N:
+            NL = len(chunks) - 1
+            chunks[NL - 1].extend(chunks.pop())
+        return chunks
     
     def make_chunks(self, list, n):
         n = max(1, n)
