@@ -8,7 +8,7 @@ import time
 
 
 df = grid.defGrid()
-lines = df.impactLines(400)
+lines = df.impactLines(50)
 
 
-linestats = sim.coronasim_MPI(lines, N = 1000, findT = True)
+linestats = sim.coronasim(lines, N = 1000, findT = True, MPI = True)

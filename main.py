@@ -41,12 +41,10 @@ if __name__ == '__main__':
     ### Level 2 ### CoronaSim
     ###############
     
-    t = time.time()
+
     lines = df.impactLines(50)
     impactSims = sim.coronasim(lines, N = 1000, findT = True)
-    impactSims.findLineStats()
-    print('Elapsed Time: ' + str(time.time() - t))
-    impactSims.plotStats()
+
     
 
 

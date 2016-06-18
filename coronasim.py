@@ -820,63 +820,91 @@ class simulate:
 ####################################################################
 
 
+#class coronasim:
+
+#    def __init__(self, lineObj, N = None, findT = False):
+#        self.simList = []
+#        self.gridList = lineObj[0]
+#        self.gridLabels = lineObj[1]
+#        nn = 0
+#        for grd in self.gridList:
+#            print('b = ' + str(self.gridLabels[nn]))
+#            self.simList.append(simulate(grd, N, findT = findT))
+#            nn += 1
+
+#    def findLineStats(self):
+#        print('Calculating Line Statistics...')
+#        bar = pb.ProgressBar(len(self.simList))
+#        self.lineStats = []
+#        for line in self.simList:
+#            self.lineStats.append(line.getStats())
+#            bar.increment()
+#            bar.display()
+#        bar.display(force = True)
+#        return self.lineStats
+
+#    def plotStats(self):
+#        f, axArray = plt.subplots(3, 1, sharex=True)
+#        mm = 0
+#        titles = ['amp', 'mean', 'sigma']
+#        ylabels = ['', 'Angstroms', 'Angstroms']
+#        for ax in axArray:
+#            if mm == 0:
+#                ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
+#            else:
+#                ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
+#            ax.set_title(titles[mm])
+#            ax.set_ylabel(ylabels[mm])
+#            mm += 1
+#        ax.set_xlabel('Impact Parameter')
+#        plt.show(False)
+
+
+
 class coronasim:
 
-    def __init__(self, lineObj, N = None, findT = False):
+    def __init__(self, lineObj, N = None, findT = False, MPI = False):
+        self.lineObj = lineObj
+        self.N = N
+        self.findT = findT
+
+        if MPI: self.MPI_init()
+        else: self.init()
+
+    def init(self):
+        t = time.time()
+        self.root = True
         self.simList = []
-        self.gridList = lineObj[0]
-        self.gridLabels = lineObj[1]
+        self.gridList = self.lineObj[0]
+        self.gridLabels = self.lineObj[1]
+        bar = pb.ProgressBar(len(self.gridList))
         nn = 0
         for grd in self.gridList:
-            print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, N, findT = findT))
-            nn += 1
-
-    def findLineStats(self):
-        print('Calculating Line Statistics...')
-        bar = pb.ProgressBar(len(self.simList))
-        self.lineStats = []
-        for line in self.simList:
-            self.lineStats.append(line.getStats())
+            #print('b = ' + str(self.gridLabels[nn]))
+            self.simList.append(simulate(grd, self.N, findT = self.findT))
             bar.increment()
             bar.display()
+            nn += 1
         bar.display(force = True)
-        return self.lineStats
-
-    def plotStats(self):
-        f, axArray = plt.subplots(3, 1, sharex=True)
-        mm = 0
-        titles = ['amp', 'mean', 'sigma']
-        ylabels = ['', 'Angstroms', 'Angstroms']
-        for ax in axArray:
-            if mm == 0:
-                ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
-            else:
-                ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
-            ax.set_title(titles[mm])
-            ax.set_ylabel(ylabels[mm])
-            mm += 1
-        ax.set_xlabel('Impact Parameter')
-        plt.show(False)
+        self.findLineStats()
+        print('Elapsed Time: ' + str(time.time() - t))
+        sys.stdout.flush()
+        self.plotStats()
 
 
-
-class coronasim_MPI:
-
-    def __init__(self, lineObj, N = None, findT = False):
+    def MPI_init(self):
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
 
-        self.gridLabels = lineObj[1]
+        self.gridLabels = self.lineObj[1]
 
         if self.root: 
             print('Beginning Program')
             t = time.time()
 
-        gridList = self.seperate(lineObj[0], self.size)
-        #print(len(gridList))
+        gridList = self.seperate(self.lineObj[0], self.size)
         self.gridList = gridList[self.rank]
 
         #print("Process " + str(self.rank) + " has " + str(len(self.gridList)) + " lines.")
@@ -888,7 +916,7 @@ class coronasim_MPI:
 
         for grd in self.gridList:
             #if self.root: print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, N, findT = findT))
+            self.simList.append(simulate(grd, self.N, findT = self.findT))
             if self.root:
                 bar.increment()
                 bar.display()
@@ -899,25 +927,15 @@ class coronasim_MPI:
         self.findLineStats()
         
         lineStats = self.comm.gather(self.lineStats, root = 0)
-
         if self.root:
             self.lineStats = []
             for stat in lineStats:
                 self.lineStats.extend(stat)
+
             print('')
             print('Elapsed Time: ' + str(time.time() - t))
             sys.stdout.flush()
             self.plotStats()
-
-        #if self.root: 
-        #    print("Stats")
-        #    print(len(self.lineStats))
-        #    print("List")
-        #    print(len(self.gridList))
-        #    print("Labels")
-        #    print(len(self.gridLabels))
-
-            #self.plotStats()
 
    
     def seperate(self, list, N):
