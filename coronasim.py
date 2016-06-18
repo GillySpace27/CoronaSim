@@ -35,12 +35,14 @@ from functools import partial
 
 from mpi4py import MPI
 
-
 np.seterr(invalid = 'ignore')
 
-### Figure out BThresh
 
+#Level 0: Simulates physical parameters at a given coordinate
 class simpoint:
+    #Level 0: Simulates physical parameters at a given coordinate
+
+    #TODO make a inputs object that can be passed to each simpoint instead of using class variables
     script_dir = os.path.dirname(os.path.abspath(__file__)) 
 
     rel_def_Bfile = '..\\dat\\mgram_iseed0033.sav'    
@@ -258,6 +260,7 @@ class simpoint:
 
     def findTSpeeds(self, t = 0):
         #Find all of the time dependent velocities
+        #TODO Import two different waves and assign velocities correctly
         self.waveV = self.vRms*self.xi(t - self.twave + self.streamT)
         self.uTheta = self.waveV * np.sin(self.streamAngle)
         self.uPhi = self.waveV * np.cos(self.streamAngle)
@@ -428,15 +431,15 @@ class simpoint:
     def Vars(self):
         return vars(self) 
 
-
 ####################################################################
 ####################################################################
 ####################################################################
 ####################################################################
 
 
-class simulate:
-
+#Level 1: Initializes many Simpoints into a Simulation
+class simulate: 
+    #Level 1: Initializes many Simpoints into a Simulation
     def __init__(self, gridobj, N = None, iL = None, findT = False):
         #print("Initializing Simulation...")
         self.grid  = gridobj
@@ -820,49 +823,9 @@ class simulate:
 ####################################################################
 
 
-#class coronasim:
-
-#    def __init__(self, lineObj, N = None, findT = False):
-#        self.simList = []
-#        self.gridList = lineObj[0]
-#        self.gridLabels = lineObj[1]
-#        nn = 0
-#        for grd in self.gridList:
-#            print('b = ' + str(self.gridLabels[nn]))
-#            self.simList.append(simulate(grd, N, findT = findT))
-#            nn += 1
-
-#    def findLineStats(self):
-#        print('Calculating Line Statistics...')
-#        bar = pb.ProgressBar(len(self.simList))
-#        self.lineStats = []
-#        for line in self.simList:
-#            self.lineStats.append(line.getStats())
-#            bar.increment()
-#            bar.display()
-#        bar.display(force = True)
-#        return self.lineStats
-
-#    def plotStats(self):
-#        f, axArray = plt.subplots(3, 1, sharex=True)
-#        mm = 0
-#        titles = ['amp', 'mean', 'sigma']
-#        ylabels = ['', 'Angstroms', 'Angstroms']
-#        for ax in axArray:
-#            if mm == 0:
-#                ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
-#            else:
-#                ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
-#            ax.set_title(titles[mm])
-#            ax.set_ylabel(ylabels[mm])
-#            mm += 1
-#        ax.set_xlabel('Impact Parameter')
-#        plt.show(False)
-
-
-
+#Level 2: Initializes many simulations and performs statistics on them.
 class coronasim:
-
+    #Level 2: Initializes many simulations and performs statistics on them.
     def __init__(self, lineObj, N = None, findT = False, MPI = False):
         self.lineObj = lineObj
         self.N = N
@@ -872,6 +835,7 @@ class coronasim:
         else: self.init()
 
     def init(self):
+        #Serial Version
         t = time.time()
         self.root = True
         self.simList = []
@@ -901,11 +865,12 @@ class coronasim:
         self.gridLabels = self.lineObj[1]
 
         if self.root: 
-            print('Beginning Program')
+            print('Beginning Program', end = ': ')
             t = time.time()
 
         gridList = self.seperate(self.lineObj[0], self.size)
         self.gridList = gridList[self.rank]
+        if self.root: print('ChunkSize = ' + str(len(self.gridList)))
 
         #print("Process " + str(self.rank) + " has " + str(len(self.gridList)) + " lines.")
         self.simList = []
@@ -937,20 +902,20 @@ class coronasim:
             sys.stdout.flush()
             self.plotStats()
 
-   
     def seperate(self, list, N):
         chunkSize = len(list)/N
         chunkSizeInt = int(chunkSize)
-        #print(chunkSizeInt)
-        chunks =  self.make_chunks(list, chunkSizeInt)
-        while len(chunks) > N:
-            NL = len(chunks) - 1
-            chunks[NL - 1].extend(chunks.pop())
-        return chunks
+        remainder = int((chunkSize % chunkSizeInt) * N)
     
-    def make_chunks(self, list, n):
-        n = max(1, n)
-        return [list[i:i + n] for i in range(0, len(list), n)]
+        chunks = [ [] for _ in range(N)] 
+        for NN in np.arange(N):
+            thisLen = chunkSizeInt
+            if remainder > 0:
+                thisLen += 1
+                remainder -= 1
+            for nn in np.arange(thisLen):
+                chunks[NN].extend([list.pop(0)])
+        return chunks
 
 
     def findLineStats(self):
@@ -981,6 +946,46 @@ class coronasim:
             mm += 1
         ax.set_xlabel('Impact Parameter')
         plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     #def gauss_function(x, a, x0, sigma):
     #    return a*np.exp(-(x-x0)**2/(2*sigma**2))
 

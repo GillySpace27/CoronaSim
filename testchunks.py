@@ -1,14 +1,19 @@
-
+import numpy as np
 
 
 def seperate(list, N):
     chunkSize = len(list)/N
     chunkSizeInt = int(chunkSize)
-    #print(chunkSizeInt)
-    chunks =  make_chunks(list, chunkSizeInt)
-    while len(chunks) > N:
-        NL = len(chunks) - 1
-        chunks[NL - 1].extend(chunks.pop())
+    remainder = int((chunkSize % chunkSizeInt) * N)
+    
+    chunks = [ [] for _ in range(N)] 
+    for proc in np.arange(N):
+        thisLen = chunkSizeInt
+        if remainder > 0:
+            thisLen += 1
+            remainder -= 1
+        for nn in np.arange(thisLen):
+            chunks[proc].extend([list.pop(0)])
     return chunks
         
     
@@ -19,13 +24,18 @@ def make_chunks(list, n):
 N = 8
 
 list = []
-for ii in range(157):
+for ii in range(146):
     list.append(ii)
+
+#print(len(list))
+#for li in range(10):
+#    a = list.pop(0)
+#    print(a)
 
 #mychunks = chunks(list, n)
 
 mychunks = seperate(list, N)
-
+print(mychunks[0])
 print("Chunks: " +str(len(mychunks)))
 
 for chunk in mychunks:
