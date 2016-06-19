@@ -175,6 +175,7 @@ class sightline(generator):
         self.shape = [len(line), 1]         
         return line
 
+#TODO create cylinder
 
 
 class plane(generator):

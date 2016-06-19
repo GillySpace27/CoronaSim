@@ -38,11 +38,9 @@ from mpi4py import MPI
 np.seterr(invalid = 'ignore')
 
 
-#Level 0: Simulates physical parameters at a given coordinate
-class simpoint:
-    #Level 0: Simulates physical parameters at a given coordinate
-
-    #TODO make a inputs object that can be passed to each simpoint instead of using class variables
+#Environment Class contains simulation parameters
+class environment:
+    #Environment Class contains simulation parameters
     script_dir = os.path.dirname(os.path.abspath(__file__)) 
 
     rel_def_Bfile = '..\\dat\\mgram_iseed0033.sav'    
@@ -71,83 +69,56 @@ class simpoint:
 
     streamRand = np.random.RandomState()
     #thermRand = np.random.RandomState()
-    
-    def __init__(self, cPos = [0,0,1.5], findT = False, grid = None, Bfile = None, xiFile = None, bkFile = None, pbar = None):
-        #Inputs
-        self.cPos = cPos
-        self.pPos = self.cart2sph(self.cPos)
-        self.rx = self.r2rx(self.pPos[0])
-        self.grid = grid
+
+    def __init__(self, findT = False, Bfile = None, xiFile = None, bkFile = None):
+        print('    Loading Data Files...', end = '', flush = True)
 
         #Load Bmap
-        if Bfile is None: self.Bfile = simpoint.def_Bfile 
+        if Bfile is None: self.Bfile = self.def_Bfile 
         else: self.Bfile = self.relPath(Bfile)
-        if simpoint.BMap is None: 
-            #print('    Loading Data Files...', end = '', flush = True)
-            self.loadBMap()
+        self.loadBMap()
 
         #Load Xi
-        if xiFile is None: self.xiFile = simpoint.def_xiFile 
+        if xiFile is None: self.xiFile = self.def_xiFile 
         else: self.xiFile = self.relPath(xiFile)
-        if simpoint.xi_raw is None:
-            x = np.loadtxt(self.xiFile, skiprows=1)
-            simpoint.xi_t = x[:,0]
-            simpoint.xi_raw = x[:,1]
-            simpoint.last_xi_t = x[-1,0]
+        x = np.loadtxt(self.xiFile, skiprows=1)
+        self.xi_t = x[:,0]
+        self.xi_raw = x[:,1]
+        self.last_xi_t = x[-1,0]
 
         #Load Plasma Background
-        if bkFile is None: self.bkFile = simpoint.def_bkFile 
+        if bkFile is None: self.bkFile = self.def_bkFile 
         else: self.bkFile = self.relPath(bkFile)
-        if simpoint.bk_dat is None:
-            x = np.loadtxt(self.bkFile, skiprows=10)
-            simpoint.bk_dat = x
-            simpoint.rx_raw = x[:,0]
-            simpoint.rho_raw = x[:,1]
-            simpoint.ur_raw = x[:,2]
-            simpoint.vAlf_raw = x[:,3]
-            simpoint.T_raw = x[:,4]
-            
+        x = np.loadtxt(self.bkFile, skiprows=10)
+        self.bk_dat = x
+        self.rx_raw = x[:,0]
+        self.rho_raw = x[:,1]
+        self.ur_raw = x[:,2]
+        self.vAlf_raw = x[:,3]
+        self.T_raw = x[:,4]
 
-        #Initialization
-        self.findTemp()
-        self.findFootB()
-        self.findDensity()
-        self.findTwave(findT)
-        self.findStreamIndex()
-        self.findSpeeds()
-        self.findVLOS(self.grid.ngrad)
-        self.findIntensity()
-        if pbar is not None:
-            pbar.increment()
-            pbar.display()
-
-
-
-
-  ## Temperature ######################################################################
-
-    def findTemp(self):
-        self.T = self.interp_rx_dat(simpoint.T_raw)
-
-
-
+    def relPath(self, path):
+        #Converts a relative path to an absolute path
+        script_dir = os.path.dirname(os.path.abspath(__file__))   
+        rel = os.path.join(script_dir, path)    
+        return rel
 
   ## Magnets ##########################################################################
         
     def loadBMap(self):
         Bobj = io.readsav(self.Bfile)
-        simpoint.BMap_raw = Bobj.get('data_cap')
+        self.BMap_raw = Bobj.get('data_cap')
         #plt.imshow((np.abs(simpoint.BMap_raw)), cmap = "winter_r")
         #plt.colorbar()
         #plt.show()
-        simpoint.BMap_x = Bobj.get('x_cap')
-        simpoint.BMap_y = Bobj.get('y_cap')
-        simpoint.BMap = interp.RectBivariateSpline(simpoint.BMap_x, simpoint.BMap_y, simpoint.BMap_raw)
+        self.BMap_x = Bobj.get('x_cap')
+        self.BMap_y = Bobj.get('y_cap')
+        self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_raw)
         self.labelStreamers()
 
     def labelStreamers(self, thresh = 0.7):
         #Label the Streamers
-        bdata = np.abs(simpoint.BMap_raw)
+        bdata = np.abs(self.BMap_raw)
         validMask = bdata != 0
 
         blist = bdata.flatten().tolist()
@@ -159,8 +130,8 @@ class simpoint:
         coordinates = []
         for co in coord: coordinates.append(co[::-1])
 
-        simpoint.label_im, simpoint.nb_labels = self.voronoify_sklearn(label_im, coordinates)
-        simpoint.label_im *= validMask
+        self.label_im, self.nb_labels = self.voronoify_sklearn(label_im, coordinates)
+        self.label_im *= validMask
         #plt.imshow(simpoint.label_im, cmap = 'prism')
         #for co in coordinates:
         #    plt.scatter(*co)
@@ -185,25 +156,68 @@ class simpoint:
             I2[idx[:,0], idx[:,1]] = label
         return I2, label
 
+####################################################################
+####################################################################
+
+
+
+#Level 0: Simulates physical parameters at a given coordinate
+class simpoint:
+    #Level 0: Simulates physical parameters at a given coordinate
+
+
+    
+    def __init__(self, cPos = [0,0,1.5], findT = False, grid = None, env = None, pbar = None):
+        #Inputs
+        self.grid = grid
+        self.env = env
+        self.cPos = cPos
+        self.pPos = self.cart2sph(self.cPos)
+        self.rx = self.r2rx(self.pPos[0])
+
+
+        #Initialization
+        self.findTemp()
+        self.findFootB()
+        self.findDensity()
+        self.findTwave(findT)
+        self.findStreamIndex()
+        self.findSpeeds()
+        self.findVLOS(self.grid.ngrad)
+        self.findIntensity()
+        if pbar is not None:
+            pbar.increment()
+            pbar.display()
+
+
+  ## Temperature ######################################################################
+
+    def findTemp(self):
+        self.T = self.interp_rx_dat(self.env.T_raw)
+
+
+  ## Magnets ##########################################################################
+        
+
     def findfoot_Pos(self):
         #Find the footpoint of the field line
-        Hfit  = 2.2*(self.fmax/10.)**0.62
-        self.f     = self.fmax + (1.-self.fmax)*np.exp(-((self.rx-1.)/Hfit)**1.1)
-        theta0_edge = self.theta0 * np.pi/180.
+        Hfit  = 2.2*(self.env.fmax/10.)**0.62
+        self.f     = self.env.fmax + (1.-self.env.fmax)*np.exp(-((self.rx-1.)/Hfit)**1.1)
+        theta0_edge = self.env.theta0 * np.pi/180.
         theta_edge  = np.arccos(1. - self.f + self.f*np.cos(theta0_edge))
         edge_frac   = theta_edge/theta0_edge 
         coLat = self.pPos[1] /edge_frac
-        self.foot_pPos = [self.rstar+1e-8, coLat, self.pPos[2]]
+        self.foot_pPos = [self.env.rstar+1e-8, coLat, self.pPos[2]]
         self.foot_cPos = self.sph2cart(self.foot_pPos)
         
     def findFootB(self):
         #Find B
         self.findfoot_Pos()
-        self.footB = self.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
+        self.footB = self.env.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
 
     def findStreamIndex(self):
-        self.streamIndex = self.label_im[self.find_nearest(self.BMap_x, self.foot_cPos[0])][
-                                            self.find_nearest(self.BMap_y, self.foot_cPos[1])]
+        self.streamIndex = self.env.label_im[self.find_nearest(self.env.BMap_x, self.foot_cPos[0])][
+                                            self.find_nearest(self.env.BMap_y, self.foot_cPos[1])]
 
  
 
@@ -222,13 +236,13 @@ class simpoint:
 
     def findDensFac(self):
         # Find the density factor
-        if np.abs(self.footB) < np.abs(self.B_thresh):
+        if np.abs(self.footB) < np.abs(self.env.B_thresh):
             return 1
         else:
-            return (np.abs(self.footB) / self.B_thresh)**0.5
+            return (np.abs(self.footB) / self.env.B_thresh)**0.5
 
     def findRho(self):
-        return self.interp_rx_dat(self.rho_raw) * self.densfac
+        return self.interp_rx_dat(self.env.rho_raw) * self.densfac
         
     #def minNumDense(self, rx):
     #    #Find the number density floor
@@ -252,9 +266,9 @@ class simpoint:
         self.vPh = self.findVPh()
         self.vRms = self.findvRms()
 
-        simpoint.streamRand.seed(int(self.streamIndex))
-        thisRand = simpoint.streamRand.random_sample(2)
-        self.streamT =  thisRand[0] * simpoint.last_xi_t
+        self.env.streamRand.seed(int(self.streamIndex))
+        thisRand = self.env.streamRand.random_sample(2)
+        self.streamT =  thisRand[0] * self.env.last_xi_t
         self.streamAngle = thisRand[1] * 2 * np.pi
         self.findTSpeeds(t)
 
@@ -269,12 +283,12 @@ class simpoint:
        
     def findUr(self):
         #Wind Velocity
-        return self.interp_rx_dat(self.ur_raw) / self.densfac
+        return self.interp_rx_dat(self.env.ur_raw) / self.densfac
         #return (1.7798e13) * self.fmax / (self.num_den * self.rx * self.rx * self.f)
 
     def findAlf(self):
         #Alfen Velocity
-        return self.interp_rx_dat(self.vAlf_raw) / np.sqrt(self.densfac)
+        return self.interp_rx_dat(self.env.vAlf_raw) / np.sqrt(self.densfac)
         #return 10.0 / (self.f * self.rx * self.rx * np.sqrt(4.*np.pi*self.rho))
     
     def findVPh(self):
@@ -332,7 +346,7 @@ class simpoint:
             time = 0
             rLine = radial.cLine(N)
             for cPos in rLine:
-                time += (1/simpoint(cPos, False, radial).vPh) / N
+                time += (1/simpoint(cPos, findT = False, grid = radial, env = self.env).vPh) / N
             self.twave = time * self.r2rx(radial.norm) * 69.63e9 #radius of sun in cm
         else:
             self.twave = self.twave_fit  
@@ -348,10 +362,10 @@ class simpoint:
         if math.isnan(t):
             return math.nan
         else:
-            t_int = int(t % simpoint.last_xi_t)
-            xi1 = self.xi_raw[t_int]
-            xi2 = self.xi_raw[t_int+1]
-            return xi1+( (t%simpoint.last_xi_t) - t_int )*(xi2-xi1)
+            t_int = int(t % self.env.last_xi_t)
+            xi1 = self.env.xi_raw[t_int]
+            xi2 = self.env.xi_raw[t_int+1]
+            return xi1+( (t%self.env.last_xi_t) - t_int )*(xi2-xi1)
 
 
 
@@ -364,8 +378,8 @@ class simpoint:
 
         self.qt = 1
 
-        self.lamLos =  self.vLOS * self.lam0 / simpoint.c
-        self.deltaLam = self.lam0 / simpoint.c * np.sqrt(2 * simpoint.KB * self.T / simpoint.mi)
+        self.lamLos =  self.vLOS * self.lam0 / self.env.c
+        self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mi)
         self.lamPhi = 1/(self.deltaLam * np.sqrt(np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/self.deltaLam)**2)
         self.intensity = self.rho**2 * self.qt * self.lamPhi * 1e33
         return self.intensity
@@ -383,18 +397,18 @@ class simpoint:
     def interp_rx_dat(self, array):
         #Interpolates an array(rx)
         if self.rx < 1. : return math.nan
-        rxInd = int(self.find_nearest(simpoint.rx_raw, self.rx))
+        rxInd = int(self.find_nearest(self.env.rx_raw, self.rx))
         val1 = array[rxInd]
         val2 = array[rxInd+1]
         slope = val2 - val1
-        step = simpoint.rx_raw[rxInd+1] - simpoint.rx_raw[rxInd]
-        discreteRx = simpoint.rx_raw[rxInd]
+        step = self.env.rx_raw[rxInd+1] - self.env.rx_raw[rxInd]
+        discreteRx = self.env.rx_raw[rxInd]
         diff = self.rx - discreteRx
         diffstep = diff / step
         return val1+ diffstep*(slope)
 
     def r2rx(self, r):
-        return r/self.rstar
+        return r/self.env.rstar
                           
     def sph2cart(self, sph):
         #Change coordinate systems
@@ -433,26 +447,27 @@ class simpoint:
 
 ####################################################################
 ####################################################################
-####################################################################
-####################################################################
+
 
 
 #Level 1: Initializes many Simpoints into a Simulation
 class simulate: 
     #Level 1: Initializes many Simpoints into a Simulation
-    def __init__(self, gridobj, N = None, iL = None, findT = False):
+    def __init__(self, gridObj, envObj, N = None, iL = None, findT = False):
         #print("Initializing Simulation...")
-        self.grid  = gridobj
-        #print(self.grid.ngrad)
+        self.grid  = gridObj
         self.findT = findT
+        self.env = envObj
+
         if iL is None: self.iL = self.grid.iL
         else: self.iL = iL
         if N is None: self.N = self.grid.default_N/100
         else: self.N = N
-        if type(gridobj) is grid.sightline:
+
+        if type(self.grid) is grid.sightline:
             self.cPoints = self.grid.cLine(self.N, smax = self.iL)
 
-        elif type(gridobj) is grid.plane:
+        elif type(self.grid) is grid.plane:
             self.cPoints = self.grid.cPlane(self.N, self.iL)
         else: 
             print("Invalid Grid")
@@ -518,7 +533,7 @@ class simulate:
             #Serial Way
             #t = time.time()
             for cPos in self.cPoints: 
-                thisPoint = simpoint(cPos, self.findT, self.grid) 
+                thisPoint = simpoint(cPos, self.findT, self.grid, self.env) 
                 self.sPoints.append(thisPoint)
                 self.pData.append(thisPoint.Vars())
                 #bar.increment()
@@ -530,7 +545,7 @@ class simulate:
             print('    Initializing Pool...')
             pool = Pool()
             #thisPoint = simpoint(grid = self.grid)
-            for pnt in pool.imap(partial(simpoint, findT = self.findT, grid = self.grid), self.cPoints, 1000):
+            for pnt in pool.imap(partial(simpoint, findT = self.findT, grid = self.grid, env = self.env), self.cPoints, 1000):
                 self.sPoints.append(pnt)
                 self.pData.append(pnt.Vars())
                 bar.increment()
@@ -662,9 +677,6 @@ class simulate:
         self.centroid = self.moment[1] / self.moment[0]
         self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
         return [self.power, self.centroid, self.sigma]
-
-
-
 
 
 ## Time Dependence ######################################################
@@ -819,15 +831,15 @@ class simulate:
 
 ####################################################################
 ####################################################################
-####################################################################
-####################################################################
+
 
 
 #Level 2: Initializes many simulations and performs statistics on them.
 class coronasim:
     #Level 2: Initializes many simulations and performs statistics on them.
-    def __init__(self, lineObj, N = None, findT = False, MPI = False):
+    def __init__(self, lineObj, env, N = None, findT = False, MPI = False):
         self.lineObj = lineObj
+        self.env = env
         self.N = N
         self.findT = findT
 
@@ -845,7 +857,7 @@ class coronasim:
         nn = 0
         for grd in self.gridList:
             #print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, self.N, findT = self.findT))
+            self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
             bar.increment()
             bar.display()
             nn += 1
@@ -881,7 +893,7 @@ class coronasim:
 
         for grd in self.gridList:
             #if self.root: print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, self.N, findT = self.findT))
+            self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
             if self.root:
                 bar.increment()
                 bar.display()
@@ -903,6 +915,7 @@ class coronasim:
             self.plotStats()
 
     def seperate(self, list, N):
+        #Breaks a list up into chunks
         chunkSize = len(list)/N
         chunkSizeInt = int(chunkSize)
         remainder = int((chunkSize % chunkSizeInt) * N)
@@ -947,7 +960,8 @@ class coronasim:
         ax.set_xlabel('Impact Parameter')
         plt.show()
 
-
+####################################################################
+####################################################################
 
 
 
