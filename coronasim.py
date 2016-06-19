@@ -41,6 +41,7 @@ np.seterr(invalid = 'ignore')
 #Environment Class contains simulation parameters
 class environment:
     #Environment Class contains simulation parameters
+
     script_dir = os.path.dirname(os.path.abspath(__file__)) 
 
     rel_def_Bfile = '..\\dat\\mgram_iseed0033.sav'    
@@ -51,11 +52,6 @@ class environment:
 
     rel_def_bkFile = '..\\dat\\plasma_background.dat'    
     def_bkFile = os.path.normpath(os.path.join(script_dir, rel_def_bkFile))
-
-
-    BMap = None
-    xi_raw = None
-    bk_dat = None
     
     rstar = 1
     B_thresh = 1.#6.0
@@ -70,13 +66,14 @@ class environment:
     streamRand = np.random.RandomState()
     #thermRand = np.random.RandomState()
 
-    def __init__(self, findT = False, Bfile = None, xiFile = None, bkFile = None):
+    def __init__(self, Bfile = None, xiFile = None, bkFile = None):
         print('    Loading Data Files...', end = '', flush = True)
 
         #Load Bmap
         if Bfile is None: self.Bfile = self.def_Bfile 
         else: self.Bfile = self.relPath(Bfile)
         self.loadBMap()
+        self.labelStreamers()
 
         #Load Xi
         if xiFile is None: self.xiFile = self.def_xiFile 
@@ -114,7 +111,7 @@ class environment:
         self.BMap_x = Bobj.get('x_cap')
         self.BMap_y = Bobj.get('y_cap')
         self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_raw)
-        self.labelStreamers()
+
 
     def labelStreamers(self, thresh = 0.7):
         #Label the Streamers
@@ -160,27 +157,27 @@ class environment:
 ####################################################################
 
 
-
 #Level 0: Simulates physical parameters at a given coordinate
 class simpoint:
     #Level 0: Simulates physical parameters at a given coordinate
 
-
-    
-    def __init__(self, cPos = [0,0,1.5], findT = False, grid = None, env = None, pbar = None):
+    def __init__(self, cPos = [0,0,1.5], grid = None, env = None, findT = None, pbar = None):
         #Inputs
         self.grid = grid
         self.env = env
         self.cPos = cPos
         self.pPos = self.cart2sph(self.cPos)
         self.rx = self.r2rx(self.pPos[0])
+        if findT is None:
+            self.findT = self.grid.findT
+        else: self.findT = findT
 
 
         #Initialization
         self.findTemp()
         self.findFootB()
         self.findDensity()
-        self.findTwave(findT)
+        self.findTwave()
         self.findStreamIndex()
         self.findSpeeds()
         self.findVLOS(self.grid.ngrad)
@@ -219,9 +216,7 @@ class simpoint:
         self.streamIndex = self.env.label_im[self.find_nearest(self.env.BMap_x, self.foot_cPos[0])][
                                             self.find_nearest(self.env.BMap_y, self.foot_cPos[1])]
 
- 
 
-       
   ## Density ##########################################################################
  
     def findDensity(self):
@@ -333,21 +328,21 @@ class simpoint:
 
   ## Time Dependence ##########################################################################    
 
-    def findTwave(self, findT):
+    def findTwave(self):
         #Finds the wave travel time to this point
         #Approximate Version
         twave_min = 161.4 * (self.rx**1.423 - 1.0)**0.702741
         self.twave_fit = twave_min * self.densfac
         
-        if findT:
+        if self.findT:
             #Real Version 
             radial = grid.sightline(self.foot_cPos, self.cPos)
             N = 10
-            time = 0
+            wtime = 0
             rLine = radial.cLine(N)
             for cPos in rLine:
-                time += (1/simpoint(cPos, findT = False, grid = radial, env = self.env).vPh) / N
-            self.twave = time * self.r2rx(radial.norm) * 69.63e9 #radius of sun in cm
+                wtime += (1/simpoint(cPos, findT = False, grid = radial, env = self.env).vPh) / N
+            self.twave = wtime * self.r2rx(radial.norm) * 69.63e9 #radius of sun in cm
         else:
             self.twave = self.twave_fit  
         self.twave_rat = self.twave/self.twave_fit
@@ -445,19 +440,23 @@ class simpoint:
     def Vars(self):
         return vars(self) 
 
-####################################################################
-####################################################################
 
+####################################################################
+####################################################################
 
 
 #Level 1: Initializes many Simpoints into a Simulation
 class simulate: 
     #Level 1: Initializes many Simpoints into a Simulation
-    def __init__(self, gridObj, envObj, N = None, iL = None, findT = False):
+    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None):
         #print("Initializing Simulation...")
         self.grid  = gridObj
         self.findT = findT
         self.env = envObj
+
+        if findT is None:
+            self.findT = self.grid.findT
+        else: self.findT = findT
 
         if iL is None: self.iL = self.grid.iL
         else: self.iL = iL
@@ -500,7 +499,7 @@ class simulate:
         local_data = self.cPoints[low:high]
         #else: local_data = self.cPoints[int(rank*chunksize+1):int(((rank+1)*chunksize))]
         for cPos in local_data:
-            thisPoint = simpoint(cPos, self.findT, self.grid) 
+            thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
             local_simpoints.append(thisPoint)
             local_pdata.append(thisPoint.Vars())
 
@@ -533,7 +532,7 @@ class simulate:
             #Serial Way
             #t = time.time()
             for cPos in self.cPoints: 
-                thisPoint = simpoint(cPos, self.findT, self.grid, self.env) 
+                thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
                 self.sPoints.append(thisPoint)
                 self.pData.append(thisPoint.Vars())
                 #bar.increment()
@@ -545,7 +544,7 @@ class simulate:
             print('    Initializing Pool...')
             pool = Pool()
             #thisPoint = simpoint(grid = self.grid)
-            for pnt in pool.imap(partial(simpoint, findT = self.findT, grid = self.grid, env = self.env), self.cPoints, 1000):
+            for pnt in pool.imap(partial(simpoint, grid = self.grid, env = self.env, findT = self.findT), self.cPoints, 1000):
                 self.sPoints.append(pnt)
                 self.pData.append(pnt.Vars())
                 bar.increment()
@@ -829,19 +828,18 @@ class simulate:
         ax4.set_xlabel('Time (s)')
         plt.show(False)
 
-####################################################################
-####################################################################
 
+####################################################################
+####################################################################
 
 
 #Level 2: Initializes many simulations and performs statistics on them.
 class coronasim:
     #Level 2: Initializes many simulations and performs statistics on them.
-    def __init__(self, lineObj, env, N = None, findT = False, MPI = False):
+    def __init__(self, lineObj, env, N = None, MPI = False):
         self.lineObj = lineObj
         self.env = env
         self.N = N
-        self.findT = findT
 
         if MPI: self.MPI_init()
         else: self.init()
@@ -857,7 +855,7 @@ class coronasim:
         nn = 0
         for grd in self.gridList:
             #print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
+            self.simList.append(simulate(grd, self.env, self.N))
             bar.increment()
             bar.display()
             nn += 1
@@ -893,7 +891,7 @@ class coronasim:
 
         for grd in self.gridList:
             #if self.root: print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
+            self.simList.append(simulate(grd, self.env, self.N))
             if self.root:
                 bar.increment()
                 bar.display()
@@ -959,6 +957,7 @@ class coronasim:
             mm += 1
         ax.set_xlabel('Impact Parameter')
         plt.show()
+
 
 ####################################################################
 ####################################################################

@@ -44,7 +44,7 @@ if __name__ == '__main__':
 
     lines = df.impactLines(50)
     env = sim.environment()
-    impactSims = sim.coronasim(lines, env, N = 1000, findT = True)
+    impactSims = sim.coronasim(lines, env, N = 1000)
 
     
 

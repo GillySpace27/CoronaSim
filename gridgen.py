@@ -18,7 +18,6 @@ zero = 1e-8
 class generator:
     
     rstar = 1
-    default_N = 100 #For plane, line is 1/10 * this
     
     def sph2cart(self, sph):
         #Change coordinate systems
@@ -122,12 +121,16 @@ class generator:
             
 
 class sightline(generator):
-    def __init__(self, position = None, target = None, iL = 1, coords = 'Cart'):
+
+    default_N = 1000
+
+    def __init__(self, position = None, target = None, iL = 1, coords = 'Cart', findT = True):
         #print('Initializing Sightline, Observer at {pos}, looking at {targ}'.format(pos = position, targ = target))
         if position is None:
             position, target = [2, 1*np.pi/4, 1e-8], [2, -np.pi/4, 1e-8]
             coords = 'sphere'  
         self.iL = iL
+        self.findT = findT
         self.look(position, target, coords)  
  
     def look(self, position, target, coords = 'Cart'):
@@ -159,7 +162,7 @@ class sightline(generator):
 
     def cLine(self, N = None, smin=0, smax = 1):
         #Return the coordinates of the sightline
-        if N is None: N = self.default_N/10
+        if N is None: N = self.default_N
         line = []
         for ss in np.linspace(smin, smax, N):
             line.append(self.cPoint(ss)) 
@@ -168,7 +171,7 @@ class sightline(generator):
     
     def pLine(self, N = None, smin=0, smax = 1):  
         #Return the polar coordinates of the sightline
-        if N is None: N = self.default_N/10
+        if N is None: N = self.default_N
         line = []
         for ss in np.linspace(smin, smax, N):
             line.append(self.pPoint(ss))  
@@ -180,9 +183,12 @@ class sightline(generator):
 
 class plane(generator):
     
-    def __init__(self, normal = [0,1,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart'):
+    default_N = 1000
+
+    def __init__(self, normal = [0,1,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False):
         #print("Initializing Plane, normal = {}, offset = {}".format(normal, offset))
 
+        self.findT = findT
         self.iL = iL
         self.rotArray = np.asarray(rotAxis)
         if ncoords == 'Cart':
@@ -266,7 +272,7 @@ class defGrid:
         y = 1e-8
         bax = np.linspace(b0,b1,N)
         for zz in bax:
-            lines.append(sightline([x,y,zz], [-x,y,zz]))
+            lines.append(sightline([x,y,zz], [-x,y,zz], findT = True))
         return [lines, bax]
        
                         
