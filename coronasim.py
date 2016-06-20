@@ -170,9 +170,9 @@ class environment:
 ####################################################################
 
 
-#Level 0: Simulates physical parameters at a given coordinate
+#Level 0: Simulates physical properties at a given coordinate
 class simpoint:
-    #Level 0: Simulates physical parameters at a given coordinate
+    #Level 0: Simulates physical properties at a given coordinate
 
     def __init__(self, cPos = [0,0,1.5], grid = None, env = None, findT = None, pbar = None):
         #Inputs
@@ -272,7 +272,7 @@ class simpoint:
         self.alfV1 = self.vRms*self.xi1(t - self.twave + self.alfT1)
         self.alfV2 = self.vRms*self.xi2(t - self.twave + self.alfT2)
         self.uTheta = self.alfV1 * np.sin(self.alfAngle) + self.alfV2 * np.cos(self.alfAngle)
-        self.uPhi =   self.alfV1 * np.cos(self.alfAngle) + self.alfV2 * np.sin(self.alfAngle)
+        self.uPhi =   self.alfV1 * np.cos(self.alfAngle) - self.alfV2 * np.sin(self.alfAngle)
         self.pU = [self.ur, self.uTheta, self.uPhi]
         self.cU = self.findCU()       
        
@@ -845,6 +845,7 @@ class multisim:
         self.N = N
         self.findT = findT
         self.MPI_init()
+        self.findLines()
         #self.findLineStats()
 
 
@@ -855,7 +856,7 @@ class multisim:
         self.size = self.comm.Get_size()
 
         if self.root: 
-            print('Beginning Program:')
+            print('\nRunning MultiSim:')
             t = time.time() #Print Stuff
 
         gridList = self.seperate(self.lineObj[0], self.size)
@@ -864,8 +865,7 @@ class multisim:
         if self.root: 
             print('PoolSize = ' + str(self.size))
             print('JobSize = ' + str(len(self.gridLabels)))
-            print('ChunkSize = ' + str(len(self.gridList)))
-            print('') #Print Stuff
+            print('ChunkSize = ' + str(len(self.gridList))) #Print Stuff
 
         if self.root: bar = pb.ProgressBar(len(self.gridList))
         self.simList = []
@@ -876,14 +876,21 @@ class multisim:
                 bar.display()
         if self.root: bar.display(force = True)
 
-    def getLines(self):
-        output = []
+    def findLines(self):
+        if self.root: 
+            bar = pb.ProgressBar(len(self.gridList))
+            print('Simulating Spectral Lines')
+        self.lines = []
         for lsim in self.simList:
-            output.append(lsim.getProfile())
-        return output
+            self.lines.append(lsim.getProfile())
+            if self.root:
+                bar.increment()
+                bar.display()
+        if self.root: bar.display(force = True)
+        return self.lines    
 
     def getLineArray(self):
-        return np.asarray(self.getLines())
+        return np.asarray(self.lines)
             
     def seperate(self, list, N):
         #Breaks a list up into chunks
@@ -962,13 +969,47 @@ class multisim:
         sys.stdout.flush()
         self.plotStats()
 
+
+####################################################################
+####################################################################
+
+
+#Level 3: Initializes many Multisims
+class batchsim:
+    def __init__(self, env, N = 20, b0 = 1.05, b1= 1.50):
+        impacts = np.linspace(b0,b1,N)
+        self.impactSims = []
+        for impact in impacts:
+            lines = grid.rotLines(b = impact)
+            thisSim = multisim(lines, env, N = 1000)
+            self.impactSims.append(thisSim)
+
+
 ####################################################################
 ####################################################################
 
 
 
+## Line Analysis
+
+#class spec:
+
+#    def __init__(self, profiles):
+#        asdf
 
 
+#    def findMoments(self):
+#        self.maxMoment = 3
+#        self.moment = np.zeros(self.maxMoment)
+#        for mm in np.arange(self.maxMoment):
+#                self.moment[mm] = np.dot(self.profile, self.lamAx**mm)
+#        return self.moment
+
+#    def findMomentStats(self):
+#        self.power = self.moment[0] / self.Npoints
+#        self.centroid = self.moment[1] / self.moment[0]
+#        self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
+#        return [self.power, self.centroid, self.sigma]
 
 
 

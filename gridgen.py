@@ -291,10 +291,7 @@ def rotLines(N = 20, b = 1.05):
         thisLine = sightline([x,y,b], [-x,-y,b], findT = True)
         #thisLine.plot(show = True)
         lines.append(thisLine)
-    return [lines, angles]
-    
-
-       
+    return [lines, angles]      
                         
 def maximizePlot():
     try:

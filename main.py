@@ -87,11 +87,14 @@ if __name__ == '__main__':
     #plt.show()
 
     
-    lines = grid.rotLines()
+    #lines = grid.rotLines()
+    #lineSims = sim.multisim(lines, env, N = 1000)
+    #plt.pcolormesh(np.log(lineSims.getLineArray()))
+    #plt.show()
 
-
-
-
+    ### Level 3 ### BatchSim
+    ###############
+    myBatch = sim.batchsim(env)
 
 
 
