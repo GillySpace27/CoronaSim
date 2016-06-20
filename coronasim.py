@@ -645,7 +645,12 @@ class simulate:
         self.findMoments()
         return self.findMomentStats()
 
+    def getProfile(self):
+        self.makeLamAxis()
+        return self.lineProfile()
+
     def makeLamAxis(self, Ln = 100, lam0 = 1000, lamPm = 2):
+        #TODO get inputs from top level somewhere
         self.lam0 = lam0
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
         return self.lamAx
@@ -830,9 +835,9 @@ class simulate:
 ####################################################################
 
 
-#Level 2: Initializes many simulations and performs statistics on them.
-class coronasim:
-    #Level 2: Initializes many simulations and performs statistics on them.
+#Level 2: Initializes many simulations
+class multisim:
+    #Level 2: Initializes many simulations
     def __init__(self, lineObj, env, N = 1000, findT = None):
         self.lineObj = lineObj
         self.gridLabels = self.lineObj[1]
@@ -840,6 +845,8 @@ class coronasim:
         self.N = N
         self.findT = findT
         self.MPI_init()
+        #self.findLineStats()
+
 
     def MPI_init(self):
         self.comm = MPI.COMM_WORLD
@@ -849,7 +856,7 @@ class coronasim:
 
         if self.root: 
             print('Beginning Program:')
-            t = time.time()
+            t = time.time() #Print Stuff
 
         gridList = self.seperate(self.lineObj[0], self.size)
         self.gridList = gridList[self.rank]
@@ -858,36 +865,26 @@ class coronasim:
             print('PoolSize = ' + str(self.size))
             print('JobSize = ' + str(len(self.gridLabels)))
             print('ChunkSize = ' + str(len(self.gridList)))
-            print('')
-
-        #print("Process " + str(self.rank) + " has " + str(len(self.gridList)) + " lines.")
-        #nn = 0
+            print('') #Print Stuff
 
         if self.root: bar = pb.ProgressBar(len(self.gridList))
         self.simList = []
         for grd in self.gridList:
-            #if self.root: print('b = ' + str(self.gridLabels[nn]))
             self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
             if self.root:
                 bar.increment()
                 bar.display()
-            #nn += 1
         if self.root: bar.display(force = True)
-        #print("Process " + str(self.rank) + " complete.")
-        
-        self.findLineStats()
-        
-        lineStats = self.comm.gather(self.lineStats, root = 0)
-        if self.root:
-            self.lineStats = []
-            for stat in lineStats:
-                self.lineStats.extend(stat)
 
-            print('')
-            print('Elapsed Time: ' + str(time.time() - t))
-            sys.stdout.flush()
-            self.plotStats()
+    def getLines(self):
+        output = []
+        for lsim in self.simList:
+            output.append(lsim.getProfile())
+        return output
 
+    def getLineArray(self):
+        return np.asarray(self.getLines())
+            
     def seperate(self, list, N):
         #Breaks a list up into chunks
         chunkSize = float(len(list)/N)
@@ -916,7 +913,17 @@ class coronasim:
                 bar.increment()
                 bar.display()
         if self.root: bar.display(force = True)
-        return self.lineStats
+
+        lineStats = self.comm.gather(self.lineStats, root = 0)
+        if self.root:
+            self.lineStats = []
+            for stat in lineStats:
+                self.lineStats.extend(stat)
+
+            print('')
+            print('Elapsed Time: ' + str(time.time() - t))
+            sys.stdout.flush()
+            self.plotStats()
 
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)

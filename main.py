@@ -51,17 +51,6 @@ if __name__ == '__main__':
     ##bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
     #bpoleSim.compare('alfV1', 'alfV2')
 
-
-    ### Level 2 ### CoronaSim
-    ###############
-    
-
-    lines = grid.impactLines(200)
-    impactSims = sim.coronasim(lines, env, N = 1000)
-
-    
-
-
     #lineSim = sim.simulate(df.primeLine, N = 1e3, findT = True)
     #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
     #lineSim.plot('densfac')
@@ -87,6 +76,20 @@ if __name__ == '__main__':
 
     #The whole code in one line. WOO!
     #mySim = sim.simulate(sim.defGrid().bpolePlane, step = 0.1)#.plot('rho', scale = 'log')
+
+    ### Level 2 ### MultiSim
+    ###############
+    
+
+    #lines = grid.impactLines(10)
+    #lineSims = sim.multisim(lines, env, N = 1000)
+    #plt.imshow(np.log(lineSims.getLineArray()))
+    #plt.show()
+
+    
+    lines = grid.rotLines()
+
+
 
 
 

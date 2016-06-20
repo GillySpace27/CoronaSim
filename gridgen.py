@@ -269,6 +269,7 @@ class defGrid:
 
 
 def impactLines(N=5, b0 = 1.05, b1= 1.5):
+    #Generate lines with a fixed angle but varying impact parameter
     lines = []
     x = 20
     y = 1e-8
@@ -277,6 +278,22 @@ def impactLines(N=5, b0 = 1.05, b1= 1.5):
         lines.append(sightline([x,y,zz], [-x,y,zz], findT = True))
     #List of grids, list of labels
     return [lines, bax] 
+
+def rotLines(N = 20, b = 1.05):
+    #Generate lines with a fixed impact parameter but varying angle
+    lines = []
+    x0 = 20
+    y0 = 1e-8
+    angles = np.linspace(0, 2*np.pi*(1 - 1/N), N)
+    for theta in angles:
+        x = x0 * np.sin(theta) + y0 * np.cos(theta)
+        y = x0 * np.cos(theta) + y0 * np.sin(theta)
+        thisLine = sightline([x,y,b], [-x,-y,b], findT = True)
+        #thisLine.plot(show = True)
+        lines.append(thisLine)
+    return [lines, angles]
+    
+
        
                         
 def maximizePlot():
