@@ -9,14 +9,11 @@ from mpi4py import MPI
 
 
 if __name__ == '__main__':
-    use_MPI = True
 
-    if use_MPI:
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        size = comm.Get_size()
-        root = rank == 0
-    else: root = True
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+    root = rank == 0
 
     if root:
         print('\nCoronaSim!')
@@ -30,9 +27,8 @@ if __name__ == '__main__':
         df = None
         env = None
 
-    if use_MPI:
-        df = comm.bcast(df, root = 0)
-        env = comm.bcast(env, root = 0)
+    df = comm.bcast(df, root = 0)
+    env = comm.bcast(env, root = 0)
  
    ### Level 0 ### Simpoint 
     ###############
@@ -60,8 +56,8 @@ if __name__ == '__main__':
     ###############
     
 
-    lines = grid.impactLines(400)
-    impactSims = sim.coronasim(lines, env, N = 2000, use_MPI = use_MPI)
+    lines = grid.impactLines(200)
+    impactSims = sim.coronasim(lines, env, N = 1000)
 
     
 

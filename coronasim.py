@@ -449,7 +449,8 @@ class simulate:
 
         if iL is None: self.iL = self.grid.iL
         else: self.iL = iL
-        if N is None: self.N = self.grid.default_N/100
+
+        if N is None: self.N = self.grid.default_N
         else: self.N = N
 
         if type(self.grid) is grid.sightline:
@@ -467,48 +468,7 @@ class simulate:
 
         self.simulate_now()
 
-    def simulate_MPI(self):
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        size = comm.Get_size()
-        assert len(self.cPoints) % size == 0
-        chunksize = len(self.cPoints) / size
-        if rank == 0: t = time.time()
-        local_data = []
-        local_simpoints = []
-        local_pdata = []
-        #if rank ==0:
-        #    data = self.cPoints
-        #else:
-        #    data = None
-        #local_data = comm.scatter(data, root = 0)
-        #if rank == 0:
-        low = int(rank*chunksize)
-        high = int(((rank+1)*chunksize))
-        local_data = self.cPoints[low:high]
-        #else: local_data = self.cPoints[int(rank*chunksize+1):int(((rank+1)*chunksize))]
-        for cPos in local_data:
-            thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
-            local_simpoints.append(thisPoint)
-            local_pdata.append(thisPoint.Vars())
 
-        sListList = comm.gather(local_simpoints, root=0)
-        pdatList = comm.gather(local_pdata, root=0)
-        if rank ==0:
-            self.sPoints = []
-            self.pData = []
-            for list in sListList:
-                self.sPoints.extend(list)
-            for pdat in pdatList:
-                self.pData.extend(pdat)
-            print("length = ")
-            print(len(self.pData))
-            print('GO')
-            print('Elapsed Time: ' + str(time.time() - t))
-
-        else: 
-            print("Proccess " + str(rank) + " Complete")
-            sys.exit(0)
         
 
     def simulate_now(self):
@@ -625,6 +585,50 @@ class simulate:
         grid.maximizePlot()
         plt.show()    
    
+    def simulate_MPI(self):
+        #Break up the simulation into multiple PEs
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        assert len(self.cPoints) % size == 0
+        chunksize = len(self.cPoints) / size
+        if rank == 0: t = time.time()
+        local_data = []
+        local_simpoints = []
+        local_pdata = []
+        #if rank ==0:
+        #    data = self.cPoints
+        #else:
+        #    data = None
+        #local_data = comm.scatter(data, root = 0)
+        #if rank == 0:
+        low = int(rank*chunksize)
+        high = int(((rank+1)*chunksize))
+        local_data = self.cPoints[low:high]
+        #else: local_data = self.cPoints[int(rank*chunksize+1):int(((rank+1)*chunksize))]
+        for cPos in local_data:
+            thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
+            local_simpoints.append(thisPoint)
+            local_pdata.append(thisPoint.Vars())
+
+        sListList = comm.gather(local_simpoints, root=0)
+        pdatList = comm.gather(local_pdata, root=0)
+        if rank ==0:
+            self.sPoints = []
+            self.pData = []
+            for list in sListList:
+                self.sPoints.extend(list)
+            for pdat in pdatList:
+                self.pData.extend(pdat)
+            print("length = ")
+            print(len(self.pData))
+            print('GO')
+            print('Elapsed Time: ' + str(time.time() - t))
+
+        else: 
+            print("Proccess " + str(rank) + " Complete")
+            sys.exit(0)
+
     def Vars(self):
         #Returns the vars of the simpoints
         return self.sPoints[0].Vars()
@@ -829,34 +833,13 @@ class simulate:
 #Level 2: Initializes many simulations and performs statistics on them.
 class coronasim:
     #Level 2: Initializes many simulations and performs statistics on them.
-    def __init__(self, lineObj, env, N = 1000, use_MPI = False):
+    def __init__(self, lineObj, env, N = 1000, findT = None):
         self.lineObj = lineObj
+        self.gridLabels = self.lineObj[1]
         self.env = env
         self.N = N
-
-        if use_MPI: self.MPI_init()
-        else: self.init()
-
-    def init(self):
-        #Serial Version
-        t = time.time()
-        self.root = True
-        self.simList = []
-        self.gridList = self.lineObj[0]
-        self.gridLabels = self.lineObj[1]
-        bar = pb.ProgressBar(len(self.gridList))
-        nn = 0
-        for grd in self.gridList:
-            #print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, self.env, self.N))
-            bar.increment()
-            bar.display()
-            nn += 1
-        bar.display(force = True)
-        self.findLineStats()
-        print('Elapsed Time: ' + str(time.time() - t))
-        sys.stdout.flush()
-        self.plotStats()
+        self.findT = findT
+        self.MPI_init()
 
     def MPI_init(self):
         self.comm = MPI.COMM_WORLD
@@ -864,30 +847,31 @@ class coronasim:
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
 
-        self.gridLabels = self.lineObj[1]
-
         if self.root: 
-            print('Beginning Program', end = ': ')
+            print('Beginning Program:')
             t = time.time()
 
         gridList = self.seperate(self.lineObj[0], self.size)
         self.gridList = gridList[self.rank]
-        if self.root: print('ChunkSize = ' + str(len(self.gridList)))
+
+        if self.root: 
+            print('PoolSize = ' + str(self.size))
+            print('JobSize = ' + str(len(self.gridLabels)))
+            print('ChunkSize = ' + str(len(self.gridList)))
+            print('')
 
         #print("Process " + str(self.rank) + " has " + str(len(self.gridList)) + " lines.")
-        self.simList = []
-
-        nn = 0
+        #nn = 0
 
         if self.root: bar = pb.ProgressBar(len(self.gridList))
-
+        self.simList = []
         for grd in self.gridList:
             #if self.root: print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, self.env, self.N))
+            self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
             if self.root:
                 bar.increment()
                 bar.display()
-            nn += 1
+            #nn += 1
         if self.root: bar.display(force = True)
         #print("Process " + str(self.rank) + " complete.")
         
@@ -950,6 +934,26 @@ class coronasim:
         ax.set_xlabel('Impact Parameter')
         plt.show()
 
+    def init(self):
+        #Serial Version
+        t = time.time()
+        self.root = True
+        self.simList = []
+        self.gridList = self.lineObj[0]
+
+        bar = pb.ProgressBar(len(self.gridList))
+        nn = 0
+        for grd in self.gridList:
+            #print('b = ' + str(self.gridLabels[nn]))
+            self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
+            bar.increment()
+            bar.display()
+            nn += 1
+        bar.display(force = True)
+        self.findLineStats()
+        print('Elapsed Time: ' + str(time.time() - t))
+        sys.stdout.flush()
+        self.plotStats()
 
 ####################################################################
 ####################################################################
