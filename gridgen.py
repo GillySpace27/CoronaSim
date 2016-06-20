@@ -15,6 +15,7 @@ import sys
 
 zero = 1e-8
 
+#Defines the Grid on which to simulate
 class generator:
     
     rstar = 1
@@ -73,18 +74,18 @@ class generator:
 
         return fig, dataAxis, quadAxis
 
-    def plot(self, N = 25, iL = 1, show = False):
+    def plot(self, iL = 1, show = False):
         #Plot the quadGrid with a sphere for the sun
 
         fig, dataAxis, quadAxis = self.quadAx(True)
 
         n = 0   
         if type(self) is sightline:      
-            thisGrid = self.cLine(N = N, smax = iL)
+            thisGrid = self.cLine(N = 25, smax = iL)
             fig.suptitle('Sightline at Position = ({:0.2f}, {:0.2f}, {:0.2f}), \
                 Target = ({:0.2f}, {:0.2f}, {:0.2f})'.format(*(self.cPos + self.cTarg)))
         elif type(self) is plane:
-            thisGrid = self.cPlane(N = N, iL = iL)
+            thisGrid = self.cPlane(N = 10, iL = iL)
             fig.suptitle('Plane with Normal = ({:0.2f}, {:0.2f}, {:0.2f}),\
                 Offset = ({:0.2f}, {:0.2f}, {:0.2f})'.format(*(self.normal.tolist() + self.offset)))
         nax = 1
@@ -119,7 +120,7 @@ class generator:
             print(ii, " : ", myVars[ii])
 
             
-
+#A line of points between two given points
 class sightline(generator):
 
     default_N = 1000
@@ -180,7 +181,7 @@ class sightline(generator):
 
 #TODO create cylinder
 
-
+#A plane normal to a given vector
 class plane(generator):
     
     default_N = 1000
@@ -241,7 +242,7 @@ class plane(generator):
         return [self.cart2sph(pos) for pos in self.cPlane(N, iL)]
 
 
-
+#Generates default grids
 class defGrid:
 
     def __init__(self):
@@ -266,14 +267,16 @@ class defGrid:
         #This line starts from north pole and goes out radially
         self.poleLine = sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')
 
-    def impactLines(self, N=5, b0 = 1.05, b1= 1.5):
-        lines = []
-        x = 20
-        y = 1e-8
-        bax = np.linspace(b0,b1,N)
-        for zz in bax:
-            lines.append(sightline([x,y,zz], [-x,y,zz], findT = True))
-        return [lines, bax]
+
+def impactLines(N=5, b0 = 1.05, b1= 1.5):
+    lines = []
+    x = 20
+    y = 1e-8
+    bax = np.linspace(b0,b1,N)
+    for zz in bax:
+        lines.append(sightline([x,y,zz], [-x,y,zz], findT = True))
+    #List of grids, list of labels
+    return [lines, bax] 
        
                         
 def maximizePlot():

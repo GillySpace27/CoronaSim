@@ -132,6 +132,7 @@ class ProgressBar():
               + progressString + etaString, end='')
         # Without this, Python may buffer the output but not actually show it,
         # since we haven't finished a line.
+        if force: print('')
         sys.stdout.flush()
         return
     

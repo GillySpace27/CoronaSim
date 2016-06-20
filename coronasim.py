@@ -29,6 +29,7 @@ import math
 import time
 from astropy import units as u
 
+import multiprocessing as mp
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 from functools import partial
@@ -47,14 +48,17 @@ class environment:
     rel_def_Bfile = '..\\dat\\mgram_iseed0033.sav'    
     def_Bfile = os.path.normpath(os.path.join(script_dir, rel_def_Bfile))
 
-    rel_def_xiFile = '..\\dat\\xi_function.dat'    
-    def_xiFile = os.path.normpath(os.path.join(script_dir, rel_def_xiFile))
+    rel_def_xiFile1 = '..\\dat\\xi_1.dat'    
+    def_xiFile1 = os.path.normpath(os.path.join(script_dir, rel_def_xiFile1))
+
+    rel_def_xiFile2 = '..\\dat\\xi_2.dat'    
+    def_xiFile2 = os.path.normpath(os.path.join(script_dir, rel_def_xiFile2))
 
     rel_def_bkFile = '..\\dat\\plasma_background.dat'    
     def_bkFile = os.path.normpath(os.path.join(script_dir, rel_def_bkFile))
     
     rstar = 1
-    B_thresh = 1.#6.0
+    B_thresh = 6.0
     fmax = 8.2
     theta0 = 28
 
@@ -67,7 +71,7 @@ class environment:
     #thermRand = np.random.RandomState()
 
     def __init__(self, Bfile = None, xiFile = None, bkFile = None):
-        print('    Loading Data Files...', end = '', flush = True)
+        print('  Loading Environment...', end = '', flush = True)
 
         #Load Bmap
         if Bfile is None: self.Bfile = self.def_Bfile 
@@ -76,12 +80,18 @@ class environment:
         self.labelStreamers()
 
         #Load Xi
-        if xiFile is None: self.xiFile = self.def_xiFile 
-        else: self.xiFile = self.relPath(xiFile)
-        x = np.loadtxt(self.xiFile, skiprows=1)
-        self.xi_t = x[:,0]
-        self.xi_raw = x[:,1]
-        self.last_xi_t = x[-1,0]
+        self.xiFile1 = self.def_xiFile1 
+        self.xiFile2 = self.def_xiFile2 
+
+        x = np.loadtxt(self.xiFile1, skiprows=1)
+        self.xi1_t = x[:,0]
+        self.xi1_raw = x[:,1]
+        self.last_xi1_t = x[-1,0]
+
+        y = np.loadtxt(self.xiFile2, skiprows=1)
+        self.xi2_t = x[:,0]
+        self.xi2_raw = y[:,1]
+        self.last_xi2_t = y[-1,0]
 
         #Load Plasma Background
         if bkFile is None: self.bkFile = self.def_bkFile 
@@ -93,6 +103,9 @@ class environment:
         self.ur_raw = x[:,2]
         self.vAlf_raw = x[:,3]
         self.T_raw = x[:,4]
+
+        print("Done")
+        print('')
 
     def relPath(self, path):
         #Converts a relative path to an absolute path
@@ -224,11 +237,6 @@ class simpoint:
         self.densfac = self.findDensFac()
         self.rho = self.findRho()
 
-        #self.num_den_min = self.minNumDense(self.rx)
-        #self.num_den = self.densfac * self.num_den_min
-        #self.rho_min = self.num2rho(self.num_den_min)
-        #self.rho = self.num2rho(self.num_den)
-
     def findDensFac(self):
         # Find the density factor
         if np.abs(self.footB) < np.abs(self.env.B_thresh):
@@ -237,21 +245,9 @@ class simpoint:
             return (np.abs(self.footB) / self.env.B_thresh)**0.5
 
     def findRho(self):
-        return self.interp_rx_dat(self.env.rho_raw) * self.densfac
-        
-    #def minNumDense(self, rx):
-    #    #Find the number density floor
-    #    return self.interp_rx_dat(self.num_dens_raw)
-    #    #return 6.0e4 * (5796./rx**33.9 + 1500./rx**16. + 300./rx**8. + 25./rx**4. + 1./rx**2)
-        
-    #def num2rho(self, num_den):
-    #    #Convert number density to physical units (cgs)
-    #    return (1.841e-24) * num_den  
-        
+        return self.interp_rx_dat(self.env.rho_raw) * self.densfac  
    
 
-
- 
   ## Velocity ##########################################################################
 
     def findSpeeds(self, t = 0):
@@ -261,31 +257,35 @@ class simpoint:
         self.vPh = self.findVPh()
         self.vRms = self.findvRms()
 
-        self.env.streamRand.seed(int(self.streamIndex))
-        thisRand = self.env.streamRand.random_sample(2)
-        self.streamT =  thisRand[0] * self.env.last_xi_t
-        self.streamAngle = thisRand[1] * 2 * np.pi
-        self.findTSpeeds(t)
+        self.streamInit()
+        self.findWaveSpeeds(t)
 
-    def findTSpeeds(self, t = 0):
-        #Find all of the time dependent velocities
-        #TODO Import two different waves and assign velocities correctly
-        self.waveV = self.vRms*self.xi(t - self.twave + self.streamT)
-        self.uTheta = self.waveV * np.sin(self.streamAngle)
-        self.uPhi = self.waveV * np.cos(self.streamAngle)
+    def streamInit(self):
+        self.env.streamRand.seed(int(self.streamIndex))
+        thisRand = self.env.streamRand.random_sample(3)
+        self.alfT1 =  thisRand[0] * self.env.last_xi1_t
+        self.alfT2 =  thisRand[1] * self.env.last_xi2_t
+        self.alfAngle = thisRand[2] * 2 * np.pi
+
+    def findWaveSpeeds(self, t = 0):
+        #Find all of the wave velocities
+        self.alfV1 = self.vRms*self.xi1(t - self.twave + self.alfT1)
+        self.alfV2 = self.vRms*self.xi2(t - self.twave + self.alfT2)
+        self.uTheta = self.alfV1 * np.sin(self.alfAngle) + self.alfV2 * np.cos(self.alfAngle)
+        self.uPhi =   self.alfV1 * np.cos(self.alfAngle) + self.alfV2 * np.sin(self.alfAngle)
         self.pU = [self.ur, self.uTheta, self.uPhi]
         self.cU = self.findCU()       
        
     def findUr(self):
         #Wind Velocity
-        return self.interp_rx_dat(self.env.ur_raw) / self.densfac
         #return (1.7798e13) * self.fmax / (self.num_den * self.rx * self.rx * self.f)
+        return self.interp_rx_dat(self.env.ur_raw) / self.densfac
 
     def findAlf(self):
         #Alfen Velocity
-        return self.interp_rx_dat(self.env.vAlf_raw) / np.sqrt(self.densfac)
         #return 10.0 / (self.f * self.rx * self.rx * np.sqrt(4.*np.pi*self.rho))
-    
+        return self.interp_rx_dat(self.env.vAlf_raw) / np.sqrt(self.densfac)
+
     def findVPh(self):
         #Phase Velocity
         return self.vAlf + self.ur 
@@ -308,25 +308,8 @@ class simpoint:
         self.uz = self.ur*np.cos(self.pPos[1]) - self.uTheta*np.sin(self.pPos[1])
         return [self.ux, self.uy, self.uz]
     
-    #def findRandU(self):
-    #    #Wrong
-    #    #amp = 0.01 * self.vRms * (self.rho / self.rho_min)**1.2
-    #    #rand = simpoint.thermRand.standard_normal(3)
-    #    return 0,0,0 #amp*rand
 
-    #def findStreamU(self):
-    #    #if self.streamIndex == 0: return 0.0, 0.0 #Velocities for the regions between streams
-    #    #simpoint.streamRand.seed(int(self.streamIndex))
-    #    #thisRand = simpoint.streamRand.standard_normal(2)
-    #    ##Wrong scaling
-    #    #streamTheta = 0.1*self.vRms*thisRand[0]
-    #    #streamPhi = 0.1*self.vRms*thisRand[1]
-    #    return 0,0 #streamTheta, streamPhi
-
-
-
-
-  ## Time Dependence ##########################################################################    
+  ## Time Dependence #######################################################################    
 
     def findTwave(self):
         #Finds the wave travel time to this point
@@ -349,20 +332,28 @@ class simpoint:
         
     def setTime(self,t):
         #Updates velocities to input time
-        self.findTSpeeds(t)
+        self.findWaveSpeeds(t)
         self.findVLOS()
 
-    def xi(self, t):
-        #Returns xi(t)
+    def xi1(self, t):
+        #Returns xi1(t)
         if math.isnan(t):
             return math.nan
         else:
-            t_int = int(t % self.env.last_xi_t)
-            xi1 = self.env.xi_raw[t_int]
-            xi2 = self.env.xi_raw[t_int+1]
-            return xi1+( (t%self.env.last_xi_t) - t_int )*(xi2-xi1)
+            t_int = int(t % self.env.last_xi1_t)
+            xi1 = self.env.xi1_raw[t_int]
+            xi2 = self.env.xi1_raw[t_int+1]
+            return xi1+( (t%self.env.last_xi1_t) - t_int )*(xi2-xi1)
 
-
+    def xi2(self, t):
+        #Returns xi2(t)
+        if math.isnan(t):
+            return math.nan
+        else:
+            t_int = int(t % self.env.last_xi2_t)
+            xi1 = self.env.xi2_raw[t_int]
+            xi2 = self.env.xi2_raw[t_int+1]
+            return xi1+( (t%self.env.last_xi2_t) - t_int )*(xi2-xi1)
 
 
   ## Radiative Transfer ####################################################################
@@ -378,8 +369,6 @@ class simpoint:
         self.lamPhi = 1/(self.deltaLam * np.sqrt(np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/self.deltaLam)**2)
         self.intensity = self.rho**2 * self.qt * self.lamPhi * 1e33
         return self.intensity
-
-
 
         
   ## Misc Methods ##########################################################################
@@ -523,7 +512,9 @@ class simulate:
         
 
     def simulate_now(self):
-        #bar = pb.ProgressBar(self.Npoints)
+        if type(self.grid) is grid.plane: doBar = True 
+        else: doBar = False
+        if doBar: bar = pb.ProgressBar(self.Npoints)
         self.sPoints = []
         self.pData = []
         #print("Beginning Simulation...")
@@ -535,13 +526,14 @@ class simulate:
                 thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
                 self.sPoints.append(thisPoint)
                 self.pData.append(thisPoint.Vars())
-                #bar.increment()
-                #bar.display()
-            #bar.display(force = True)
+                if doBar: 
+                    bar.increment()
+                    bar.display()
+            if doBar: bar.display(force = True)
             #print('Elapsed Time: ' + str(time.time() - t))
         else:
             #Parallel Way
-            print('    Initializing Pool...')
+            print('  Initializing Pool...')
             pool = Pool()
             #thisPoint = simpoint(grid = self.grid)
             for pnt in pool.imap(partial(simpoint, grid = self.grid, env = self.env, findT = self.findT), self.cPoints, 1000):
@@ -733,7 +725,8 @@ class simulate:
             lineInd += 1
 
         self.findMomentStats_t()
-        #self.plotMoments()
+        #self.plotMoments_t()
+        return
 
     def findMomentStats_t(self):
         self.power = self.moment[0]
@@ -836,12 +829,12 @@ class simulate:
 #Level 2: Initializes many simulations and performs statistics on them.
 class coronasim:
     #Level 2: Initializes many simulations and performs statistics on them.
-    def __init__(self, lineObj, env, N = None, MPI = False):
+    def __init__(self, lineObj, env, N = 1000, use_MPI = False):
         self.lineObj = lineObj
         self.env = env
         self.N = N
 
-        if MPI: self.MPI_init()
+        if use_MPI: self.MPI_init()
         else: self.init()
 
     def init(self):
@@ -864,7 +857,6 @@ class coronasim:
         print('Elapsed Time: ' + str(time.time() - t))
         sys.stdout.flush()
         self.plotStats()
-
 
     def MPI_init(self):
         self.comm = MPI.COMM_WORLD
@@ -914,9 +906,10 @@ class coronasim:
 
     def seperate(self, list, N):
         #Breaks a list up into chunks
-        chunkSize = len(list)/N
+        chunkSize = float(len(list)/N)
+        assert chunkSize > 1
         chunkSizeInt = int(chunkSize)
-        remainder = int((chunkSize % chunkSizeInt) * N)
+        remainder = int((chunkSize % float(chunkSizeInt)) * N)
     
         chunks = [ [] for _ in range(N)] 
         for NN in np.arange(N):
@@ -927,7 +920,6 @@ class coronasim:
             for nn in np.arange(thisLen):
                 chunks[NN].extend([list.pop(0)])
         return chunks
-
 
     def findLineStats(self):
         if self.root: 
@@ -999,16 +991,65 @@ class coronasim:
 
 
 
-    #def gauss_function(x, a, x0, sigma):
-    #    return a*np.exp(-(x-x0)**2/(2*sigma**2))
 
 
+
+
+
+
+
+#Rand and Stream Velocities
+
+    #def findRandU(self):
+    #    #Wrong
+    #    #amp = 0.01 * self.vRms * (self.rho / self.rho_min)**1.2
+    #    #rand = simpoint.thermRand.standard_normal(3)
+    #    return 0,0,0 #amp*rand
+
+    #def findStreamU(self):
+    #    #if self.streamIndex == 0: return 0.0, 0.0 #Velocities for the regions between streams
+    #    #simpoint.streamRand.seed(int(self.streamIndex))
+    #    #thisRand = simpoint.streamRand.standard_normal(2)
+    #    ##Wrong scaling
+    #    #streamTheta = 0.1*self.vRms*thisRand[0]
+    #    #streamPhi = 0.1*self.vRms*thisRand[1]
+    #    return 0,0 #streamTheta, streamPhi
 
 
             #self.streamTheta, self.streamPhi = self.findStreamU() #All Zeros for now
             #self.randUr, self.randTheta, self.randPhi = self.findRandU() #All Zeros for now
             #self.uTheta = self.streamTheta + self.randTheta + 0.05* self.vRms*self.xi(t - self.twave)
             #self.uPhi = self.streamPhi + self.randPhi + 0.05*self.vRms*self.xi(t - self.twave) 
+
+
+#Density stuff
+
+        #self.num_den_min = self.minNumDense(self.rx)
+        #self.num_den = self.densfac * self.num_den_min
+        #self.rho_min = self.num2rho(self.num_den_min)
+        #self.rho = self.num2rho(self.num_den)
+        
+    #def minNumDense(self, rx):
+    #    #Find the number density floor
+    #    return self.interp_rx_dat(self.num_dens_raw)
+    #    #return 6.0e4 * (5796./rx**33.9 + 1500./rx**16. + 300./rx**8. + 25./rx**4. + 1./rx**2)
+        
+    #def num2rho(self, num_den):
+    #    #Convert number density to physical units (cgs)
+    #    return (1.841e-24) * num_den  
+
+
+
+
+
+
+    #def gauss_function(x, a, x0, sigma):
+    #    return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+
+
+
+
 
 
 
@@ -1040,47 +1081,6 @@ class coronasim:
     ##    plt.plot(self.times, self.vStdErr)
     ##    plt.title('mean and std of gradV over time')
     ##    plt.show(block = False)
-
-
-
-
-
-
-        ##Label Contiguous regions
-        #this_label_im, this_nb_labels = ndimage.label(smBmask)
-
-        #plt.imshow(this_label_im, cmap = "winter_r")
-        #plt.colorbar()
-        #plt.show()
-
-        
-        #for ii in weights:
-        #    passInd += 1
-        #    #Mask only pixels greater than weighted mean
-        #    bmean =  np.mean([v for v in bdata.tolist() if v!=0])
-        #    bMask = bdata > bmean*ii
-        #    #Label Contiguous regions
-        #    this_label_im, this_nb_labels = ndimage.label(bMask)
-        #    #Append to previous labels
-        #    this_label_im += simpoint.nb_labels
-        #    this_label_im *= bMask
-        #    #Record passInd
-        #    simpoint.bPassInd += passInd * bMask
-        #    #Record Labels
-        #    simpoint.label_im += this_label_im
-        #    simpoint.nb_labels += this_nb_labels
-        #    simpoint.bN.append(this_nb_labels)
-        #    #plt.imshow(np.log10(this_label_im), cmap = 'prism')
-        #    #plt.colorbar()
-        #    #plt.show()
-        #    bdata *= ~bMask
-
-
-
-
-
-
-
 
 
 

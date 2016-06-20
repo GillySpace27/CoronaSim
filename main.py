@@ -5,16 +5,34 @@ import matplotlib.pyplot as plt
 import gridgen as grid
 import coronasim as sim
 import time
+from mpi4py import MPI
 
 
 if __name__ == '__main__':
+    use_MPI = True
 
-    print('CoronaSim!')
-    print('Written by Chris Gilbert')
-    print('-------------------------\n')
+    if use_MPI:
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        root = rank == 0
+    else: root = True
 
-    ##Simulate Common Grids
-    df = grid.defGrid()
+    if root:
+        print('\nCoronaSim!')
+        print('Written by Chris Gilbert')
+        print('-------------------------\n')
+        ##Simulate Common Grids
+        df = grid.defGrid()
+        ##Initialize Simulation Environment
+        env = sim.environment()
+    else:
+        df = None
+        env = None
+
+    if use_MPI:
+        df = comm.bcast(df, root = 0)
+        env = comm.bcast(env, root = 0)
  
    ### Level 0 ### Simpoint 
     ###############
@@ -31,20 +49,19 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    #bpoleSim = sim.simulate(df.bpolePlane, N = 1000, findT = False)
+    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 1000, findT = False)
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     ##bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    #bpoleSim.plot('twave')
+    #bpoleSim.compare('alfV1', 'alfV2')
 
 
     ### Level 2 ### CoronaSim
     ###############
     
 
-    lines = df.impactLines(50)
-    env = sim.environment()
-    impactSims = sim.coronasim(lines, env, N = 1000)
+    lines = grid.impactLines(400)
+    impactSims = sim.coronasim(lines, env, N = 2000, use_MPI = use_MPI)
 
     
 
@@ -85,7 +102,7 @@ if __name__ == '__main__':
     #    np.savetxt('density.txt', denss)
     #import matplotlib
     #matplotlib.use('tkagg')
-
-    print('')
-    print('Sim Name =')
-    print([x for x in vars().keys() if "Sim" in x])
+    if root:
+        print('')
+        print('Sim Name =')
+        print([x for x in vars().keys() if "Sim" in x])
