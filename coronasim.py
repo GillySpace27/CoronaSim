@@ -173,7 +173,6 @@ class environment:
 #Level 0: Simulates physical properties at a given coordinate
 class simpoint:
     #Level 0: Simulates physical properties at a given coordinate
-
     def __init__(self, cPos = [0,0,1.5], grid = None, env = None, findT = None, pbar = None):
         #Inputs
         self.grid = grid
@@ -469,7 +468,7 @@ class simulate:
         self.simulate_now()
 
 
-        
+        #TODO make each line have its own random seed
 
     def simulate_now(self):
         if type(self.grid) is grid.plane: doBar = True 
@@ -640,8 +639,6 @@ class simulate:
     ####################################################################
 
     def getStats(self):
-        self.makeLamAxis()
-        self.lineProfile()
         self.findMoments()
         return self.findMomentStats()
 
@@ -846,8 +843,7 @@ class multisim:
         self.findT = findT
         self.MPI_init()
         self.findLines()
-        #self.findLineStats()
-
+        self.findLineStats()
 
     def MPI_init(self):
         self.comm = MPI.COMM_WORLD
@@ -881,8 +877,10 @@ class multisim:
             bar = pb.ProgressBar(len(self.gridList))
             print('Simulating Spectral Lines')
         self.lines = []
+        #self.lineStats = []
         for lsim in self.simList:
             self.lines.append(lsim.getProfile())
+            #self.stats.append(lsim.getStats())
             if self.root:
                 bar.increment()
                 bar.display()
@@ -913,6 +911,7 @@ class multisim:
         if self.root: 
             print('Calculating Line Statistics...')
             bar = pb.ProgressBar(len(self.simList))
+            #t = time.time()
         self.lineStats = []
         for line in self.simList:
             self.lineStats.append(line.getStats())
@@ -927,10 +926,10 @@ class multisim:
             for stat in lineStats:
                 self.lineStats.extend(stat)
 
-            print('')
-            print('Elapsed Time: ' + str(time.time() - t))
+            #print('')
+            #print('Elapsed Time: ' + str(time.time() - t))
             sys.stdout.flush()
-            self.plotStats()
+            #self.plotStats()
 
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)
@@ -976,40 +975,57 @@ class multisim:
 
 #Level 3: Initializes many Multisims
 class batchsim:
-    def __init__(self, env, N = 20, b0 = 1.05, b1= 1.50):
-        impacts = np.linspace(b0,b1,N)
+    def __init__(self, env, N = 5, b0 = 1.05, b1= 1.50):
+        comm = MPI.COMM_WORLD
+        root = comm.rank == 0
+
+        self.impacts = np.linspace(b0,b1,N)
         self.impactSims = []
-        for impact in impacts:
+        self.specLines = []
+        self.specStats = []
+        for impact in self.impacts:
             lines = grid.rotLines(b = impact)
             thisSim = multisim(lines, env, N = 1000)
-            self.impactSims.append(thisSim)
+            if root:
+                self.impactSims.append(thisSim)
+                self.specLines.append(thisSim.lines)
+                self.specStats.append(thisSim.lineStats)
+        if root: 
+            self.findStats()
+            self.plotStats()
+
+    def findStats(self):
+        self.stat = [[[],[]],[[],[]],[[],[]]]
+        for impact in self.specStats:
+                allAmp = [x[0] for x in impact]
+                allMean = [x[1] for x in impact]
+                allStd = [x[2] for x in impact]
+            
+                self.stat[0][0].append(np.mean(allAmp))
+                self.stat[0][1].append(np.std(allAmp))
+
+                self.stat[1][0].append(np.mean(allMean))
+                self.stat[1][1].append(np.std(allMean))
+            
+                self.stat[2][0].append(np.mean(allStd))
+                self.stat[2][1].append(np.std(allStd))
+                    
+
+    def plotStats(self):
+        f, axArray = plt.subplots(3, 1, sharex=True)
+        mm = 0
+        titles = ['amp', 'mean', 'sigma']
+        ylabels = ['', 'Angstroms', 'Angstroms']
+        for ax in axArray:
+            if mm == 0: ax.errorbar(self.impacts, np.log(self.stat[mm][0]), yerr = np.log(self.stat[mm][1]), fmt = 'o')
+            else: ax.errorbar(self.impacts, self.stat[mm][0], yerr = self.stat[mm][1], fmt = 'o')
+            ax.set_title(titles[mm])
+            ax.set_ylabel(ylabels[mm])
+            mm += 1
+        ax.set_xlabel('Impact Parameter')
+        plt.show()
 
 
-####################################################################
-####################################################################
-
-
-
-## Line Analysis
-
-#class spec:
-
-#    def __init__(self, profiles):
-#        asdf
-
-
-#    def findMoments(self):
-#        self.maxMoment = 3
-#        self.moment = np.zeros(self.maxMoment)
-#        for mm in np.arange(self.maxMoment):
-#                self.moment[mm] = np.dot(self.profile, self.lamAx**mm)
-#        return self.moment
-
-#    def findMomentStats(self):
-#        self.power = self.moment[0] / self.Npoints
-#        self.centroid = self.moment[1] / self.moment[0]
-#        self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
-#        return [self.power, self.centroid, self.sigma]
 
 
 

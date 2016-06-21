@@ -92,9 +92,11 @@ if __name__ == '__main__':
     #plt.pcolormesh(np.log(lineSims.getLineArray()))
     #plt.show()
 
+
     ### Level 3 ### BatchSim
     ###############
-    myBatch = sim.batchsim(env)
+
+    myBatch = sim.batchsim(env, 20)
 
 
 
