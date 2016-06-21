@@ -64,10 +64,13 @@ class environment:
 
     randOffset = 0  #For randomizing 
 
-    mi = 1.6726219e-24 #grams per hydrogen
-    #mi = 9.2732796e-23 #grams per Iron
+    #mi = 1.6726219e-24 #grams per hydrogen
+    mi = 9.2732796e-23 #grams per Iron
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
     KB = 1.380e-16 #ergs/Kelvin
+
+    ang2cm = 1e-8
+    cm2ang = 1e8
 
     streamRand = np.random.RandomState()
     #thermRand = np.random.RandomState()
@@ -117,6 +120,24 @@ class environment:
 
     def setOffset(self, offset):
         self.randOffset = offset
+
+    def find_nearest(self,array,value):
+        #Returns the index of the point most similar to a given value
+        idx = (np.abs(array-value)).argmin()
+        return idx
+
+    def interp_rx_dat(self, rx, array):
+        #Interpolates an array(rx)
+        if rx < 1. : return math.nan
+        rxInd = int(self.find_nearest(self.rx_raw, rx))
+        val1 = array[rxInd]
+        val2 = array[rxInd+1]
+        slope = val2 - val1
+        step = self.rx_raw[rxInd+1] - self.rx_raw[rxInd]
+        discreteRx = self.rx_raw[rxInd]
+        diff = rx - discreteRx
+        diffstep = diff / step
+        return val1 + diffstep*(slope)
 
   ## Magnets ##########################################################################
         
@@ -378,6 +399,8 @@ class simpoint:
         
   ## Misc Methods ##########################################################################
 
+    #TODO put interp function inside env
+
     def find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
         idx = (np.abs(array-value)).argmin()
@@ -448,6 +471,8 @@ class simulate:
         self.grid  = gridObj
         self.findT = findT
         self.env = envObj
+        self.profile = None
+        self.lamAx = None
 
 
         if findT is None:
@@ -651,15 +676,21 @@ class simulate:
         return self.findMomentStats()
 
     def getProfile(self):
-        self.makeLamAxis()
+        if self.lamAx is None: self.makeLamAxis()
         return self.lineProfile()
 
-    def makeLamAxis(self, Ln = 100, lam0 = 1000, lamPm = 2):
+    def makeLamAxis(self, Ln = 100, lam0 = 200, lamPm = 0.5):
         #TODO get inputs from top level somewhere
         self.lam0 = lam0
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
         return self.lamAx
 
+    def plotProfile(self):
+        if self.lamAx is None: self.makeLamAxis()
+        if self.profile is None: self.lineProfile()
+        plt.plot(self.lamAx, self.profile)
+        plt.show()
+        
     def lineProfile(self):
         #Get a line profile at the current time
         self.profile = np.zeros_like(self.lamAx)
@@ -991,7 +1022,7 @@ class multisim:
 class batchjob:
     #Requires labels, xlabel, batch
     def __init__(self, env):
-
+        self.env = env
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
 
@@ -1001,7 +1032,7 @@ class batchjob:
         self.lineStats = []
         for ind in self.labels:
             if self.root and self.printMulti: print('\n\n' + self.xlabel +' = ' + str(ind)) 
-
+            if self.root: bar.display()
             thisBatch = self.batch.pop(0) 
             #if self.root: print(thisBatch)
 
@@ -1016,18 +1047,22 @@ class batchjob:
                     bar.display()
         if self.root and self.print: bar.display(True)
         if self.root: 
+            self.lam0 = self.sims[0].simList[0].lam0
             self.findStats()
             self.plotStats()
+            self.plotStatsV()
 
         comm.Barrier()
 
     def findStats(self):
         self.stat = [[[],[]],[[],[]],[[],[]]]
-        for vars in self.lineStats:
+        self.statV = [[[],[]],[[],[]],[[],[]]]
+        for vars, impact in zip(self.lineStats, self.labels):
                 allAmp = [x[0] for x in vars]
                 allMean = [x[1] for x in vars]
                 allStd = [x[2] for x in vars]
             
+                #Wavelength Units
                 self.stat[0][0].append(np.mean(allAmp))
                 self.stat[0][1].append(np.std(allAmp))
 
@@ -1036,19 +1071,53 @@ class batchjob:
             
                 self.stat[2][0].append(np.mean(allStd))
                 self.stat[2][1].append(np.std(allStd))
-                    
+
+                #Velocity Units
+                self.statV[0][0].append(np.mean(allAmp))
+                self.statV[0][1].append(np.std(allAmp))
+
+                self.statV[1][0].append(self.mean2V(np.mean(allMean)))
+                self.statV[1][1].append(self.mean2V(np.std(allMean)))
+                
+                T = self.env.interp_rx_dat(impact, self.env.T_raw)
+                self.statV[2][0].append(self.std2V(np.mean(allStd), T))
+                self.statV[2][1].append(self.std2V(np.std(allStd), T)*10)
+
+    def mean2V(self, mean):
+        return mean * self.env.c / (self.lam0 * self.env.ang2cm)
+
+    def std2V(self, std, T):
+        return (2 * std * self.env.ang2cm * self.env.c / (self.lam0 * self.env.ang2cm))**2 - (4 * self.env.KB * T / self.env.mi)
+                           
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)
         mm = 0
         titles = ['amp', 'mean', 'sigma']
         ylabels = ['', 'Angstroms', 'Angstroms']
         for ax in axArray:
-            if mm == 0: ax.errorbar(self.labels, np.log(self.stat[mm][0]), yerr = np.log(self.stat[mm][1]), fmt = 'o')
-            else: ax.errorbar(self.labels, self.stat[mm][0], yerr = self.stat[mm][1], fmt = 'o')
+            if mm == 0: ax.set_yscale('log')
+            ax.errorbar(self.labels, self.stat[mm][0], yerr = self.stat[mm][1], fmt = 'o')
             ax.set_title(titles[mm])
             ax.set_ylabel(ylabels[mm])
             mm += 1
+            ax.autoscale(tight = False)
         ax.set_xlabel(self.xlabel)
+        plt.show(False)
+
+    def plotStatsV(self):
+        f, axArray = plt.subplots(3, 1, sharex=True)
+        mm = 0
+        titles = ['amp', 'mean', 'sigma']
+        ylabels = ['', 'cm/s', 'cm/s']
+        for ax in axArray:
+            if mm == 0: ax.set_yscale('log')
+            ax.errorbar(self.labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
+            ax.set_title(titles[mm])
+            ax.set_ylabel(ylabels[mm])
+            mm += 1
+            ax.autoscale(tight = False)
+        ax.set_xlabel(self.xlabel)
+        
         plt.show()
 
 
