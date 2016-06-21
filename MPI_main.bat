@@ -1,1 +1,1 @@
-cmd /k mpiexec -n 8 python main.py
+cmd /k mpiexec -n 7 python -i main.py

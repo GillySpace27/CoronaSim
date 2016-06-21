@@ -671,7 +671,7 @@ class simulate:
 
     def findMomentStats(self):
         self.power = self.moment[0] / self.Npoints
-        self.centroid = self.moment[1] / self.moment[0]
+        self.centroid = self.moment[1] / self.moment[0] - self.lam0
         self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
         return [self.power, self.centroid, self.sigma]
 
@@ -842,8 +842,8 @@ class multisim:
         self.N = N
         self.findT = findT
         self.MPI_init()
-        self.findLines()
-        self.findLineStats()
+        self.findSpecLines()
+        self.findSpecLineStats()
 
     def MPI_init(self):
         self.comm = MPI.COMM_WORLD
@@ -855,7 +855,7 @@ class multisim:
             print('\nRunning MultiSim:')
             t = time.time() #Print Stuff
 
-        gridList = self.seperate(self.lineObj[0], self.size)
+        gridList = self.__seperate(self.lineObj[0], self.size)
         self.gridList = gridList[self.rank]
 
         if self.root: 
@@ -872,7 +872,7 @@ class multisim:
                 bar.display()
         if self.root: bar.display(force = True)
 
-    def findLines(self):
+    def findSpecLines(self):
         if self.root: 
             bar = pb.ProgressBar(len(self.gridList))
             print('Simulating Spectral Lines')
@@ -890,7 +890,7 @@ class multisim:
     def getLineArray(self):
         return np.asarray(self.lines)
             
-    def seperate(self, list, N):
+    def __seperate(self, list, N):
         #Breaks a list up into chunks
         chunkSize = float(len(list)/N)
         assert chunkSize > 1
@@ -907,18 +907,18 @@ class multisim:
                 chunks[NN].extend([list.pop(0)])
         return chunks
 
-    def findLineStats(self):
-        if self.root: 
-            print('Calculating Line Statistics...')
-            bar = pb.ProgressBar(len(self.simList))
+    def findSpecLineStats(self):
+        #if self.root: 
+        #    print('Calculating Line Statistics...')
+        #    bar = pb.ProgressBar(len(self.simList))
             #t = time.time()
         self.lineStats = []
         for line in self.simList:
             self.lineStats.append(line.getStats())
-            if self.root:
-                bar.increment()
-                bar.display()
-        if self.root: bar.display(force = True)
+        #    if self.root:
+        #        bar.increment()
+        #        bar.display()
+        #if self.root: bar.display(force = True)
 
         lineStats = self.comm.gather(self.lineStats, root = 0)
         if self.root:
@@ -967,39 +967,24 @@ class multisim:
         print('Elapsed Time: ' + str(time.time() - t))
         sys.stdout.flush()
         self.plotStats()
-
+#Inputs: (self, lineObj, env, N = 1000, findT = None)
+#Public Methods: 
+#Attributes: lines, lineStats
 
 ####################################################################
 ####################################################################
 
 
 #Level 3: Initializes many Multisims
-class batchsim:
-    def __init__(self, env, N = 5, b0 = 1.05, b1= 1.50):
-        comm = MPI.COMM_WORLD
-        root = comm.rank == 0
 
-        self.impacts = np.linspace(b0,b1,N)
-        self.impactSims = []
-        self.specLines = []
-        self.specStats = []
-        for impact in self.impacts:
-            lines = grid.rotLines(b = impact)
-            thisSim = multisim(lines, env, N = 1000)
-            if root:
-                self.impactSims.append(thisSim)
-                self.specLines.append(thisSim.lines)
-                self.specStats.append(thisSim.lineStats)
-        if root: 
-            self.findStats()
-            self.plotStats()
+class batchjob:
 
     def findStats(self):
         self.stat = [[[],[]],[[],[]],[[],[]]]
-        for impact in self.specStats:
-                allAmp = [x[0] for x in impact]
-                allMean = [x[1] for x in impact]
-                allStd = [x[2] for x in impact]
+        for vars in self.specStats:
+                allAmp = [x[0] for x in vars]
+                allMean = [x[1] for x in vars]
+                allStd = [x[2] for x in vars]
             
                 self.stat[0][0].append(np.mean(allAmp))
                 self.stat[0][1].append(np.std(allAmp))
@@ -1010,24 +995,50 @@ class batchsim:
                 self.stat[2][0].append(np.mean(allStd))
                 self.stat[2][1].append(np.std(allStd))
                     
-
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)
         mm = 0
         titles = ['amp', 'mean', 'sigma']
         ylabels = ['', 'Angstroms', 'Angstroms']
         for ax in axArray:
-            if mm == 0: ax.errorbar(self.impacts, np.log(self.stat[mm][0]), yerr = np.log(self.stat[mm][1]), fmt = 'o')
-            else: ax.errorbar(self.impacts, self.stat[mm][0], yerr = self.stat[mm][1], fmt = 'o')
+            if mm == 0: ax.errorbar(self.labels, np.log(self.stat[mm][0]), yerr = np.log(self.stat[mm][1]), fmt = 'o')
+            else: ax.errorbar(self.labels, self.stat[mm][0], yerr = self.stat[mm][1], fmt = 'o')
             ax.set_title(titles[mm])
             ax.set_ylabel(ylabels[mm])
             mm += 1
-        ax.set_xlabel('Impact Parameter')
+        ax.set_xlabel(self.xlabel)
         plt.show()
 
 
+class impactsim(batchjob):
+    def __init__(self, env, N = 5, b0 = 1.05, b1= 1.50):
+        comm = MPI.COMM_WORLD
+        root = comm.rank == 0
+
+        self.labels = np.linspace(b0,b1,N)
+        self.xlabel = 'Impact Parameter'
+        self.sims = []
+        self.specLines = []
+        self.specStats = []
+        for impact in self.labels:
+            lines = grid.rotLines(N = 40, b = impact)
+            if root: print('\nb = ' + str(impact))
+            thisSim = multisim(lines, env, N = 1000)
+            if root:
+                self.sims.append(thisSim)
+                self.specLines.append(thisSim.lines)
+                self.specStats.append(thisSim.lineStats)
+        if root: 
+            self.findStats()
+            self.plotStats()
 
 
+
+
+
+class batchjob:
+    def __init__(self, **kwargs):
+        return super().__init__(**kwargs)
 
 
 

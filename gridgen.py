@@ -203,7 +203,6 @@ class plane(generator):
                 self.offset = [normal[0], *offset]
         
         self.findGrads()
-
             
     def findGrads(self):
         #Determine the eigenvectors of the plane
