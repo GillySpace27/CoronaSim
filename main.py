@@ -96,7 +96,7 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
 
-    myBatch = sim.impactsim(env, 10, 10)
+    myBatch = sim.impactsim(env, 30, 30)
 
 
 

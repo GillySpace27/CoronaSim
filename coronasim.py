@@ -844,10 +844,10 @@ class simulate:
 #Level 2: Initializes many simulations
 class multisim:
     #Level 2: Initializes many simulations
-    def __init__(self, lineObj, env, N = 1000, findT = None, printOut = False):
+    def __init__(self, batch, env, N = 1000, findT = None, printOut = False):
         self.print = printOut
-        self.lineObj = lineObj
-        self.gridLabels = self.lineObj[1]
+        self.batch = batch
+        self.gridLabels = self.batch[1]
         self.env = env
         self.N = N
         self.findT = findT
@@ -865,7 +865,7 @@ class multisim:
             print('\nRunning MultiSim:')
             t = time.time() #Print Stuff
 
-        gridList = self.__seperate(self.lineObj[0], self.size)
+        gridList = self.__seperate(self.batch[0], self.size)
         self.gridList = gridList[self.rank]
 
         if self.root and self.print: 
@@ -963,7 +963,7 @@ class multisim:
         t = time.time()
         self.root = True
         self.simList = []
-        self.gridList = self.lineObj[0]
+        self.gridList = self.batch[0]
 
         bar = pb.ProgressBar(len(self.gridList))
         nn = 0
@@ -978,7 +978,7 @@ class multisim:
         print('Elapsed Time: ' + str(time.time() - t))
         sys.stdout.flush()
         self.plotStats()
-#Inputs: (self, lineObj, env, N = 1000, findT = None)
+#Inputs: (self, batch, env, N = 1000, findT = None)
 #Public Methods: 
 #Attributes: lines, lineStats
 
@@ -989,7 +989,38 @@ class multisim:
 #Level 3: Initializes many Multisims
 
 class batchjob:
-    #Requires profiles, labels
+    #Requires labels, xlabel, batch
+    def __init__(self, env):
+
+        comm = MPI.COMM_WORLD
+        self.root = comm.rank == 0
+
+        if self.root and self.print: bar = pb.ProgressBar(len(self.labels))
+        self.sims = []
+        self.profiles = []
+        self.lineStats = []
+        for ind in self.labels:
+            if self.root and self.printMulti: print('\n\n' + self.xlabel +' = ' + str(ind)) 
+
+            thisBatch = self.batch.pop(0) 
+            #if self.root: print(thisBatch)
+
+            thisSim = multisim(thisBatch, env, N = 1000, printOut = self.printMulti)
+            if self.root:
+                self.sims.append(thisSim)
+                self.profiles.append(thisSim.lines)
+                self.lineStats.append(thisSim.lineStats)
+                if self.print:
+                    if self.root and self.print and self.printMulti: print('\nBatch Progress')
+                    bar.increment()
+                    bar.display()
+        if self.root and self.print: bar.display(True)
+        if self.root: 
+            self.findStats()
+            self.plotStats()
+
+        comm.Barrier()
+
     def findStats(self):
         self.stat = [[[],[]],[[],[]],[[],[]]]
         for vars in self.lineStats:
@@ -1023,44 +1054,16 @@ class batchjob:
 
 class impactsim(batchjob):
     def __init__(self, env, Nb = 5, Nr = 20, b0 = 1.05, b1= 1.50):
+
         self.print = True
-        self.printMulti = True
-        comm = MPI.COMM_WORLD
-        self.root = comm.rank == 0
+        self.printMulti = False
 
-        self.labels = np.linspace(b0,b1,Nb) #######
-        self.xlabel = 'Impact Parameter'    #######
-
-        if self.root and self.print: bar = pb.ProgressBar(len(self.labels))
-        self.sims = []
-        self.profiles = []
-        self.lineStats = []
-        for impact in self.labels:
-            if self.root and self.printMulti: print('\n\nb = ' + str(impact)) #######
-
-            lines = grid.rotLines(N = Nr, b = impact)  #######
-
-            thisSim = multisim(lines, env, N = 1000, printOut = self.printMulti)
-            if self.root:
-                self.sims.append(thisSim)
-                self.profiles.append(thisSim.lines)
-                self.lineStats.append(thisSim.lineStats)
-                if self.print:
-                    if self.root and self.print and self.printMulti: print('\nBatch Progress')
-                    bar.increment()
-                    bar.display()
-        if self.root and self.print: bar.display(True)
-        if self.root: 
-            self.findStats()
-            self.plotStats()
-
-        comm.Barrier()
-
-
-
-
-
-
+        self.labels = np.linspace(b0,b1,Nb) 
+        self.xlabel = 'Impact Parameter'    
+        self.batch = []
+        for ind in self.labels:
+            self.batch.append(grid.rotLines(N = Nr, b = ind))  
+        return super().__init__(env)
 
 
 
