@@ -62,6 +62,8 @@ class environment:
     fmax = 8.2
     theta0 = 28
 
+    randOffset = 0  #For randomizing 
+
     mi = 1.6726219e-24 #grams per hydrogen
     #mi = 9.2732796e-23 #grams per Iron
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
@@ -112,6 +114,9 @@ class environment:
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         rel = os.path.join(script_dir, path)    
         return rel
+
+    def setOffset(self, offset):
+        self.randOffset = offset
 
   ## Magnets ##########################################################################
         
@@ -180,6 +185,7 @@ class simpoint:
         self.cPos = cPos
         self.pPos = self.cart2sph(self.cPos)
         self.rx = self.r2rx(self.pPos[0])
+        
         if findT is None:
             self.findT = self.grid.findT
         else: self.findT = findT
@@ -225,7 +231,7 @@ class simpoint:
         self.footB = self.env.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
 
     def findStreamIndex(self):
-        self.streamIndex = self.env.label_im[self.find_nearest(self.env.BMap_x, self.foot_cPos[0])][
+        self.streamIndex = self.env.randOffset + self.env.label_im[self.find_nearest(self.env.BMap_x, self.foot_cPos[0])][
                                             self.find_nearest(self.env.BMap_y, self.foot_cPos[1])]
 
 
@@ -436,11 +442,13 @@ class simpoint:
 #Level 1: Initializes many Simpoints into a Simulation
 class simulate: 
     #Level 1: Initializes many Simpoints into a Simulation
-    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None):
-        #print("Initializing Simulation...")
+    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False):
+        self.print = printOut
+        if self.print: print("Initializing Simulation...")
         self.grid  = gridObj
         self.findT = findT
         self.env = envObj
+
 
         if findT is None:
             self.findT = self.grid.findT
@@ -473,14 +481,14 @@ class simulate:
     def simulate_now(self):
         if type(self.grid) is grid.plane: doBar = True 
         else: doBar = False
-        if doBar: bar = pb.ProgressBar(self.Npoints)
+        if doBar and self.print: bar = pb.ProgressBar(self.Npoints)
         self.sPoints = []
         self.pData = []
-        #print("Beginning Simulation...")
+        if self.print: print("Beginning Simulation...")
         chunkSize = 1e5
         if True: #self.Npoints < chunkSize:
             #Serial Way
-            #t = time.time()
+            t = time.time()
             for cPos in self.cPoints: 
                 thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
                 self.sPoints.append(thisPoint)
@@ -488,8 +496,8 @@ class simulate:
                 if doBar: 
                     bar.increment()
                     bar.display()
-            if doBar: bar.display(force = True)
-            #print('Elapsed Time: ' + str(time.time() - t))
+            if doBar and self.print: bar.display(force = True)
+            if self.print: print('Elapsed Time: ' + str(time.time() - t))
         else:
             #Parallel Way
             print('  Initializing Pool...')
@@ -670,6 +678,7 @@ class simulate:
         return self.moment
 
     def findMomentStats(self):
+        #TODO Implement Kurtosis
         self.power = self.moment[0] / self.Npoints
         self.centroid = self.moment[1] / self.moment[0] - self.lam0
         self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
@@ -835,15 +844,16 @@ class simulate:
 #Level 2: Initializes many simulations
 class multisim:
     #Level 2: Initializes many simulations
-    def __init__(self, lineObj, env, N = 1000, findT = None):
+    def __init__(self, lineObj, env, N = 1000, findT = None, printOut = False):
+        self.print = printOut
         self.lineObj = lineObj
         self.gridLabels = self.lineObj[1]
         self.env = env
         self.N = N
         self.findT = findT
         self.MPI_init()
-        self.findSpecLines()
-        self.findSpecLineStats()
+        self.findProfiles()
+        self.findProfileStats()
 
     def MPI_init(self):
         self.comm = MPI.COMM_WORLD
@@ -851,29 +861,30 @@ class multisim:
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
 
-        if self.root: 
+        if self.root and self.print: 
             print('\nRunning MultiSim:')
             t = time.time() #Print Stuff
 
         gridList = self.__seperate(self.lineObj[0], self.size)
         self.gridList = gridList[self.rank]
 
-        if self.root: 
+        if self.root and self.print: 
             print('PoolSize = ' + str(self.size))
             print('JobSize = ' + str(len(self.gridLabels)))
             print('ChunkSize = ' + str(len(self.gridList))) #Print Stuff
 
-        if self.root: bar = pb.ProgressBar(len(self.gridList))
+        if self.root and self.print: bar = pb.ProgressBar(len(self.gridList))
         self.simList = []
         for grd in self.gridList:
+            self.env.setOffset(np.random.random_sample())
             self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
-            if self.root:
+            if self.root and self.print:
                 bar.increment()
                 bar.display()
-        if self.root: bar.display(force = True)
+        if self.root and self.print: bar.display(force = True)
 
-    def findSpecLines(self):
-        if self.root: 
+    def findProfiles(self):
+        if self.root and self.print: 
             bar = pb.ProgressBar(len(self.gridList))
             print('Simulating Spectral Lines')
         self.lines = []
@@ -881,10 +892,10 @@ class multisim:
         for lsim in self.simList:
             self.lines.append(lsim.getProfile())
             #self.stats.append(lsim.getStats())
-            if self.root:
+            if self.root and self.print:
                 bar.increment()
                 bar.display()
-        if self.root: bar.display(force = True)
+        if self.root and self.print: bar.display(force = True)
         return self.lines    
 
     def getLineArray(self):
@@ -907,7 +918,7 @@ class multisim:
                 chunks[NN].extend([list.pop(0)])
         return chunks
 
-    def findSpecLineStats(self):
+    def findProfileStats(self):
         #if self.root: 
         #    print('Calculating Line Statistics...')
         #    bar = pb.ProgressBar(len(self.simList))
@@ -978,10 +989,10 @@ class multisim:
 #Level 3: Initializes many Multisims
 
 class batchjob:
-
+    #Requires profiles, labels
     def findStats(self):
         self.stat = [[[],[]],[[],[]],[[],[]]]
-        for vars in self.specStats:
+        for vars in self.lineStats:
                 allAmp = [x[0] for x in vars]
                 allMean = [x[1] for x in vars]
                 allStd = [x[2] for x in vars]
@@ -1011,34 +1022,39 @@ class batchjob:
 
 
 class impactsim(batchjob):
-    def __init__(self, env, N = 5, b0 = 1.05, b1= 1.50):
+    def __init__(self, env, Nb = 5, Nr = 20, b0 = 1.05, b1= 1.50):
+        self.print = True
+        self.printMulti = True
         comm = MPI.COMM_WORLD
-        root = comm.rank == 0
+        self.root = comm.rank == 0
 
-        self.labels = np.linspace(b0,b1,N)
-        self.xlabel = 'Impact Parameter'
+        self.labels = np.linspace(b0,b1,Nb) #######
+        self.xlabel = 'Impact Parameter'    #######
+
+        if self.root and self.print: bar = pb.ProgressBar(len(self.labels))
         self.sims = []
-        self.specLines = []
-        self.specStats = []
+        self.profiles = []
+        self.lineStats = []
         for impact in self.labels:
-            lines = grid.rotLines(N = 40, b = impact)
-            if root: print('\nb = ' + str(impact))
-            thisSim = multisim(lines, env, N = 1000)
-            if root:
+            if self.root and self.printMulti: print('\n\nb = ' + str(impact)) #######
+
+            lines = grid.rotLines(N = Nr, b = impact)  #######
+
+            thisSim = multisim(lines, env, N = 1000, printOut = self.printMulti)
+            if self.root:
                 self.sims.append(thisSim)
-                self.specLines.append(thisSim.lines)
-                self.specStats.append(thisSim.lineStats)
-        if root: 
+                self.profiles.append(thisSim.lines)
+                self.lineStats.append(thisSim.lineStats)
+                if self.print:
+                    if self.root and self.print and self.printMulti: print('\nBatch Progress')
+                    bar.increment()
+                    bar.display()
+        if self.root and self.print: bar.display(True)
+        if self.root: 
             self.findStats()
             self.plotStats()
 
-
-
-
-
-class batchjob:
-    def __init__(self, **kwargs):
-        return super().__init__(**kwargs)
+        comm.Barrier()
 
 
 
