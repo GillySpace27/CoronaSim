@@ -145,10 +145,10 @@ class environment:
 
     ## Velocities #####################################################################
 
-    def findvRms(self, rx, B):
+    def findVrms(self, rx, B):
         #RMS Velocity
         densfac = self.findDensFac(B)
-        ur = self.findUr(self, rx, densfac)
+        ur = self.findUr(rx, densfac)
         vAlf = self.findAlf(rx,densfac)
         vPh = ur + vAlf
         rho = self.findRho(rx, densfac)
@@ -165,18 +165,18 @@ class environment:
 
     def findUr(self, rx, densfac):
         #Wind Velocity
-        return self.interp_rx_dat(rx, self.env.ur_raw) / densfac
+        return self.interp_rx_dat(rx, self.ur_raw) / densfac
 
     def findAlf(self, rx, densfac):
         #Alfen Velocity
-        return self.interp_rx_dat(rx, self.env.vAlf_raw) / np.sqrt(densfac)
+        return self.interp_rx_dat(rx, self.vAlf_raw) / np.sqrt(densfac)
 
-    def findVPh(self):
-        #Phase Velocity
-        return self.vAlf + self.ur 
+    #def findVPh(self):
+    #    #Phase Velocity
+    #    return self.vAlf + self.ur 
 
     def findRho(self, rx, densfac):
-        return self.interp_rx_dat(rx, self.env.rho_raw) * densfac 
+        return self.interp_rx_dat(rx, self.rho_raw) * densfac 
 
 
   ## Magnets ##########################################################################
@@ -974,7 +974,7 @@ class multisim:
     def __seperate(self, list, N):
         #Breaks a list up into chunks
         chunkSize = float(len(list)/N)
-        assert chunkSize > 1
+        assert chunkSize >= 1
         chunkSizeInt = int(chunkSize)
         remainder = int((chunkSize % float(chunkSizeInt)) * N)
     
@@ -1088,7 +1088,8 @@ class batchjob:
         if self.root: 
             self.lam0 = self.sims[0].simList[0].lam0
             self.findStats()
-            self.plotStats()
+            self.makeVrms()
+            #self.plotStats()
             self.plotStatsV()
 
         comm.Barrier()
@@ -1121,13 +1122,14 @@ class batchjob:
                 
                 T = self.env.interp_rx_dat(impact, self.env.T_raw)
                 self.statV[2][0].append(self.std2V(np.mean(allStd), T))
-                self.statV[2][1].append(self.std2V(np.std(allStd), T)*10)
+                self.statV[2][1].append(self.std2V(np.std(allStd), T))
 
     def mean2V(self, mean):
         return self.env.ang2cm(mean) * self.env.c / (self.env.ang2cm(self.lam0))
 
     def std2V(self, std, T):
-        return (2 * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.lam0)))**2 - (4 * self.env.KB * T / self.env.mi)
+        return (2 * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.lam0)))**2 - \
+            (4 * self.env.KB * T / self.env.mi)
                            
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)
@@ -1152,6 +1154,9 @@ class batchjob:
         for ax in axArray:
             if mm == 0: ax.set_yscale('log')
             ax.errorbar(self.labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
+            if mm == 2:
+                for vRms in self.vRmsList:
+                    ax.plot(self.labels, vRms)
             ax.set_title(titles[mm])
             ax.set_ylabel(ylabels[mm])
             mm += 1
@@ -1160,19 +1165,42 @@ class batchjob:
         
         plt.show()
 
+    def makeVrms(self):
+        self.vRmsList = []
+        Blist = np.arange(5,20).tolist()
+
+        for B in Blist:
+            thisV = []
+            for impact in self.impacts:
+                thisV.append(self.env.findVrms(impact, B))
+            self.vRmsList.append(thisV)
+
+        for vRms in self.vRmsList:
+            plt.plot(self.labels, vRms)
+
+        plt.show()
+
+
+        
+
 
 class impactsim(batchjob):
     def __init__(self, env, Nb = 5, Nr = 20, b0 = 1.05, b1= 1.50):
-
+        self.env = env
         self.print = True
         self.printMulti = False
 
-        self.labels = np.linspace(b0,b1,Nb) 
+        self.labels = np.linspace(b0,b1,Nb)
+        self.impacts = self.labels
         self.xlabel = 'Impact Parameter'    
         self.batch = []
-        for ind in self.labels:
-            self.batch.append(grid.rotLines(N = Nr, b = ind))  
-        return super().__init__(env)
+        for ind in self.impacts:
+            self.batch.append(grid.rotLines(N = Nr, b = ind)) 
+
+
+ 
+        super().__init__(env)
+
 
 
 

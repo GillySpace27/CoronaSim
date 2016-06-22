@@ -96,16 +96,14 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
 
-    myBatch = sim.impactsim(env, 20, 20)
+    myBatch = sim.impactsim(env, 2, 2)
 
 
 
 
 
 
-    #    np.savetxt('density.txt', denss)
-    #import matplotlib
-    #matplotlib.use('tkagg')
+
     if root:
         print('')
         print('Sim Name =')
