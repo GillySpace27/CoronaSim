@@ -27,7 +27,7 @@ import gridgen as grid
 import progressBar as pb
 import math
 import time
-from astropy import units as u
+#from astropy import units as u
 
 import multiprocessing as mp
 from multiprocessing import Pool
@@ -61,6 +61,7 @@ class environment:
     B_thresh = 6.0
     fmax = 8.2
     theta0 = 28
+    S0 = 7.0e5
 
     randOffset = 0  #For randomizing 
 
@@ -68,9 +69,6 @@ class environment:
     mi = 9.2732796e-23 #grams per Iron
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
     KB = 1.380e-16 #ergs/Kelvin
-
-    ang2cm = 1e-8
-    cm2ang = 1e8
 
     streamRand = np.random.RandomState()
     #thermRand = np.random.RandomState()
@@ -139,6 +137,48 @@ class environment:
         diffstep = diff / step
         return val1 + diffstep*(slope)
 
+    def ang2cm(self, var):
+        return var * 1e-8
+
+    def cm2ang(self, var):
+        return var * 1e8
+
+    ## Velocities #####################################################################
+
+    def findvRms(self, rx, B):
+        #RMS Velocity
+        densfac = self.findDensFac(B)
+        ur = self.findUr(self, rx, densfac)
+        vAlf = self.findAlf(rx,densfac)
+        vPh = ur + vAlf
+        rho = self.findRho(rx, densfac)
+        Hfit  = 2.2*(self.fmax/10.)**0.62
+        f = self.fmax + (1.-self.fmax)*np.exp(-((rx-1.)/Hfit)**1.1)
+        return np.sqrt(self.S0*vAlf/((vPh)**2*rx**2*f*rho))
+
+    def findDensFac(self, B):
+        # Find the density factor
+        if np.abs(B) < np.abs(self.B_thresh):
+            return 1
+        else:
+            return (np.abs(B) / self.B_thresh)**0.5
+
+    def findUr(self, rx, densfac):
+        #Wind Velocity
+        return self.interp_rx_dat(rx, self.env.ur_raw) / densfac
+
+    def findAlf(self, rx, densfac):
+        #Alfen Velocity
+        return self.interp_rx_dat(rx, self.env.vAlf_raw) / np.sqrt(densfac)
+
+    def findVPh(self):
+        #Phase Velocity
+        return self.vAlf + self.ur 
+
+    def findRho(self, rx, densfac):
+        return self.interp_rx_dat(rx, self.env.rho_raw) * densfac 
+
+
   ## Magnets ##########################################################################
         
     def loadBMap(self):
@@ -150,7 +190,6 @@ class environment:
         self.BMap_x = Bobj.get('x_cap')
         self.BMap_y = Bobj.get('y_cap')
         self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_raw)
-
 
     def labelStreamers(self, thresh = 0.7):
         #Label the Streamers
@@ -172,6 +211,7 @@ class environment:
         #for co in coordinates:
         #    plt.scatter(*co)
         #plt.show()
+        return
 
     def voronoify_sklearn(self, I, seeds):
         #Uses the voronoi algorithm to assign stream labels
@@ -318,8 +358,7 @@ class simpoint:
     
     def findvRms(self):
         #RMS Velocity
-        self.S0 = 7.0e5
-        return np.sqrt(self.S0*self.vAlf/((self.vPh)**2 * 
+        return np.sqrt(self.env.S0*self.vAlf/((self.vPh)**2 * 
             self.rx**2*self.f*self.rho))
 
     def findVLOS(self, nGrad = None):
@@ -711,7 +750,7 @@ class simulate:
     def findMomentStats(self):
         #TODO Implement Kurtosis
         self.power = self.moment[0] / self.Npoints
-        self.centroid = self.moment[1] / self.moment[0] - self.lam0
+        self.centroid = self.moment[1] / self.moment[0]
         self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
         return [self.power, self.centroid, self.sigma]
 
@@ -1060,14 +1099,15 @@ class batchjob:
         for vars, impact in zip(self.lineStats, self.labels):
                 allAmp = [x[0] for x in vars]
                 allMean = [x[1] for x in vars]
+                allMeanC = [x[1] - self.lam0 for x in vars]
                 allStd = [x[2] for x in vars]
             
                 #Wavelength Units
                 self.stat[0][0].append(np.mean(allAmp))
                 self.stat[0][1].append(np.std(allAmp))
 
-                self.stat[1][0].append(np.mean(allMean))
-                self.stat[1][1].append(np.std(allMean))
+                self.stat[1][0].append(np.mean(allMeanC))
+                self.stat[1][1].append(np.std(allMeanC))
             
                 self.stat[2][0].append(np.mean(allStd))
                 self.stat[2][1].append(np.std(allStd))
@@ -1084,10 +1124,10 @@ class batchjob:
                 self.statV[2][1].append(self.std2V(np.std(allStd), T)*10)
 
     def mean2V(self, mean):
-        return mean * self.env.c / (self.lam0 * self.env.ang2cm)
+        return self.env.ang2cm(mean) * self.env.c / (self.env.ang2cm(self.lam0))
 
     def std2V(self, std, T):
-        return (2 * std * self.env.ang2cm * self.env.c / (self.lam0 * self.env.ang2cm))**2 - (4 * self.env.KB * T / self.env.mi)
+        return (2 * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.lam0)))**2 - (4 * self.env.KB * T / self.env.mi)
                            
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)
