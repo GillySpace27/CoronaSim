@@ -287,7 +287,7 @@ class simpoint:
         self.findStreamIndex()
         self.findSpeeds()
         self.findVLOS(self.grid.ngrad)
-        #self.findIntensity()
+        self.findIntensity(self.env.lam0, self.env.lam0)
         if pbar is not None:
             pbar.increment()
             pbar.display()
@@ -540,6 +540,7 @@ class simulate:
         self.env = envObj
         self.profile = None
         self.lamAx = None
+        self.adapt = True
 
 
         if findT is None:
@@ -556,6 +557,7 @@ class simulate:
             self.cPoints = self.grid.cLine(self.N, smax = self.iL)
 
         elif type(self.grid) is grid.plane:
+            self.adapt = False
             self.cPoints = self.grid.cPlane(self.N, self.iL)
         else: 
             print("Invalid Grid")
@@ -569,38 +571,83 @@ class simulate:
 
 
     def simulate_now(self):
-        if type(self.grid) is grid.plane: doBar = True 
+        isLine = True
+        if type(self.grid) is grid.plane: 
+            doBar = True 
+            isLine - False
+            
         else: doBar = False
         if doBar and self.print: bar = pb.ProgressBar(self.Npoints)
         self.sPoints = []
+        self.steps = []
         self.pData = []
         if self.print: print("Beginning Simulation...")
-        chunkSize = 1e5
-        if True: #self.Npoints < chunkSize:
-            #Serial Way
+
+        if isLine:
+            #Adaptive Mesh
             t = time.time()
-            for cPos in self.cPoints: 
+            stepInd = 0
+            rhoSum = 0
+            tol = 0.25
+            for cPos, step in self.grid: 
+
+                #print(step)
                 thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
                 self.sPoints.append(thisPoint)
+                self.steps.append(step)
+                self.pData.append(thisPoint.Vars())
+
+                #TODO Inc and dec the stepsize
+                if self.adapt:
+                    thisDens = thisPoint.intensity
+                    if stepInd > 10:
+                        #rhoAvg = rhoSum/stepInd
+                        if thisDens > 1e-4:
+                            self.grid.set2minStep()
+                        if thisDens < 1e-4:
+                            self.grid.incStep(1.5)
+
+                #rhoSum += thisDens
+                #lastDens = thisDens
+                stepInd += 1
+
+                if doBar: 
+                    bar.increment()
+                    bar.display()
+            #print(stepInd)
+            if doBar and self.print: bar.display(force = True)
+            if self.print: print('Elapsed Time: ' + str(time.time() - t))
+        else:
+            # Rigid Mesh
+            t = time.time()
+            nnnn = 0
+            step = 1/self.N
+            for cPos in self.grid: 
+                nnnn += 1
+                thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
+                self.sPoints.append(thisPoint)
+                self.steps.append(step)
                 self.pData.append(thisPoint.Vars())
                 if doBar: 
                     bar.increment()
                     bar.display()
             if doBar and self.print: bar.display(force = True)
             if self.print: print('Elapsed Time: ' + str(time.time() - t))
-        else:
-            #Parallel Way
-            print('  Initializing Pool...')
-            pool = Pool()
-            #thisPoint = simpoint(grid = self.grid)
-            for pnt in pool.imap(partial(simpoint, grid = self.grid, env = self.env, findT = self.findT), self.cPoints, 1000):
-                self.sPoints.append(pnt)
-                self.pData.append(pnt.Vars())
-                bar.increment()
-                bar.display()
-            bar.display(force = True)
-            pool.close()
-            pool.join()
+
+
+            ##Parallel Way
+            #chunkSize = 1e5
+            #print('  Initializing Pool...')
+            #pool = Pool()
+            ##thisPoint = simpoint(grid = self.grid)
+            #for pnt in pool.imap(partial(simpoint, grid = self.grid, env = self.env, findT = self.findT), self.cPoints, 1000):
+            #    self.sPoints.append(pnt)
+            #    self.pData.append(pnt.Vars())
+            #    bar.increment()
+            #    bar.display()
+            #bar.display(force = True)
+            #pool.close()
+            #pool.join()
 
         #print('')
         #print('')
@@ -753,8 +800,8 @@ class simulate:
         self.profile = np.zeros_like(self.env.lamAx)
         index = 0
         for lam in self.env.lamAx:
-            for point in self.sPoints:
-                self.profile[index] += point.findIntensity(self.env.lam0, lam)
+            for point, step in zip(self.sPoints, self.steps):
+                self.profile[index] += point.findIntensity(self.env.lam0, lam) * step
             index += 1
         return self.profile
 
@@ -778,14 +825,26 @@ class simulate:
         for point in self.sPoints:
             point.setTime(tt)
 
+    def makeSAxis(self):
+        loc = 0
+        ind = 0
+        self.sAxis = np.zeros_like(self.steps)
+        for step in self.steps:
+            loc += step
+            self.sAxis[ind] = loc
+            ind += 1
+        self.sAxisList = self.sAxis.tolist()
+        
+
     def peekLamTime(self, lam0 = 1000, lam = 1000, t = 0):
+        self.makeSAxis()
         intensity = np.zeros_like(self.sPoints)
         pInd = 0
         for point in self.sPoints:
             point.setTime(t)
             intensity[pInd] = point.findIntensity(lam0, lam)
             pInd += 1
-        plt.plot(intensity)
+        plt.plot(self.sAxis, intensity, '-o')
         plt.show()
 
     def evolveLine(self, t0 = 0, t1 = 1600, tn = 100, Ln = 100, lam0 = 1000, lamPm = 2):

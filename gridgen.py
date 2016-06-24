@@ -133,6 +133,11 @@ class sightline(generator):
         self.iL = iL
         self.findT = findT
         self.look(position, target, coords)  
+        self.currS = 0
+        self.maxStep = 1/1500
+        self.minStep = 1/10000
+        self.step = self.maxStep
+        self.stepChange = 4
  
     def look(self, position, target, coords = 'Cart'):
 #        Initialize the sight line between two points
@@ -178,6 +183,31 @@ class sightline(generator):
             line.append(self.pPoint(ss))  
         self.shape = [len(line), 1]         
         return line
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.currS > 1:
+            raise StopIteration
+        pt = self.cPoint(self.currS)
+        self.currS += self.step
+        return (pt, self.step)
+
+    def incStep(self, mult):
+        if self.step < self.maxStep:
+            self.step = min(self.step * mult, self.maxStep)
+
+    def set2minStep(self):
+        self.step = self.minStep
+
+    def decStep(self, mult):
+        if self.step > self.minStep:
+            self.step = max(self.step / mult, self.minStep)
+
+    def reset(self):
+        self.currS = 0
+        self.step = maxStep
 
 #TODO create cylinder
 
