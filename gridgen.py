@@ -266,11 +266,13 @@ class defGrid:
         #This line starts from north pole and goes out radially
         self.poleLine = sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')
 
+        self.impLine = sightline([5,1e-8,1.5],[-5,1e-8,1.5], findT = True)
+
 
 def impactLines(N=5, b0 = 1.05, b1= 1.5):
     #Generate lines with a fixed angle but varying impact parameter
     lines = []
-    x = 20
+    x = 5
     y = 1e-8
     bax = np.linspace(b0,b1,N)
     for zz in bax:

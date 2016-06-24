@@ -57,27 +57,38 @@ class environment:
     rel_def_bkFile = '..\\dat\\plasma_background.dat'    
     def_bkFile = os.path.normpath(os.path.join(script_dir, rel_def_bkFile))
     
+    #Parameters
     rstar = 1
     B_thresh = 6.0
     fmax = 8.2
     theta0 = 28
     S0 = 7.0e5
 
-    primeSeed = 27
-    randOffset = 0  #For randomizing 
-
-    #mi = 1.6726219e-24 #grams per hydrogen
-    mi = 9.2732796e-23 #grams per Iron
+    #Constants
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
     KB = 1.380e-16 #ergs/Kelvin
+
+    #For randomizing wave angles/init-times
+    primeSeed = 27
+    randOffset = 0  
+
+    #Element Being Observed
+    #mi = 1.6726219e-24 #grams per hydrogen
+    mi = 9.2732796e-23 #grams per Iron
+
+    #LamAxis Stuff
+    Ln = 100
+    lam0 = 200
+    lamPm = 0.5
+
 
     streamRand = np.random.RandomState()
     primeRand = np.random.RandomState(primeSeed)
 
-    def __init__(self, Bfile = None, xiFile = None, bkFile = None):
+    def __init__(self, Bfile = None, bkFile = None):
         print('  Loading Environment...', end = '', flush = True)
 
-        self.makeLamAxis(Ln = 100, lam0 = 200, lamPm = 0.5)
+        self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
 
         #Load Bmap
         if Bfile is None: self.Bfile = self.def_Bfile 
@@ -95,7 +106,7 @@ class environment:
         self.last_xi1_t = x[-1,0]
 
         y = np.loadtxt(self.xiFile2, skiprows=1)
-        self.xi2_t = x[:,0]
+        self.xi2_t = y[:,0]
         self.xi2_raw = y[:,1]
         self.last_xi2_t = y[-1,0]
 
@@ -114,7 +125,7 @@ class environment:
         print('')
 
     def randomize(self):
-        self.randOffset = self.primeRand.uniform(0, 3000)
+        self.randOffset = int(self.primeRand.uniform(0, 10000))
 
     def setOffset(self, offset):
         self.randOffset = offset
@@ -245,7 +256,6 @@ class environment:
     def makeLamAxis(self, Ln = 100, lam0 = 200, lamPm = 0.5):
         self.lam0 = lam0
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
-
 
 
 
@@ -1059,6 +1069,7 @@ class multisim:
 #Inputs: (self, batch, env, N = 1000, findT = None)
 #Public Methods: 
 #Attributes: lines, lineStats
+# For doing the same line from many angles, to get statistics
 
 ####################################################################
 ####################################################################
@@ -1067,7 +1078,7 @@ class multisim:
 #Level 3: Initializes many Multisims
 
 class batchjob:
-    #Requires labels, xlabel, batch
+    #Requires labels, xlabel, batch, N
     def __init__(self, env):
         self.env = env
         comm = MPI.COMM_WORLD
@@ -1083,7 +1094,7 @@ class batchjob:
             thisBatch = self.batch.pop(0) 
             #if self.root: print(thisBatch)
 
-            thisSim = multisim(thisBatch, env, N = 1000, printOut = self.printMulti)
+            thisSim = multisim(thisBatch, env, self.N, printOut = self.printMulti)
             if self.root:
                 self.sims.append(thisSim)
                 self.profiles.append(thisSim.lines)
@@ -1124,18 +1135,18 @@ class batchjob:
                 self.statV[0][0].append(np.mean(allAmp))
                 self.statV[0][1].append(np.std(allAmp))
 
-                self.statV[1][0].append(self.mean2V(np.mean(allMean)))
-                self.statV[1][1].append(np.std([self.mean2V(x) for x in allMean]))
+                self.statV[1][0].append(self.__mean2V(np.mean(allMean)))
+                self.statV[1][1].append(np.std([self.__mean2V(x) for x in allMean]))
                 
                 T = self.env.interp_rx_dat(impact, self.env.T_raw)
-                self.statV[2][0].append(self.std2V(np.mean(allStd), T))
-                self.statV[2][1].append(self.std2V(np.std(allStd), T))
+                self.statV[2][0].append(self.__std2V(np.mean(allStd), T))
+                self.statV[2][1].append(self.__std2V(np.std(allStd), T))
 
-    def mean2V(self, mean):
+    def __mean2V(self, mean):
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
                 (self.env.ang2cm(self.env.lam0)))
 
-    def std2V(self, std, T):
+    def __std2V(self, std, T):
         return self.env.cm2km(np.sqrt((np.sqrt(2) * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.env.lam0)))**2 - \
             (2 * self.env.KB * T / self.env.mi)))
                            
@@ -1160,7 +1171,7 @@ class batchjob:
         titles = ['Intensity', 'Mean Redshift', 'Line Width']
         ylabels = ['', 'km/s', 'km/s']
         thisBlist = self.Blist
-        f.suptitle('Line Statistics')
+        f.suptitle('Line Statistics HQ')
         for ax in axArray:
             if mm == 0: ax.set_yscale('log')
             ax.errorbar(self.labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
@@ -1190,17 +1201,17 @@ class batchjob:
         #    plt.plot(self.labels, vRms)
 
         #plt.show()
+        return
 
 
-        
-
-
+# For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, env, Nb = 5, Nr = 20, b0 = 1.05, b1= 1.50):
         self.env = env
         self.print = True
         self.printMulti = False
 
+        self.N = 1000
         self.labels = np.linspace(b0,b1,Nb)
         self.impacts = self.labels
         self.xlabel = 'Impact Parameter'    

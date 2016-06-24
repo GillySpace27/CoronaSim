@@ -51,7 +51,8 @@ if __name__ == '__main__':
     ##bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
     #bpoleSim.compare('alfV1', 'alfV2')
 
-    #lineSim = sim.simulate(df.primeLine, env, N = 1e3, findT = True)
+    #lineSim = sim.simulate(df.impLine, env, N = 1e5, findT = True)
+    #lineSim.peekLamTime()
     #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
     #lineSim.plotProfile()
     #print(lineSim.getStats())
@@ -96,7 +97,7 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
 
-    myBatch = sim.impactsim(env, 10, size * 3)
+    myBatch = sim.impactsim(env, 20, size * 2)
 
 
 
