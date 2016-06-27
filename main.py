@@ -14,7 +14,9 @@ if __name__ == '__main__':
     rank = comm.Get_rank()
     size = comm.Get_size()
     root = rank == 0
-
+    envPath = '../dat/primeEnv'
+    
+    
     if root:
         print('\nCoronaSim!')
         print('Written by Chris Gilbert')
@@ -22,13 +24,16 @@ if __name__ == '__main__':
         ##Simulate Common Grids
         df = grid.defGrid()
         ##Initialize Simulation Environment
-        env = sim.environment()
+        # env = sim.environment()
+        # env.save(envPath)
+        env = sim.loadEnv(envPath)
     else:
         df = None
         env = None
 
     df = comm.bcast(df, root = 0)
     env = comm.bcast(env, root = 0)
+
  
    ### Level 0 ### Simpoint 
     ###############
@@ -101,7 +106,18 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
 
-    myBatch = sim.impactsim(env, 10, 1)
+    remote = False
+    
+    if remote:
+        batchPath = '../dat/impactBatch'
+
+        myBatch = sim.impactsim(env, 30, size)
+        if root: myBatch.save(batchPath)
+    
+    else:
+        batchPath = '..\\dat\\impactBatch'
+        myBatch = sim.loadBatch(batchPath)
+        myBatch.plotStatsV()
 
 
 
@@ -113,3 +129,21 @@ if __name__ == '__main__':
         print('')
         print('Sim Name =')
         print([x for x in vars().keys() if "Sim" in x])
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        

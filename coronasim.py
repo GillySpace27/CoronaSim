@@ -19,15 +19,19 @@ from scipy import interpolate as interp
 from scipy.stats import norm
 import scipy.stats as stats
 from scipy.optimize import curve_fit
-import skimage as ski
-import sklearn.neighbors as nb
+
+
+
 from collections import defaultdict
-from skimage.feature import peak_local_max
+
 import gridgen as grid
 import progressBar as pb
 import math
 import time
+import pickle
 #from astropy import units as u
+# import skimage as ski
+# from skimage.feature import peak_local_max
 
 import multiprocessing as mp
 from multiprocessing import Pool
@@ -41,6 +45,7 @@ np.seterr(invalid = 'ignore')
 
 #Environment Class contains simulation parameters
 class environment:
+
     #Environment Class contains simulation parameters
 
     script_dir = os.path.dirname(os.path.abspath(__file__)) 
@@ -86,7 +91,10 @@ class environment:
     primeRand = np.random.RandomState(primeSeed)
 
     def __init__(self, Bfile = None, bkFile = None):
+    
         print('  Loading Environment...', end = '', flush = True)
+        
+  
 
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
 
@@ -124,6 +132,10 @@ class environment:
         print("Done")
         print('')
 
+    def save(self, name):
+        with open(self.relPath(name), 'wb') as output:
+            pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+        
     def randomize(self):
         self.randOffset = int(self.primeRand.uniform(0, 10000))
 
@@ -233,6 +245,7 @@ class environment:
         return
 
     def voronoify_sklearn(self, I, seeds):
+        import sklearn.neighbors as nb
         #Uses the voronoi algorithm to assign stream labels
         tree_sklearn = nb.KDTree(seeds)
         pixels = ([(r,c) for r in range(I.shape[0]) for c in range(I.shape[1])])
@@ -257,6 +270,12 @@ class environment:
         self.lam0 = lam0
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
 
+def loadEnv(path):
+    #Converts a relative path to an absolute path
+    script_dir = os.path.dirname(os.path.abspath(__file__))   
+    absPath = os.path.join(script_dir, path)
+    with open(absPath, 'rb') as input:
+        return pickle.load(input)
 
 
 ####################################################################
@@ -618,7 +637,7 @@ class simulate:
             self.shape = [self.Npoints, 1] 
         else: 
             self.shape = self.grid.shape
-        self.shape2 = [*self.shape, -1]
+        self.shape2 = [self.shape[0], self.shape[1], -1]
         
         
                 
@@ -1185,7 +1204,7 @@ class batchjob:
             self.findStats()
             self.makeVrms()
             #self.plotStats()
-            self.plotStatsV()
+            # self.plotStatsV()
 
         comm.Barrier()
 
@@ -1280,7 +1299,20 @@ class batchjob:
         #plt.show()
         return
 
-
+    def save(self, path):
+        self.sims = []
+        script_dir = os.path.dirname(os.path.abspath(__file__))   
+        absPath = os.path.join(script_dir, path)  
+        with open(absPath, 'wb') as output:
+            pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+            
+def loadBatch(path):
+    #Converts a relative path to an absolute path
+    script_dir = os.path.dirname(os.path.abspath(__file__))   
+    absPath = os.path.join(script_dir, path)
+    with open(absPath, 'rb') as input:
+        return pickle.load(input)
+        
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, env, Nb = 5, Nr = 20, b0 = 1.05, b1= 1.50):
