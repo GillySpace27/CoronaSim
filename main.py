@@ -26,8 +26,8 @@ if __name__ == '__main__':
         ##Initialize Simulation Environment
         # env = sim.environment()
         # env.save(envPath)
-        envs = [sim.loadEnv(envPath)]
-        envs.append(sim.loadEnv(envPath))
+        envPath = '..\\dat\\envs'
+        envs = sim.envs.loadEnvs(envPath)
     else:
         df = None
         envs = None
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     envs = comm.bcast(envs, root = 0)
 
  
-   ### Level 0 ### Simpoint 
+    ### Level 0 ### Simpoint 
     ###############
 
     #thisPoint = sim.simPoint(grid = df.bpolePlane) 
@@ -107,25 +107,25 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
-    remote = False
+    # remote = False
 
     
-    if remote:
-        batchPath = '../dat/impactBatch'
+    # if remote:
+        # batchPath = '../dat/impactBatch'
         
-        myBatch = sim.impactsim(envs[0], 20, 1)
-        if root: myBatch.save(batchPath)
+        # myBatch = sim.impactsim(envs[0], 20, 1)
+        # if root: myBatch.save(batchPath)
     
-    else:
-        batchPath = '..\\dat\\impactBatch'
-        myBatch = sim.loadBatch(batchPath)
-        myBatch.plotStatsV()
+    # else:
+        # batchPath = '..\\dat\\impactBatch'
+        # myBatch = sim.loadBatch(batchPath)
+        # myBatch.plotStatsV()
 
 
-    myBatch = sim.impactsim(env, 30, int(size/2))
+    # myBatch = sim.impactsim(env, 30, int(size/2))
 
 
-
+    
 
     if root:
         print('')

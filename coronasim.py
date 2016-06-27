@@ -29,6 +29,7 @@ import progressBar as pb
 import math
 import time
 import pickle
+import glob
 #from astropy import units as u
 # import skimage as ski
 # from skimage.feature import peak_local_max
@@ -270,14 +271,49 @@ class environment:
         self.lam0 = lam0
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
 
-def loadEnv(path):
-    #Converts a relative path to an absolute path
-    script_dir = os.path.dirname(os.path.abspath(__file__))   
-    absPath = os.path.join(script_dir, path)
-    with open(absPath, 'rb') as input:
-        return pickle.load(input)
 
+class envs:
+    def __init__(self):
+        return
+    
+    
+    
+    def loadEnv(self, path): 
+        with open(path, 'rb') as input:
+            return pickle.load(input)
+            
+    def loadEnvs(self, dirPath):
+        files = glob.glob(self.absPath(dirPath + '\\*.env'))
+        envs = []
+        for file in files:
+            envs.append(self.loadEnv(file))
+        return envs
+            
 
+    def createEnvs(self, dirPath):
+        files = glob.glob(self.absPath(dirPath + '\\*.sav'))
+        envs = []
+        for file in files:
+            envs.append(environment(Bfile = file))
+        return envs
+            
+    def saveEnvs(self, envs, dirPath, name = 'environment'):
+        ind = 0
+        for env in envs:
+            env.save(self.absPath(dirPath +'\\'+ name +'_' + str(ind) + '.env'))
+            ind += 1
+
+    def processEnvs(self, dirPath, name = 'environment'):
+        envs = self.createEnvs(dirPath)
+        self.saveEnvs(envs, dirPath, name)
+        return envs
+            
+    def absPath(self, path):
+        #Converts a relative path to an absolute path
+        script_dir = os.path.dirname(os.path.abspath(__file__))   
+        return os.path.join(script_dir, path)
+        
+        
 ####################################################################
 ####################################################################
 
@@ -1364,6 +1400,7 @@ class impactsim(batchjob):
 
 
         super().__init__(envs)
+        
 
 
 
