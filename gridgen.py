@@ -251,7 +251,7 @@ class plane(generator):
             if len(offset) == 3:
                 self.offset = offset
             elif len(offset) == 2:
-                self.offset = [normal[0], *offset]
+                self.offset = [normal[0], offset[0], offset[1]]
         
         self.findGrads()
 
