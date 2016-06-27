@@ -106,8 +106,8 @@ if __name__ == '__main__':
 
     ### Level 3 ### BatchSim
     ###############
-
-    remote = True
+    
+    remote = False
 
     
     if remote:
@@ -122,7 +122,7 @@ if __name__ == '__main__':
         myBatch.plotStatsV()
 
 
-    # myBatch = sim.impactsim(env, 30, int(size/2))
+    myBatch = sim.impactsim(env, 30, int(size/2))
 
 
 

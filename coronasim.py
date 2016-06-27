@@ -1342,6 +1342,7 @@ def loadBatch(path):
 class impactsim(batchjob):
     def __init__(self, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50):
     
+        #Figure out appropriate number of rotlines per env
         size = MPI.COMM_WORLD.Get_size()
         try:
             nEnv = len(envs)
