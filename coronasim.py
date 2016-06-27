@@ -415,7 +415,7 @@ class simpoint:
             radial = grid.sightline(self.foot_cPos, self.cPos)
             N = 10
             wtime = 0
-            rLine = radial.cLine(N)
+            rLine = radial.cGrid(N)
             for cPos in rLine:
                 wtime += (1/simpoint(cPos, findT = False, grid = radial, env = self.env).vPh) / N
             self.twave = wtime * self.r2rx(radial.norm) * 69.63e9 #radius of sun in cm
@@ -532,7 +532,7 @@ class simpoint:
 #Level 1: Initializes many Simpoints into a Simulation
 class simulate: 
     #Level 1: Initializes many Simpoints into a Simulation
-    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False):
+    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, nMin = None):
         self.print = printOut
         if self.print: print("Initializing Simulation...")
         self.grid  = gridObj
@@ -540,7 +540,7 @@ class simulate:
         self.env = envObj
         self.profile = None
         self.lamAx = None
-        self.adapt = True
+        self.adapt = False
 
 
         if findT is None:
@@ -552,94 +552,112 @@ class simulate:
 
         if N is None: self.N = self.grid.default_N
         else: self.N = N
-
-        if type(self.grid) is grid.sightline:
-            self.cPoints = self.grid.cLine(self.N, smax = self.iL)
-
-        elif type(self.grid) is grid.plane:
-            self.adapt = False
-            self.cPoints = self.grid.cPlane(self.N, self.iL)
-        else: 
-            print("Invalid Grid")
-            return
-
-        self.Npoints = len(self.cPoints)
-        self.shape = self.grid.shape
-        self.shape2 = [*self.shape, -1]
+        
+        if type(self.N) is list or type(self.N) is tuple: 
+            self.adapt = True
+            self.grid.setMaxStep(1/self.N[0])
+            self.grid.setMinStep(1/self.N[1])
+        else: self.grid.setN(self.N)
 
         self.simulate_now()
 
 
     def simulate_now(self):
-        isLine = True
+
+    
         if type(self.grid) is grid.plane: 
-            doBar = True 
-            isLine - False
-            
+            doBar = True
+            self.adapt = False
+            self.Npoints = self.grid.Npoints
         else: doBar = False
+        
         if doBar and self.print: bar = pb.ProgressBar(self.Npoints)
         self.sPoints = []
         self.steps = []
         self.pData = []
         if self.print: print("Beginning Simulation...")
 
-        if isLine:
-            #Adaptive Mesh
-            t = time.time()
-            stepInd = 0
-            rhoSum = 0
-            tol = 0.25
-            for cPos, step in self.grid: 
+        #Adaptive Mesh
+        t = time.time()
+        stepInd = 0
+        rhoSum = 0
+        tol = 0.5
+        for cPos, step in self.grid: 
 
-                #print(step)
-                thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
-                self.sPoints.append(thisPoint)
-                self.steps.append(step)
-                self.pData.append(thisPoint.Vars())
+            thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
 
-                #TODO Inc and dec the stepsize
-                if self.adapt:
-                    thisDens = thisPoint.intensity
-                    if stepInd > 10:
-                        #rhoAvg = rhoSum/stepInd
-                        if thisDens > 1e-4:
-                            self.grid.set2minStep()
-                        if thisDens < 1e-4:
-                            self.grid.incStep(1.5)
+            if self.adapt:
+                thisDens = thisPoint.intensity
 
-                #rhoSum += thisDens
-                #lastDens = thisDens
-                stepInd += 1
+                if (thisDens > tol) and self.grid.backflag:
+                    self.grid.back()
+                    self.grid.set2minStep()
+                    self.grid.backflag = False
+                    continue
+                if thisDens <= tol:
+                    self.grid.incStep(1.5)
+                    self.grid.backflag = True
 
-                if doBar: 
-                    bar.increment()
-                    bar.display()
-            #print(stepInd)
-            if doBar and self.print: bar.display(force = True)
-            if self.print: print('Elapsed Time: ' + str(time.time() - t))
-        else:
-            # Rigid Mesh
-            t = time.time()
-            nnnn = 0
-            step = 1/self.N
-            for cPos in self.grid: 
-                nnnn += 1
-                thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
-                self.sPoints.append(thisPoint)
-                self.steps.append(step)
-                self.pData.append(thisPoint.Vars())
-                if doBar: 
-                    bar.increment()
-                    bar.display()
-            if doBar and self.print: bar.display(force = True)
-            if self.print: print('Elapsed Time: ' + str(time.time() - t))
+            stepInd += 1
+            
+            self.sPoints.append(thisPoint)
+            self.steps.append(step)
+            self.pData.append(thisPoint.Vars())
+            
+            if doBar and self.print: 
+                bar.increment()
+                bar.display()
+                
+        # print(stepInd)
+        
+        if doBar and self.print: bar.display(force = True)
+        if self.print: print('Elapsed Time: ' + str(time.time() - t))
+
+        self.Npoints = len(self.sPoints)
+        if type(self.grid) is grid.sightline:
+            self.shape = [self.Npoints, 1] 
+        else: 
+            self.shape = self.grid.shape
+        self.shape2 = [*self.shape, -1]
+        
+        
+                
+          # if not self.adapt:
+            # self.cPoints = self.grid.cGrid(self.N, iL = self.iL)
+
+            # if type(self.grid) is grid.plane:
+                # self.adapt = False
+
+            # self.Npoints = len(self.cPoints)
+            # self.shape = self.grid.shape
+            # self.shape2 = [*self.shape, -1]              
+                
+                
+        # if adaptable:               
+        # else:
+            #Rigid Mesh
+            # t = time.time()
+            # nnnn = 0
+            # step = 1/self.N
+            # for cPos in self.grid: 
+                # nnnn += 1
+                # thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
+                # self.sPoints.append(thisPoint)
+                # self.steps.append(step)
+                # self.pData.append(thisPoint.Vars())
+                # if doBar: 
+                    # bar.increment()
+                    # bar.display()
+            # if doBar and self.print: bar.display(force = True)
+            # if self.print: print('Elapsed Time: ' + str(time.time() - t))
 
 
+            
             ##Parallel Way
             #chunkSize = 1e5
             #print('  Initializing Pool...')
             #pool = Pool()
-            ##thisPoint = simpoint(grid = self.grid)
+            #thisPoint = simpoint(grid = self.grid)
             #for pnt in pool.imap(partial(simpoint, grid = self.grid, env = self.env, findT = self.findT), self.cPoints, 1000):
             #    self.sPoints.append(pnt)
             #    self.pData.append(pnt.Vars())
@@ -1270,7 +1288,7 @@ class impactsim(batchjob):
         self.print = True
         self.printMulti = False
 
-        self.N = 1000
+        self.N = (1500, 10000)
         self.labels = np.linspace(b0,b1,Nb)
         self.impacts = self.labels
         self.xlabel = 'Impact Parameter'    

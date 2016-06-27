@@ -45,21 +45,25 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 1000, findT = False)
+    # bpoleSim = sim.simulate(df.bpolePlane, env, N = 200, findT = False, printOut = True)
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
-    ##bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    #bpoleSim.compare('alfV1', 'alfV2')
+    #bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
+    # bpoleSim.plot('rho', scaling = 'log')
 
-    #lineSim = sim.simulate(df.impLine, env, N = 1e5, findT = True)
-    #lineSim.peekLamTime()
+    
+    # print('Go')
+    # lineSim = sim.simulate(df.impLine, env, N = (1500, 10000), findT = True)
+    # lineSim.peekLamTime()
+
+    
     #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
     #lineSim.plotProfile()
     #print(lineSim.getStats())
 
     #lineSim2 = sim.simulate(df.primeLine, N = 2e3, findT = True)
-    ##poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
-    ##lineSim.plot('densfac')
+    #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
+    #lineSim.plot('densfac')
     #print(lineSim2.getStats())
     ## Useful Functions
         #mysim.plot('property')
@@ -97,7 +101,7 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
 
-    myBatch = sim.impactsim(env, 10, size * 2)
+    myBatch = sim.impactsim(env, 10, 1)
 
 
 
