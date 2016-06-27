@@ -1343,7 +1343,9 @@ class impactsim(batchjob):
     def __init__(self, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50):
     
         size = MPI.COMM_WORLD.Get_size()
-        nEnv = len(envs)
+        try:
+            nEnv = len(envs)
+        except: nEnv = 1
         rotN = np.floor(size / nEnv)
         Nr = iter * rotN
 

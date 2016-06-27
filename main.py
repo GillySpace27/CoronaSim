@@ -107,13 +107,13 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
 
-    remote = False
+    remote = True
 
     
     if remote:
         batchPath = '../dat/impactBatch'
         
-        myBatch = sim.impactsim(envs, 20, 1)
+        myBatch = sim.impactsim(envs[0], 20, 1)
         if root: myBatch.save(batchPath)
     
     else:
