@@ -26,13 +26,14 @@ if __name__ == '__main__':
         ##Initialize Simulation Environment
         # env = sim.environment()
         # env.save(envPath)
-        env = sim.loadEnv(envPath)
+        envs = [sim.loadEnv(envPath)]
+        envs.append(sim.loadEnv(envPath))
     else:
         df = None
-        env = None
+        envs = None
 
     df = comm.bcast(df, root = 0)
-    env = comm.bcast(env, root = 0)
+    envs = comm.bcast(envs, root = 0)
 
  
    ### Level 0 ### Simpoint 
@@ -107,11 +108,12 @@ if __name__ == '__main__':
     ###############
 
     remote = False
+
     
     if remote:
         batchPath = '../dat/impactBatch'
-
-        myBatch = sim.impactsim(env, 30, size)
+        
+        myBatch = sim.impactsim(envs, 20, 1)
         if root: myBatch.save(batchPath)
     
     else:
@@ -120,7 +122,7 @@ if __name__ == '__main__':
         myBatch.plotStatsV()
 
 
-
+    # myBatch = sim.impactsim(env, 30, int(size/2))
 
 
 

@@ -1028,11 +1028,25 @@ class simulate:
 #Level 2: Initializes many simulations (MPI Enabled)
 class multisim:
     #Level 2: Initializes many simulations
-    def __init__(self, batch, env, N = 1000, findT = None, printOut = False):
+    def __init__(self, batch, envs, N = 1000, findT = None, printOut = False):
         self.print = printOut
-        self.batch = batch
-        self.gridLabels = self.batch[1]
-        self.env = env
+        self.gridLabels = batch[1]
+        self.oneBatch = batch[0]
+        self.batch = []
+        self.envInd = []
+        
+        if type(envs) is list or type(envs) is tuple: 
+            self.envs = envs
+            self.Nenv = len(self.envs)
+            for nn in np.arange(self.Nenv):
+                self.batch.extend(self.oneBatch)
+                self.envInd.extend([nn] * len(self.oneBatch))
+        else: 
+            self.envs = [envs]
+            self.batch = self.oneBatch
+            self.envInd = [0] * len(self.oneBatch)
+        
+
         self.N = N
         self.findT = findT
         self.MPI_init()
@@ -1049,8 +1063,11 @@ class multisim:
             print('\nRunning MultiSim:')
             t = time.time() #Print Stuff
 
-        gridList = self.__seperate(self.batch[0], self.size)
+        gridList = self.__seperate(self.batch, self.size)
         self.gridList = gridList[self.rank]
+        
+        envIndList = self.__seperate(self.envInd, self.size)
+        self.envIndList = envIndList[self.rank]
 
         if self.root and self.print: 
             print('PoolSize = ' + str(self.size))
@@ -1059,9 +1076,9 @@ class multisim:
 
         if self.root and self.print: bar = pb.ProgressBar(len(self.gridList))
         self.simList = []
-        for grd in self.gridList:
-            self.env.randomize()
-            self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
+        for grd, envInd in zip(self.gridList, self.envIndList):
+            self.envs[envInd].randomize()
+            self.simList.append(simulate(grd, self.envs[envInd], self.N, findT = self.findT))
             if self.root and self.print:
                 bar.increment()
                 bar.display()
@@ -1175,8 +1192,13 @@ class multisim:
 
 class batchjob:
     #Requires labels, xlabel, batch, N
-    def __init__(self, env):
-        self.env = env
+    def __init__(self, envs):
+    
+        if type(envs) is list or type(envs) is tuple: 
+            self.envs = envs
+        else: self.envs = [envs]
+        self.env = self.envs[0]
+        
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
 
@@ -1190,7 +1212,7 @@ class batchjob:
             thisBatch = self.batch.pop(0) 
             #if self.root: print(thisBatch)
 
-            thisSim = multisim(thisBatch, env, self.N, printOut = self.printMulti)
+            thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti)
             if self.root:
                 self.sims.append(thisSim)
                 self.profiles.append(thisSim.lines)
@@ -1301,6 +1323,9 @@ class batchjob:
 
     def save(self, path):
         self.sims = []
+        self.envs = []
+        self.env = []
+        self.profiles = []
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         absPath = os.path.join(script_dir, path)  
         with open(absPath, 'wb') as output:
@@ -1315,8 +1340,14 @@ def loadBatch(path):
         
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
-    def __init__(self, env, Nb = 5, Nr = 20, b0 = 1.05, b1= 1.50):
-        self.env = env
+    def __init__(self, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50):
+    
+        size = MPI.COMM_WORLD.Get_size()
+        nEnv = len(envs)
+        rotN = np.floor(size / nEnv)
+        Nr = iter * rotN
+
+        
         self.print = True
         self.printMulti = False
 
@@ -1329,8 +1360,7 @@ class impactsim(batchjob):
             self.batch.append(grid.rotLines(N = Nr, b = ind)) 
 
 
- 
-        super().__init__(env)
+        super().__init__(envs)
 
 
 
