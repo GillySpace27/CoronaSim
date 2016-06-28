@@ -27,7 +27,7 @@ if __name__ == '__main__':
         # env = sim.environment()
         # env.save(envPath)
         envPath = '..\\dat\\envs'
-        envs = sim.envs.loadEnvs(envPath)
+        envs = sim.envGen(envPath).loadEnvs(1)
     else:
         df = None
         envs = None
@@ -124,7 +124,8 @@ if __name__ == '__main__':
 
     # myBatch = sim.impactsim(env, 30, int(size/2))
 
-
+    for env in envs:
+        print(env)
     
 
     if root:

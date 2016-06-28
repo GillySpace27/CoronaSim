@@ -271,41 +271,45 @@ class environment:
         self.lam0 = lam0
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
 
+        
+#envGen Class handles creation, saving, and loading of environments
+class envGen:
 
-class envs:
-    def __init__(self):
+    #envGen Class handles creation, saving, and loading of environments
+    
+    def __init__(self, dirPath = None):
+        self.dirPath = dirPath
         return
     
-    
-    
-    def loadEnv(self, path): 
+    def __loadEnv(self, path): 
         with open(path, 'rb') as input:
             return pickle.load(input)
             
-    def loadEnvs(self, dirPath):
-        files = glob.glob(self.absPath(dirPath + '\\*.env'))
+    def loadEnvs(self, maxN = 1e8):
+        files = glob.glob(self.absPath(self.dirPath + '\\*.env'))
         envs = []
+        ind = 0
         for file in files:
-            envs.append(self.loadEnv(file))
+            if ind < maxN: envs.append(self.__loadEnv(file))
+            ind += 1
         return envs
             
-
-    def createEnvs(self, dirPath):
-        files = glob.glob(self.absPath(dirPath + '\\*.sav'))
+    def createEnvs(self):
+        files = glob.glob(self.absPath(self.dirPath + '\\*.sav'))
         envs = []
         for file in files:
             envs.append(environment(Bfile = file))
         return envs
             
-    def saveEnvs(self, envs, dirPath, name = 'environment'):
+    def saveEnvs(self, envs, name = 'environment'):
         ind = 0
         for env in envs:
-            env.save(self.absPath(dirPath +'\\'+ name +'_' + str(ind) + '.env'))
+            env.save(self.absPath(self.dirPath +'\\'+ name +'_' + str(ind) + '.env'))
             ind += 1
 
-    def processEnvs(self, dirPath, name = 'environment'):
-        envs = self.createEnvs(dirPath)
-        self.saveEnvs(envs, dirPath, name)
+    def processEnvs(self, name = 'environment'):
+        envs = self.createEnvs()
+        self.saveEnvs(envs, name)
         return envs
             
     def absPath(self, path):
