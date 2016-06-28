@@ -38,30 +38,43 @@ import multiprocessing as mp
 from multiprocessing import Pool
 from multiprocessing.dummy import Pool as ThreadPool
 from functools import partial
-
+import platform
 from mpi4py import MPI
 
 np.seterr(invalid = 'ignore')
 
+def findSlash():
+    if platform.system() == 'Windows':
+        return '\\'
+    else: return '/'
+    
+def absPath(path):
+    #Converts a relative path to an absolute path
+    script_dir = os.path.dirname(os.path.abspath(__file__))   
+    return os.path.join(script_dir, path)
+    
+####################################################################
+##                          Environment                           ##
+####################################################################
 
 #Environment Class contains simulation parameters
 class environment:
 
     #Environment Class contains simulation parameters
+    slash = findSlash()
+    datFolder = '..' + slash + 'dat' + slash
 
-    script_dir = os.path.dirname(os.path.abspath(__file__)) 
+    rel_def_Bfile = datFolder + 'mgram_iseed0033.sav'    
+    def_Bfile = absPath(rel_def_Bfile)
 
-    rel_def_Bfile = '..\\dat\\mgram_iseed0033.sav'    
-    def_Bfile = os.path.normpath(os.path.join(script_dir, rel_def_Bfile))
+    rel_def_xiFile1 = datFolder + 'xi_1.dat'    
+    def_xiFile1 = absPath(rel_def_xiFile1)
 
-    rel_def_xiFile1 = '..\\dat\\xi_1.dat'    
-    def_xiFile1 = os.path.normpath(os.path.join(script_dir, rel_def_xiFile1))
+    rel_def_xiFile2 = datFolder + 'xi_2.dat'    
+    def_xiFile2 = absPath(rel_def_xiFile2)
 
-    rel_def_xiFile2 = '..\\dat\\xi_2.dat'    
-    def_xiFile2 = os.path.normpath(os.path.join(script_dir, rel_def_xiFile2))
-
-    rel_def_bkFile = '..\\dat\\plasma_background.dat'    
-    def_bkFile = os.path.normpath(os.path.join(script_dir, rel_def_bkFile))
+    rel_def_bkFile = datFolder + 'plasma_background.dat'    
+    def_bkFile =absPath(rel_def_bkFile)
     
     #Parameters
     rstar = 1
@@ -272,13 +285,16 @@ class environment:
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
 
         
-#envGen Class handles creation, saving, and loading of environments
-class envGen:
+#envs Class handles creation, saving, and loading of environments
+class envs:
 
-    #envGen Class handles creation, saving, and loading of environments
+    #envs Class handles creation, saving, and loading of environments
     
-    def __init__(self, dirPath = None):
-        self.dirPath = dirPath
+    def __init__(self, envFolder = ''):
+    
+        self.slash = findSlash()            
+        self.dirPath = '..' + self.slash + 'dat' + self.slash + envFolder
+        
         return
     
     def __loadEnv(self, path): 
@@ -286,43 +302,41 @@ class envGen:
             return pickle.load(input)
             
     def loadEnvs(self, maxN = 1e8):
-        files = glob.glob(self.absPath(self.dirPath + '\\*.env'))
+        files = glob.glob(absPath(self.dirPath + self.slash + '*.env'))
         envs = []
         ind = 0
         for file in files:
             if ind < maxN: envs.append(self.__loadEnv(file))
             ind += 1
         return envs
-            
-    def createEnvs(self):
-        files = glob.glob(self.absPath(self.dirPath + '\\*.sav'))
-        envs = []
-        for file in files:
-            envs.append(environment(Bfile = file))
+        
+    def processEnvs(self, maxN = 1e8, name = 'environment'):
+        envs = self.createEnvs(maxN)
+        self.saveEnvs(envs, maxN, name)
         return envs
             
-    def saveEnvs(self, envs, name = 'environment'):
+    def createEnvs(self, maxN = 1e8):
+        files = glob.glob(absPath(self.dirPath + self.slash + '*.sav'))
+        envs = []
+        ind = 0
+        for file in files:
+            if ind < maxN: envs.append(environment(Bfile = file))
+            ind += 1
+        return envs
+            
+    def saveEnvs(self, envs, maxN = 1e8, name = 'environment'):
         ind = 0
         for env in envs:
-            env.save(self.absPath(self.dirPath +'\\'+ name +'_' + str(ind) + '.env'))
+            if ind < maxN: env.save(absPath(self.dirPath + self.slash + name +'_' + str(ind) + '.env'))
             ind += 1
 
-    def processEnvs(self, name = 'environment'):
-        envs = self.createEnvs()
-        self.saveEnvs(envs, name)
-        return envs
             
-    def absPath(self, path):
-        #Converts a relative path to an absolute path
-        script_dir = os.path.dirname(os.path.abspath(__file__))   
-        return os.path.join(script_dir, path)
-        
-        
-####################################################################
+            
+####################################################################                            
+##                           Simulation                           ##
 ####################################################################
 
-
-#Level 0: Simulates physical properties at a given coordinate
+## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
     #Level 0: Simulates physical properties at a given coordinate
     def __init__(self, cPos = [0,0,1.5], grid = None, env = None, findT = None, pbar = None):
@@ -582,13 +596,10 @@ class simpoint:
 
     def Vars(self):
         return vars(self) 
+#Inputs: (self, cPos = [0,0,1.5], grid = None, env = None, findT = None, pbar = None)
 
 
-####################################################################
-####################################################################
-
-
-#Level 1: Initializes many Simpoints into a Simulation
+## Level 1: Initializes many Simpoints into a Simulation
 class simulate: 
     #Level 1: Initializes many Simpoints into a Simulation
     def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, nMin = None):
@@ -1059,13 +1070,10 @@ class simulate:
         ax4.set_title('Area')
         ax4.set_xlabel('Time (s)')
         plt.show(False)
+#Inputs: (self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, nMin = None)
 
 
-####################################################################
-####################################################################
-
-
-#Level 2: Initializes many simulations (MPI Enabled)
+## Level 2: Initializes many simulations (MPI Enabled)
 class multisim:
     #Level 2: Initializes many simulations
     def __init__(self, batch, envs, N = 1000, findT = None, printOut = False):
@@ -1219,17 +1227,13 @@ class multisim:
         print('Elapsed Time: ' + str(time.time() - t))
         sys.stdout.flush()
         self.plotStats()
-#Inputs: (self, batch, env, N = 1000, findT = None)
+#Inputs: (self, batch, envs, N = 1000, findT = None, printOut = False)
 #Public Methods: 
 #Attributes: lines, lineStats
 # For doing the same line from many angles, to get statistics
 
-####################################################################
-####################################################################
 
-
-#Level 3: Initializes many Multisims
-
+## Level 3: Initializes many Multisims
 class batchjob:
     #Requires labels, xlabel, batch, N
     def __init__(self, envs):
@@ -1361,23 +1365,22 @@ class batchjob:
         #plt.show()
         return
 
-    def save(self, path):
+    def save(self, batchName):
+    
+        self.slash = findSlash()
+        
+        batchPath = '..' + self.slash + 'dat' + self.slash + 'batches' + self.slash + batchName + '.batch'
+        
         self.sims = []
         self.envs = []
         self.env = []
         self.profiles = []
         script_dir = os.path.dirname(os.path.abspath(__file__))   
-        absPath = os.path.join(script_dir, path)  
+        absPath = os.path.join(script_dir, batchPath)  
         with open(absPath, 'wb') as output:
             pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
-            
-def loadBatch(path):
-    #Converts a relative path to an absolute path
-    script_dir = os.path.dirname(os.path.abspath(__file__))   
-    absPath = os.path.join(script_dir, path)
-    with open(absPath, 'rb') as input:
-        return pickle.load(input)
-        
+           
+           
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50):
@@ -1404,11 +1407,87 @@ class impactsim(batchjob):
 
 
         super().__init__(envs)
+        return
+        
+ 
+def loadBatch(batchName):
+    slash = findSlash()
+    batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + batchName + '.batch'
+ 
+    absPth = absPath(batchPath)
+    with open(absPth, 'rb') as input:
+        return pickle.load(input)
+       
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
 
-
-
-
+def nothing():
+    a = 1
+    return a
 
 
 

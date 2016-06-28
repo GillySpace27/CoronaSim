@@ -21,19 +21,18 @@ if __name__ == '__main__':
         print('\nCoronaSim!')
         print('Written by Chris Gilbert')
         print('-------------------------\n')
-        ##Simulate Common Grids
-        df = grid.defGrid()
-        ##Initialize Simulation Environment
+    #Simulate Common Grids
+    df = grid.defGrid()
+    #Initialize Simulation Environment
         # env = sim.environment()
         # env.save(envPath)
-        envPath = '..\\dat\\envs'
-        envs = sim.envGen(envPath).loadEnvs(1)
-    else:
-        df = None
-        envs = None
 
-    df = comm.bcast(df, root = 0)
-    envs = comm.bcast(envs, root = 0)
+    # else:
+        # df = None
+        # envs = None
+
+    # df = comm.bcast(df, root = 0)
+    # envs = comm.bcast(envs, root = 0)
 
  
     ### Level 0 ### Simpoint 
@@ -107,31 +106,135 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
-    # remote = False
+    remote = False
 
+    batchName = 'impactBatch' 
     
-    # if remote:
-        # batchPath = '../dat/impactBatch'
+    if remote:
+
+        # envFolder = 
         
-        # myBatch = sim.impactsim(envs[0], 20, 1)
-        # if root: myBatch.save(batchPath)
+        envs = sim.envs('envs').loadEnvs(1)
+        
+        myBatch = sim.impactsim(envs, 20, 1)
+        
+        if root: myBatch.save(batchName)
     
-    # else:
-        # batchPath = '..\\dat\\impactBatch'
-        # myBatch = sim.loadBatch(batchPath)
-        # myBatch.plotStatsV()
+    else:
+    
+        myBatch = sim.loadBatch(batchName)
+        myBatch.plotStatsV()
 
-
+        # envPath = '..\\dat\\envs'
     # myBatch = sim.impactsim(env, 30, int(size/2))
 
-    for env in envs:
-        print(env)
+    # for env in envs:
+        # print(env)
     
 
     if root:
         print('')
         print('Sim Name =')
         print([x for x in vars().keys() if "Sim" in x])
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
         
         
