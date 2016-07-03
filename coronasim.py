@@ -43,10 +43,6 @@ from mpi4py import MPI
 
 np.seterr(invalid = 'ignore')
 
-def findSlash():
-    if platform.system() == 'Windows':
-        return '\\'
-    else: return '/'
     
 def absPath(path):
     #Converts a relative path to an absolute path
@@ -54,14 +50,14 @@ def absPath(path):
     return os.path.join(script_dir, path)
     
 ####################################################################
-##                          Environment                           ##
+##                          Environment                                                                                                    ##
 ####################################################################
 
 #Environment Class contains simulation parameters
 class environment:
 
     #Environment Class contains simulation parameters
-    slash = findSlash()
+    slash = os.path.sep
     datFolder = '..' + slash + 'dat' + slash
 
     rel_def_Bfile = datFolder + 'mgram_iseed0033.sav'    
@@ -236,26 +232,41 @@ class environment:
         self.BMap_y = Bobj.get('y_cap')
         self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_raw)
 
-    def labelStreamers(self, thresh = 0.7):
-        #Label the Streamers
+    def labelStreamers(self, thresh = 0.9):
+        #Take magnitude and find valid region
         bdata = np.abs(self.BMap_raw)
         validMask = bdata != 0
 
+        #Find all above the threshold and label
         blist = bdata.flatten().tolist()
         bmean =  np.mean([v for v in blist if v!=0])
         bmask = bdata > bmean * thresh
         label_im, nb_labels = ndimage.label(bmask)
-
+        
+        #Create seeds for voronoi
         coord = ndimage.maximum_position(bdata, label_im, np.arange(1, nb_labels))
         coordinates = []
         for co in coord: coordinates.append(co[::-1])
-
+        
+        #Get voronoi background
         self.label_im, self.nb_labels = self.voronoify_sklearn(label_im, coordinates)
+        
+        #Add in threshold regions
+        highLabelIm = label_im + self.nb_labels
+        self.label_im *= np.logical_not(bmask)
+        self.label_im += highLabelIm * bmask
+        
+        #Clean Edges
         self.label_im *= validMask
-        #plt.imshow(simpoint.label_im, cmap = 'prism')
-        #for co in coordinates:
-        #    plt.scatter(*co)
-        #plt.show()
+        
+        #(label_im + 40) * validMask
+        plt.imshow(self.label_im, cmap = 'Paired', interpolation='none')
+        #plt.imshow(highLabelIm, cmap = 'Set1', interpolation='none', alpha = 0.5)
+        plt.xlim(600,950)
+        plt.ylim(350,650)
+    # for co in coordinates:
+        # plt.scatter(*co)
+        plt.show()
         return
 
     def voronoify_sklearn(self, I, seeds):
@@ -292,7 +303,7 @@ class envs:
     
     def __init__(self, envFolder = ''):
     
-        self.slash = findSlash()            
+        self.slash = os.path.sep            
         self.dirPath = '..' + self.slash + 'dat' + self.slash + envFolder
         
         return
@@ -333,13 +344,13 @@ class envs:
             
             
 ####################################################################                            
-##                           Simulation                           ##
+##                           Simulation                                                                                                      ##
 ####################################################################
 
 ## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
     #Level 0: Simulates physical properties at a given coordinate
-    def __init__(self, cPos = [0,0,1.5], grid = None, env = None, findT = None, pbar = None):
+    def __init__(self, cPos = [0.1,0.1,1.5], grid = None, env = None, findT = True, pbar = None):
         #Inputs
         self.grid = grid
         self.env = env
@@ -383,7 +394,7 @@ class simpoint:
         theta_edge  = np.arccos(1. - self.f + self.f*np.cos(theta0_edge))
         edge_frac   = theta_edge/theta0_edge 
         coLat = self.pPos[1] /edge_frac
-        self.foot_pPos = [self.env.rstar+1e-8, coLat, self.pPos[2]]
+        self.foot_pPos = [self.env.rstar+1e-2, coLat, self.pPos[2]]
         self.foot_cPos = self.sph2cart(self.foot_pPos)
         
     def findFootB(self):
@@ -490,8 +501,10 @@ class simpoint:
             wtime = 0
             rLine = radial.cGrid(N)
             for cPos in rLine:
-                wtime += (1/simpoint(cPos, findT = False, grid = radial, env = self.env).vPh) / N
+                point = simpoint(cPos, findT = False, grid = radial, env = self.env)
+                wtime += (1/point.vPh) / N
             self.twave = wtime * self.r2rx(radial.norm) * 69.63e9 #radius of sun in cm
+            if self.twave < 0: self.twave = -256
         else:
             self.twave = self.twave_fit  
         self.twave_rat = self.twave/self.twave_fit
@@ -548,8 +561,8 @@ class simpoint:
 
     def interp_rx_dat(self, array):
         #Interpolates an array(rx)
-        if self.rx < 1. : return math.nan
-        rxInd = int(self.find_nearest(self.env.rx_raw, self.rx))
+        if self.rx < self.env.rx_raw[0] : return math.nan
+        rxInd = np.floor(self.find_nearest(self.env.rx_raw, self.rx))
         val1 = array[rxInd]
         val2 = array[rxInd+1]
         slope = val2 - val1
@@ -557,7 +570,8 @@ class simpoint:
         discreteRx = self.env.rx_raw[rxInd]
         diff = self.rx - discreteRx
         diffstep = diff / step
-        return val1+ diffstep*(slope)
+        val =  val1+ diffstep*(slope)
+        return val
 
     def r2rx(self, r):
         return r/self.env.rstar
@@ -745,13 +759,15 @@ class simulate:
         prop = propp.reshape(self.shape2)
         if not dim is None: prop = prop[:,:,dim]
         prop = prop.reshape(self.shape)
-        if scaling == 'None':
+        if scaling.lower() == 'none':
             scaleProp = prop
-        elif scaling == 'log':
+        elif scaling.lower() == 'log':
             scaleProp = np.log10(prop)
-        elif scaling == 'sqrt':
+        elif scaling.lower() == 'sqrt':
             scaleProp = np.sqrt(prop)
-        else: print('Bad Scaling')
+        else: 
+            print('Bad Scaling - None Used')
+            scaleProp = prop
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
@@ -1073,7 +1089,7 @@ class simulate:
 #Inputs: (self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, nMin = None)
 
 
-## Level 2: Initializes many simulations (MPI Enabled)
+## Level 2: Initializes many simulations (MPI Enabled) for statistics
 class multisim:
     #Level 2: Initializes many simulations
     def __init__(self, batch, envs, N = 1000, findT = None, printOut = False):
@@ -1233,7 +1249,7 @@ class multisim:
 # For doing the same line from many angles, to get statistics
 
 
-## Level 3: Initializes many Multisims
+## Level 3: Initializes many Multisims, varying a parameter
 class batchjob:
     #Requires labels, xlabel, batch, N
     def __init__(self, envs):
@@ -1367,7 +1383,7 @@ class batchjob:
 
     def save(self, batchName):
     
-        self.slash = findSlash()
+        self.slash = os.path.sep
         
         batchPath = '..' + self.slash + 'dat' + self.slash + 'batches' + self.slash + batchName + '.batch'
         
@@ -1411,7 +1427,7 @@ class impactsim(batchjob):
         
  
 def loadBatch(batchName):
-    slash = findSlash()
+    slash = os.path.sep
     batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + batchName + '.batch'
  
     absPth = absPath(batchPath)

@@ -37,8 +37,9 @@ if __name__ == '__main__':
  
     ### Level 0 ### Simpoint 
     ###############
-
-    #thisPoint = sim.simPoint(grid = df.bpolePlane) 
+    env = sim.envs('envs').loadEnvs(1)[0]
+    #thisPoint = sim.simpoint(grid = df.bpolePlane, env = env) 
+    #thisPoint.show()
 
 
     ### Level 1 ### Simulate
@@ -50,15 +51,15 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    # bpoleSim = sim.simulate(df.bpolePlane, env, N = 200, findT = False, printOut = True)
+    bpoleSim = sim.simulate(df.bpolePlane, env, N = 200, findT = True, printOut = True)
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     #bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    # bpoleSim.plot('rho', scaling = 'log')
+    bpoleSim.plot('twave', scaling = 'none')
 
-    
+    # env = sim.envs('envs').loadEnvs(1)[0]
     # print('Go')
-    # lineSim = sim.simulate(df.impLine, env, N = (1500, 10000), findT = True)
+    # lineSim = sim.simulate(df.impLine, env, N = 1500, findT = True)
     # lineSim.peekLamTime()
 
     
@@ -106,38 +107,37 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
-    remote = False
+    #remote = False
 
-    batchName = 'impactBatch' 
+    #batchName = 'hybridBatchHQ2' 
     
-    if remote:
+    #if remote:
 
-        # envFolder = 
+    #    envs = sim.envs('hybridEnv').loadEnvs(1)
         
-        envs = sim.envs('envs').loadEnvs(1)
+    #    myBatch = sim.impactsim(envs, 20, 4)
         
-        myBatch = sim.impactsim(envs, 20, 1)
-        
-        if root: myBatch.save(batchName)
+    #    if root: myBatch.save(batchName)
     
-    else:
+    #else:
     
-        myBatch = sim.loadBatch(batchName)
-        myBatch.plotStatsV()
+    #    myBatch = sim.loadBatch(batchName)
+    #    myBatch.plotStatsV()
 
-        # envPath = '..\\dat\\envs'
-    # myBatch = sim.impactsim(env, 30, int(size/2))
 
-    # for env in envs:
-        # print(env)
+    ## for env in envs:
+    #    # print(env)
     
 
-    if root:
-        print('')
-        print('Sim Name =')
-        print([x for x in vars().keys() if "Sim" in x])
+    #if root:
+    #    print('')
+    #    print('Sim Name =')
+    #    print([x for x in vars().keys() if "Sim" in x])
         
-        
+    #if root:
+    #    print('')
+    #    print('Batch Name =')
+    #    print(batchName)     
         
         
         
