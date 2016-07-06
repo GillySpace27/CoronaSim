@@ -1243,6 +1243,14 @@ class multisim:
         print('Elapsed Time: ' + str(time.time() - t))
         sys.stdout.flush()
         self.plotStats()
+
+    def plotLines(self):
+        axes = self.oneBatch[0].quadAxOnly()
+        for line in self.oneBatch:  
+            line.plot(axes = axes)   
+        plt.show()   
+
+            
 #Inputs: (self, batch, envs, N = 1000, findT = None, printOut = False)
 #Public Methods: 
 #Attributes: lines, lineStats

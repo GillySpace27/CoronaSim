@@ -37,7 +37,7 @@ if __name__ == '__main__':
  
     ### Level 0 ### Simpoint 
     ###############
-    env = sim.envs('envs').loadEnvs(1)[0]
+    env = sim.envs('envs').loadEnvs(1)
     #thisPoint = sim.simpoint(grid = df.bpolePlane, env = env) 
     #thisPoint.show()
 
@@ -51,11 +51,11 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    bpoleSim = sim.simulate(df.bpolePlane, env, N = 200, findT = True, printOut = True)
+    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 200, findT = True, printOut = True)
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     #bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    bpoleSim.plot('twave', scaling = 'none')
+    #bpoleSim.plot('twave', scaling = 'none')
 
     # env = sim.envs('envs').loadEnvs(1)[0]
     # print('Go')
@@ -92,8 +92,9 @@ if __name__ == '__main__':
     ###############
     
 
-    #lines = grid.impactLines(10)
-    #lineSims = sim.multisim(lines, env, N = 1000)
+    lines = grid.rotLines(6)
+    lineSims = sim.multisim(lines, env, N = 200)
+    lineSims.plotLines()
     #plt.imshow(np.log(lineSims.getLineArray()))
     #plt.show()
 
@@ -109,13 +110,13 @@ if __name__ == '__main__':
     
     #remote = False
 
-    #batchName = 'hybridBatchHQ2' 
+    #batchName = 'testBatch' 
     
     #if remote:
 
     #    envs = sim.envs('hybridEnv').loadEnvs(1)
         
-    #    myBatch = sim.impactsim(envs, 20, 4)
+    #    myBatch = sim.impactsim(envs, 20, 1)
         
     #    if root: myBatch.save(batchName)
     
@@ -125,19 +126,19 @@ if __name__ == '__main__':
     #    myBatch.plotStatsV()
 
 
-    ## for env in envs:
-    #    # print(env)
+    # for env in envs:
+        # print(env)
     
 
-    #if root:
-    #    print('')
-    #    print('Sim Name =')
-    #    print([x for x in vars().keys() if "Sim" in x])
+    if root:
+        print('')
+        print('Sim Name =')
+        print([x for x in vars().keys() if "Sim" in x])
         
-    #if root:
-    #    print('')
-    #    print('Batch Name =')
-    #    print(batchName)     
+    if root:
+        print('')
+        print('Batch Name =')
+        print(batchName)     
         
         
         

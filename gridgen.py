@@ -90,7 +90,7 @@ class generator:
         ax.auto_scale_xyz([-axscale, axscale], 
                           [-axscale, axscale], [-axscale, axscale])    
 
-    def quadAx(self, quad):
+    def quadAx(self, quad = True):
         fig = plt.figure("CoronaSim")
         dataAxis = plt.subplot2grid((2,4), (0,2), colspan=2, rowspan = 2)
         if quad:
@@ -108,10 +108,25 @@ class generator:
 
         return fig, dataAxis, quadAxis
 
-    def plot(self, iL = 1, show = False):
+    def quadAxOnly(self):
+        fig = plt.figure("CoronaSim")
+
+        ax1 = plt.subplot2grid((2,2), (0,0), projection = '3d', aspect = 'equal')
+        ax1.view_init(elev=0., azim=0.)
+        ax2 = plt.subplot2grid((2,2), (0,1), projection = '3d', aspect = 'equal')
+        ax2.view_init(elev=90, azim=0.)
+        ax3 = plt.subplot2grid((2,2), (1,0), projection = '3d', aspect = 'equal')
+        ax3.view_init(elev=0, azim=90)
+        ax4 = plt.subplot2grid((2,2), (1,1), projection = '3d', aspect = 'equal')
+        quadAxis = [ax1, ax2, ax3, ax4]
+        dataAxis = []
+        return fig, dataAxis, quadAxis
+
+    def plot(self, iL = 1, show = False, axes = None):
         #Plot the quadGrid with a sphere for the sun
 
-        fig, dataAxis, quadAxis = self.quadAx(True)
+        if axes is None: fig, dataAxis, quadAxis = self.quadAx()
+        else: fig, dataAxis, quadAxis = axes
 
         n = 0   
         if type(self) is sightline:      
@@ -341,10 +356,9 @@ def impactLines(N=5, b0 = 1.05, b1= 1.5):
     #List of grids, list of labels
     return [lines, bax] 
 
-def rotLines(N = 20, b = 1.05, offset = 0):
+def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5):
     #Generate lines with a fixed impact parameter but varying angle
     lines = []
-    x0 = 20
     y0 = 1e-8
     angles = np.linspace(0, np.pi*(1 - 1/N), N)
     for theta in angles:
