@@ -20,8 +20,6 @@ from scipy.stats import norm
 import scipy.stats as stats
 from scipy.optimize import curve_fit
 
-
-
 from collections import defaultdict
 
 import gridgen as grid
@@ -79,6 +77,8 @@ class environment:
     theta0 = 28
     S0 = 7.0e5
 
+    r_Mm = 695.5 #Rsun in Mega meters
+
     #Constants
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
     KB = 1.380e-16 #ergs/Kelvin
@@ -103,16 +103,15 @@ class environment:
     def __init__(self, Bfile = None, bkFile = None):
     
         print('  Loading Environment...', end = '', flush = True)
-        
-  
 
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
 
         #Load Bmap
         if Bfile is None: self.Bfile = self.def_Bfile 
-        else: self.Bfile = self.relPath(Bfile)
-        self.loadBMap()
-        self.labelStreamers()
+        else: self.Bfile = self.__relPath(Bfile)
+        self.__loadBMap()
+        self.__labelStreamers()
+        self.__analyze_BMap()
 
         #Load Xi
         self.xiFile1 = self.def_xiFile1 
@@ -130,7 +129,7 @@ class environment:
 
         #Load Plasma Background
         if bkFile is None: self.bkFile = self.def_bkFile 
-        else: self.bkFile = self.relPath(bkFile)
+        else: self.bkFile = self.__relPath(bkFile)
         x = np.loadtxt(self.bkFile, skiprows=10)
         self.bk_dat = x
         self.rx_raw = x[:,0]
@@ -143,7 +142,7 @@ class environment:
         print('')
 
     def save(self, name):
-        with open(self.relPath(name), 'wb') as output:
+        with open(self.__relPath(name), 'wb') as output:
             pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
         
     def randomize(self):
@@ -152,13 +151,13 @@ class environment:
     def setOffset(self, offset):
         self.randOffset = offset
 
-    def relPath(self, path):
+    def __relPath(self, path):
         #Converts a relative path to an absolute path
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         rel = os.path.join(script_dir, path)    
         return rel
 
-    def find_nearest(self,array,value):
+    def __find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
         idx = (np.abs(array-value)).argmin()
         return idx
@@ -166,7 +165,7 @@ class environment:
     def interp_rx_dat(self, rx, array):
         #Interpolates an array(rx)
         if rx < 1. : return math.nan
-        rxInd = int(self.find_nearest(self.rx_raw, rx))
+        rxInd = int(self.__find_nearest(self.rx_raw, rx))
         val1 = array[rxInd]
         val2 = array[rxInd+1]
         slope = val2 - val1
@@ -192,37 +191,37 @@ class environment:
 
     def findVrms(self, rx, B):
         #RMS Velocity
-        densfac = self.findDensFac(B)
-        ur = self.findUr(rx, densfac)
-        vAlf = self.findAlf(rx,densfac)
+        densfac = self.__findDensFac(B)
+        ur = self.__findUr(rx, densfac)
+        vAlf = self.__findAlf(rx,densfac)
         vPh = ur + vAlf
-        rho = self.findRho(rx, densfac)
+        rho = self.__findRho(rx, densfac)
         Hfit  = 2.2*(self.fmax/10.)**0.62
         f = self.fmax + (1.-self.fmax)*np.exp(-((rx-1.)/Hfit)**1.1)
         return np.sqrt(self.S0*vAlf/((vPh)**2*rx**2*f*rho))
 
-    def findDensFac(self, B):
+    def __findDensFac(self, B):
         # Find the density factor
         if np.abs(B) < np.abs(self.B_thresh):
             return 1
         else:
             return (np.abs(B) / self.B_thresh)**0.5
 
-    def findUr(self, rx, densfac):
+    def __findUr(self, rx, densfac):
         #Wind Velocity
         return self.interp_rx_dat(rx, self.ur_raw) / densfac
 
-    def findAlf(self, rx, densfac):
+    def __findAlf(self, rx, densfac):
         #Alfen Velocity
         return self.interp_rx_dat(rx, self.vAlf_raw) / np.sqrt(densfac)
 
-    def findRho(self, rx, densfac):
+    def __findRho(self, rx, densfac):
         return self.interp_rx_dat(rx, self.rho_raw) * densfac 
 
 
   ## Magnets ##########################################################################
         
-    def loadBMap(self):
+    def __loadBMap(self):
         Bobj = io.readsav(self.Bfile)
         self.BMap_raw = Bobj.get('data_cap')
         #plt.imshow((np.abs(simpoint.BMap_raw)), cmap = "winter_r")
@@ -232,7 +231,7 @@ class environment:
         self.BMap_y = Bobj.get('y_cap')
         self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_raw)
 
-    def labelStreamers(self, thresh = 0.9):
+    def __labelStreamers(self, thresh = 0.9):
         #Take magnitude and find valid region
         bdata = np.abs(self.BMap_raw)
         validMask = bdata != 0
@@ -249,7 +248,7 @@ class environment:
         for co in coord: coordinates.append(co[::-1])
         
         #Get voronoi background
-        self.label_im, self.nb_labels = self.voronoify_sklearn(label_im, coordinates)
+        self.label_im, self.nb_labels = self.__voronoify_sklearn(label_im, coordinates)
         
         #Add in threshold regions
         highLabelIm = label_im + self.nb_labels
@@ -259,17 +258,18 @@ class environment:
         #Clean Edges
         self.label_im *= validMask
         
-        #(label_im + 40) * validMask
-        plt.imshow(self.label_im, cmap = 'Paired', interpolation='none')
-        #plt.imshow(highLabelIm, cmap = 'Set1', interpolation='none', alpha = 0.5)
-        plt.xlim(600,950)
-        plt.ylim(350,650)
-    # for co in coordinates:
-        # plt.scatter(*co)
-        plt.show()
+        if False: #Plot Slice of Map
+            (label_im + 40) * validMask
+            plt.imshow(self.label_im, cmap = 'Paired', interpolation='none')
+            plt.imshow(highLabelIm, cmap = 'Set1', interpolation='none', alpha = 0.5)
+            plt.xlim(600,950)
+            plt.ylim(350,650)
+            #for co in coordinates:
+            #    plt.scatter(*co)
+            plt.show()
         return
 
-    def voronoify_sklearn(self, I, seeds):
+    def __voronoify_sklearn(self, I, seeds):
         import sklearn.neighbors as nb
         #Uses the voronoi algorithm to assign stream labels
         tree_sklearn = nb.KDTree(seeds)
@@ -288,6 +288,51 @@ class environment:
             #mean_col = I[idx[:,0], idx[:,1]].mode(axis=0) #The pretty pictures part
             I2[idx[:,0], idx[:,1]] = label
         return I2, label
+
+    def __analyze_BMap(self):
+        #print('')
+        #Find the number of pixels for each label
+        labels = np.arange(0, self.nb_labels+1) - 0.5
+        hist, bin_edges = np.histogram(self.label_im, bins = labels)
+        #Get rid of region zero
+        hist = np.delete(hist, 0)
+        labels = np.delete(labels, [0, self.nb_labels])
+
+        ##Plot Hist
+        #plt.bar(labels, hist)
+        #plt.xlabel('Region Label')
+        #plt.ylabel('Number of Pixels')
+        #plt.show()
+
+        #Find a histogram of the region areas in terms of pixel count
+        bins2 = np.arange(0, np.max(hist))
+        hist2, bin_edges2 = np.histogram(hist, bins = 30)
+
+        area_pixels = np.delete(bin_edges2, len(bin_edges2)-1)
+
+        ##Plot Hist
+        #width = (area_pixels[1] - area_pixels[0])*0.8
+        #plt.bar(area_pixels, hist2 , width = width)
+        #plt.xlabel('Pixel Area')
+        #plt.ylabel('Number of Regions')
+        #plt.show()
+
+        #Find the area of a pixel in Mm
+        pixWidth_rx = np.abs(self.BMap_x[1] - self.BMap_x[0])
+        pixWidth_Mm = self.r_Mm * pixWidth_rx
+        pixArea_Mm = pixWidth_Mm**2
+
+        #Convert the area in pixels to an equivalent radius in Mm
+        area_Mm = area_pixels * pixArea_Mm
+        radius_Mm = np.sqrt(area_Mm/ np.pi)
+
+        #Plot Hist
+        plt.plot(radius_Mm, hist2)
+        plt.title('Distribution of Region Sizes')
+        plt.xlabel('Radius (Mm)')
+        plt.ylabel('Number of Regions')
+        plt.show()
+
 
   ## Light ############################################################################
 
@@ -311,7 +356,22 @@ class envs:
     def __loadEnv(self, path): 
         with open(path, 'rb') as input:
             return pickle.load(input)
-            
+
+    def __createEnvs(self, maxN = 1e8):
+        files = glob.glob(absPath(self.dirPath + self.slash + '*.sav'))
+        envs = []
+        ind = 0
+        for file in files:
+            if ind < maxN: envs.append(environment(Bfile = file))
+            ind += 1
+        return envs
+ 
+    def __saveEnvs(self, envs, maxN = 1e8, name = 'environment'):
+        ind = 0
+        for env in envs:
+            if ind < maxN: env.save(absPath(self.dirPath + self.slash + name +'_' + str(ind) + '.env'))
+            ind += 1
+    
     def loadEnvs(self, maxN = 1e8):
         files = glob.glob(absPath(self.dirPath + self.slash + '*.env'))
         envs = []
@@ -322,27 +382,11 @@ class envs:
         return envs
         
     def processEnvs(self, maxN = 1e8, name = 'environment'):
-        envs = self.createEnvs(maxN)
-        self.saveEnvs(envs, maxN, name)
+        envs = self.__createEnvs(maxN)
+        self.__saveEnvs(envs, maxN, name)
         return envs
             
-    def createEnvs(self, maxN = 1e8):
-        files = glob.glob(absPath(self.dirPath + self.slash + '*.sav'))
-        envs = []
-        ind = 0
-        for file in files:
-            if ind < maxN: envs.append(environment(Bfile = file))
-            ind += 1
-        return envs
-            
-    def saveEnvs(self, envs, maxN = 1e8, name = 'environment'):
-        ind = 0
-        for env in envs:
-            if ind < maxN: env.save(absPath(self.dirPath + self.slash + name +'_' + str(ind) + '.env'))
-            ind += 1
-
-            
-            
+       
 ####################################################################                            
 ##                           Simulation                                                                                                      ##
 ####################################################################
@@ -368,9 +412,8 @@ class simpoint:
         self.findFootB()
         self.findDensity()
         self.findTwave()
-        self.findStreamIndex()
+        self.__streamInit()
         self.findSpeeds()
-        self.findVLOS(self.grid.ngrad)
         self.findIntensity(self.env.lam0, self.env.lam0)
         if pbar is not None:
             pbar.increment()
@@ -385,8 +428,12 @@ class simpoint:
 
   ## Magnets ##########################################################################
         
+    def findFootB(self):
+        #Find B
+        self.__findfoot_Pos()
+        self.footB = self.env.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
 
-    def findfoot_Pos(self):
+    def __findfoot_Pos(self):
         #Find the footpoint of the field line
         Hfit  = 2.2*(self.env.fmax/10.)**0.62
         self.f     = self.env.fmax + (1.-self.env.fmax)*np.exp(-((self.rx-1.)/Hfit)**1.1)
@@ -397,31 +444,26 @@ class simpoint:
         self.foot_pPos = [self.env.rstar+1e-2, coLat, self.pPos[2]]
         self.foot_cPos = self.sph2cart(self.foot_pPos)
         
-    def findFootB(self):
-        #Find B
-        self.findfoot_Pos()
-        self.footB = self.env.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
-
-    def findStreamIndex(self):
-        self.streamIndex = self.env.randOffset + self.env.label_im[self.find_nearest(self.env.BMap_x, self.foot_cPos[0])][
-                                            self.find_nearest(self.env.BMap_y, self.foot_cPos[1])]
+    def __findStreamIndex(self):
+        self.streamIndex = self.env.randOffset + self.env.label_im[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
+                                            self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
 
 
   ## Density ##########################################################################
  
     def findDensity(self):
         #Find the densities of the grid point
-        self.densfac = self.findDensFac()
-        self.rho = self.findRho()
+        self.densfac = self.__findDensFac()
+        self.rho = self.__findRho()
 
-    def findDensFac(self):
+    def __findDensFac(self):
         # Find the density factor
         if np.abs(self.footB) < np.abs(self.env.B_thresh):
             return 1
         else:
             return (np.abs(self.footB) / self.env.B_thresh)**0.5
 
-    def findRho(self):
+    def __findRho(self):
         return self.interp_rx_dat(self.env.rho_raw) * self.densfac  
    
 
@@ -429,56 +471,59 @@ class simpoint:
 
     def findSpeeds(self, t = 0):
         #Find all of the various velocities
-        self.ur = self.findUr()
-        self.vAlf = self.findAlf()
-        self.vPh = self.findVPh()
-        self.vRms = self.findvRms()
-
-        self.streamInit()
+        self.ur = self.__findUr()
+        self.vAlf = self.__findAlf()
+        self.vPh = self.__findVPh()
+        self.vRms = self.__findvRms()
         self.findWaveSpeeds(t)
 
-    def streamInit(self):
+    def findWaveSpeeds(self, t = 0):
+        #Find all of the wave velocities
+        self.t1 = t - self.twave + self.alfT1
+        self.t2 = t - self.twave + self.alfT2
+        self.alfU1 = self.vRms*self.xi1(self.t1)
+        self.alfU2 = self.vRms*self.xi2(self.t2)
+        self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
+        self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
+        self.pU = [self.ur, self.uTheta, self.uPhi]
+        self.cU = self.__findCU() 
+        self.vLOS = self.__findVLOS()      
+       
+    def __streamInit(self):
+        self.__findStreamIndex()
         self.env.streamRand.seed(int(self.streamIndex))
         thisRand = self.env.streamRand.random_sample(3)
         self.alfT1 =  thisRand[0] * self.env.last_xi1_t
         self.alfT2 =  thisRand[1] * self.env.last_xi2_t
         self.alfAngle = thisRand[2] * 2 * np.pi
 
-    def findWaveSpeeds(self, t = 0):
-        #Find all of the wave velocities
-        self.alfU1 = self.vRms*self.xi1(t - self.twave + self.alfT1)
-        self.alfU2 = self.vRms*self.xi2(t - self.twave + self.alfT2)
-        self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
-        self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
-        self.pU = [self.ur, self.uTheta, self.uPhi]
-        self.cU = self.findCU()       
-       
-    def findUr(self):
+    def __findUr(self):
         #Wind Velocity
         #return (1.7798e13) * self.fmax / (self.num_den * self.rx * self.rx * self.f)
         return self.interp_rx_dat(self.env.ur_raw) / self.densfac
 
-    def findAlf(self):
+    def __findAlf(self):
         #Alfen Velocity
         #return 10.0 / (self.f * self.rx * self.rx * np.sqrt(4.*np.pi*self.rho))
         return self.interp_rx_dat(self.env.vAlf_raw) / np.sqrt(self.densfac)
 
-    def findVPh(self):
+    def __findVPh(self):
         #Phase Velocity
         return self.vAlf + self.ur 
     
-    def findvRms(self):
+    def __findvRms(self):
         #RMS Velocity
         S0 = 7.0e5 #* np.sqrt(1/2)
         return np.sqrt(S0*self.vAlf/((self.vPh)**2 * 
             self.rx**2*self.f*self.rho))
 
-    def findVLOS(self, nGrad = None):
+    def __findVLOS(self, nGrad = None):
         if nGrad is not None: self.nGrad = nGrad
+        else: self.nGrad = self.grid.ngrad
         self.vLOS = np.dot(self.nGrad, self.cU)
         return self.vLOS
 
-    def findCU(self):
+    def __findCU(self):
         #Finds the cartesian velocity components
         self.ux = -np.cos(self.pPos[2])*(self.ur*np.sin(self.pPos[1]) + self.uTheta*np.cos(self.pPos[1])) - np.sin(self.pPos[2])*self.uPhi
         self.uy = -np.sin(self.pPos[2])*(self.ur*np.sin(self.pPos[1]) + self.uTheta*np.cos(self.pPos[1])) - np.cos(self.pPos[2])*self.uPhi
@@ -512,7 +557,7 @@ class simpoint:
     def setTime(self,t):
         #Updates velocities to input time
         self.findWaveSpeeds(t)
-        self.findVLOS()
+        self.__findVLOS()
 
     def xi1(self, t):
         #Returns xi1(t)
@@ -552,9 +597,7 @@ class simpoint:
         
   ## Misc Methods ##########################################################################
 
-    #TODO put interp function inside env
-
-    def find_nearest(self,array,value):
+    def __find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
         idx = (np.abs(array-value)).argmin()
         return idx
@@ -562,7 +605,7 @@ class simpoint:
     def interp_rx_dat(self, array):
         #Interpolates an array(rx)
         if self.rx < self.env.rx_raw[0] : return math.nan
-        rxInd = np.floor(self.find_nearest(self.env.rx_raw, self.rx))
+        rxInd = np.int(np.floor(self.__find_nearest(self.env.rx_raw, self.rx)))
         val1 = array[rxInd]
         val2 = array[rxInd+1]
         slope = val2 - val1
@@ -595,7 +638,7 @@ class simpoint:
 
         return [rho, theta, phi]
         
-    def relPath(self, path):
+    def __relPath(self, path):
         #Converts a relative path to an absolute path
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         rel = os.path.join(script_dir, path)    
@@ -623,7 +666,6 @@ class simulate:
         self.findT = findT
         self.env = envObj
         self.profile = None
-        self.lamAx = None
         self.adapt = False
 
 
@@ -645,10 +687,8 @@ class simulate:
 
         self.simulate_now()
 
-
     def simulate_now(self):
-
-    
+  
         if type(self.grid) is grid.plane: 
             doBar = True
             self.adapt = False
@@ -661,7 +701,6 @@ class simulate:
         self.pData = []
         if self.print: print("Beginning Simulation...")
 
-        #Adaptive Mesh
         t = time.time()
         stepInd = 0
         rhoSum = 0
@@ -671,6 +710,7 @@ class simulate:
             thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
 
             if self.adapt:
+                #Adaptive Mesh
                 thisDens = thisPoint.intensity
 
                 if (thisDens > tol) and self.grid.backflag:
@@ -691,8 +731,6 @@ class simulate:
             if doBar and self.print: 
                 bar.increment()
                 bar.display()
-                
-        # print(stepInd)
         
         if doBar and self.print: bar.display(force = True)
         if self.print: print('Elapsed Time: ' + str(time.time() - t))
@@ -703,56 +741,6 @@ class simulate:
         else: 
             self.shape = self.grid.shape
         self.shape2 = [self.shape[0], self.shape[1], -1]
-        
-        
-                
-          # if not self.adapt:
-            # self.cPoints = self.grid.cGrid(self.N, iL = self.iL)
-
-            # if type(self.grid) is grid.plane:
-                # self.adapt = False
-
-            # self.Npoints = len(self.cPoints)
-            # self.shape = self.grid.shape
-            # self.shape2 = [*self.shape, -1]              
-                
-                
-        # if adaptable:               
-        # else:
-            #Rigid Mesh
-            # t = time.time()
-            # nnnn = 0
-            # step = 1/self.N
-            # for cPos in self.grid: 
-                # nnnn += 1
-                # thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
-                # self.sPoints.append(thisPoint)
-                # self.steps.append(step)
-                # self.pData.append(thisPoint.Vars())
-                # if doBar: 
-                    # bar.increment()
-                    # bar.display()
-            # if doBar and self.print: bar.display(force = True)
-            # if self.print: print('Elapsed Time: ' + str(time.time() - t))
-
-
-            
-            ##Parallel Way
-            #chunkSize = 1e5
-            #print('  Initializing Pool...')
-            #pool = Pool()
-            #thisPoint = simpoint(grid = self.grid)
-            #for pnt in pool.imap(partial(simpoint, grid = self.grid, env = self.env, findT = self.findT), self.cPoints, 1000):
-            #    self.sPoints.append(pnt)
-            #    self.pData.append(pnt.Vars())
-            #    bar.increment()
-            #    bar.display()
-            #bar.display(force = True)
-            #pool.close()
-            #pool.join()
-
-        #print('')
-        #print('')
 
     def get(self, myProperty, dim = None, scaling = 'None'):
         propp = np.array([x[myProperty] for x in self.pData])
@@ -771,7 +759,7 @@ class simulate:
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
-    def plot(self, property, dim = None, scaling = 'None'):
+    def plot(self, property, dim = None, scaling = 'None', cmap = 'jet'):
         scaleProp, datSum = self.get(property, dim, scaling)
         self.fig, ax = self.grid.plot(iL = self.iL)
  
@@ -781,7 +769,7 @@ class simulate:
             datSum = datSum / self.N
         elif type(self.grid) is grid.plane:
             #Image Plot
-            im = ax.imshow(scaleProp, interpolation='none')
+            im = ax.imshow(scaleProp, interpolation='none', cmap = cmap)
             self.fig.subplots_adjust(right=0.89)
             cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
             self.fig.colorbar(im, cax=cbar_ax)
@@ -832,50 +820,13 @@ class simulate:
        
         grid.maximizePlot()
         plt.show()    
-   
-    #def simulate_MPI(self):
-    #    #Break up the simulation into multiple PEs
-    #    comm = MPI.COMM_WORLD
-    #    rank = comm.Get_rank()
-    #    size = comm.Get_size()
-    #    assert len(self.cPoints) % size == 0
-    #    chunksize = len(self.cPoints) / size
-    #    if rank == 0: t = time.time()
-    #    local_data = []
-    #    local_simpoints = []
-    #    local_pdata = []
-    #    #if rank ==0:
-    #    #    data = self.cPoints
-    #    #else:
-    #    #    data = None
-    #    #local_data = comm.scatter(data, root = 0)
-    #    #if rank == 0:
-    #    low = int(rank*chunksize)
-    #    high = int(((rank+1)*chunksize))
-    #    local_data = self.cPoints[low:high]
-    #    #else: local_data = self.cPoints[int(rank*chunksize+1):int(((rank+1)*chunksize))]
-    #    for cPos in local_data:
-    #        thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
-    #        local_simpoints.append(thisPoint)
-    #        local_pdata.append(thisPoint.Vars())
 
-    #    sListList = comm.gather(local_simpoints, root=0)
-    #    pdatList = comm.gather(local_pdata, root=0)
-    #    if rank ==0:
-    #        self.sPoints = []
-    #        self.pData = []
-    #        for list in sListList:
-    #            self.sPoints.extend(list)
-    #        for pdat in pdatList:
-    #            self.pData.extend(pdat)
-    #        print("length = ")
-    #        print(len(self.pData))
-    #        print('GO')
-    #        print('Elapsed Time: ' + str(time.time() - t))
-
-    #    else: 
-    #        print("Proccess " + str(rank) + " Complete")
-    #        sys.exit(0)
+    def show(self):
+        #Print all properties and values
+        myVars = vars(self.sPoints[0])
+        print("\nSimpoint Properties")
+        for ii in sorted(myVars.keys()):
+            print(ii, " : ", myVars[ii])
 
     def Vars(self):
         #Returns the vars of the simpoints
@@ -898,6 +849,10 @@ class simulate:
         if self.profile is None: self.lineProfile()
         plt.plot(self.env.lamAx, self.profile)
         plt.show()
+
+    def setIntLam(self, lam):
+        for point in self.sPoints:
+            point.findIntensity(self.env.lam0, lam)
         
     def lineProfile(self):
         #Get a line profile at the current time
@@ -910,18 +865,20 @@ class simulate:
         return self.profile
 
     def findMoments(self):
-        self.maxMoment = 3
+        self.maxMoment = 5
         self.moment = np.zeros(self.maxMoment)
         for mm in np.arange(self.maxMoment):
                 self.moment[mm] = np.dot(self.profile, self.env.lamAx**mm)
         return self.moment
 
     def findMomentStats(self):
-        #TODO Implement Kurtosis
+        #TODO Implement Kurtosis correctly
         self.power = self.moment[0] / self.Npoints
         self.centroid = self.moment[1] / self.moment[0]
         self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
-        return [self.power, self.centroid, self.sigma]
+        self.skew = self.moment[3] / self.sigma**3
+        self.kurt = self.moment[4] / self.sigma**4
+        return [self.power, self.centroid, self.sigma, self.skew, self.kurt]
 
 
 ## Time Dependence ######################################################
@@ -939,7 +896,6 @@ class simulate:
             ind += 1
         self.sAxisList = self.sAxis.tolist()
         
-
     def peekLamTime(self, lam0 = 1000, lam = 1000, t = 0):
         self.makeSAxis()
         intensity = np.zeros_like(self.sPoints)
@@ -951,14 +907,14 @@ class simulate:
         plt.plot(self.sAxis, intensity, '-o')
         plt.show()
 
-    def evolveLine(self, t0 = 0, t1 = 1600, tn = 100, Ln = 100, lam0 = 1000, lamPm = 2):
+    def evolveLine(self, tn = 150, t0 = 0, t1 = 4000):
         #Get the line profile over time and store in LineArray
         print('Timestepping...')
         
-        self.lam0 = lam0
+        #self.lam0 = lam0
         self.times = np.linspace(t0, t1, tn)
-        self.makeLamAxis(self, Ln, lam0, lamPm)
-        self.lineArray = np.zeros((tn, Ln))
+        #self.makeLamAxis(self, Ln, lam0, lamPm)
+        self.lineArray = np.zeros((tn, self.env.Ln))
 
         bar = pb.ProgressBar(self.Npoints*len(self.times))
         timeInd = 0
@@ -974,10 +930,10 @@ class simulate:
         self.lineList = self.lineArray.tolist()
 
         self.plotLineArray_t()
-        self.fitGaussians_t()
-        self.findMoments_t()
+        self.__fitGaussians_t()
+        self.__findMoments_t()
 
-    def findMoments_t(self):
+    def __findMoments_t(self):
         #Find the moments of each line in lineList
         self.maxMoment = 3
         self.moment = []
@@ -987,14 +943,14 @@ class simulate:
 
         for line in self.lineList:
             for mm in np.arange(self.maxMoment):
-                self.moment[mm][lineInd] = np.dot(line, self.lamAx**mm)
+                self.moment[mm][lineInd] = np.dot(line, self.env.lamAx**mm)
             lineInd += 1
 
-        self.findMomentStats_t()
+        self.__findMomentStats_t()
         #self.plotMoments_t()
         return
 
-    def findMomentStats_t(self):
+    def __findMomentStats_t(self):
         self.power = self.moment[0]
         self.centroid = self.moment[1] / self.moment[0]
         self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
@@ -1034,7 +990,7 @@ class simulate:
         self.fig, ax = self.grid.plot(iL = self.iL)
         #print('')
         #print(np.shape(self.lineArray))
-        im = ax.pcolormesh(self.lamAx.astype('float32'), self.times, self.lineArray)
+        im = ax.pcolormesh(self.env.lamAx.astype('float32'), self.times, self.lineArray)
         #ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
         ax.set_xlabel('Angstroms')
         ax.set_ylabel('Time (s)')
@@ -1044,7 +1000,7 @@ class simulate:
         grid.maximizePlot()
         plt.show(False)
 
-    def fitGaussians_t(self):
+    def __fitGaussians_t(self):
         self.amp = np.zeros_like(self.times)
         self.mu = np.zeros_like(self.times)
         self.std = np.zeros_like(self.times)
@@ -1057,7 +1013,7 @@ class simulate:
         for line in self.lineList:
             sig0 = sum((self.env.lamAx - self.env.lam0)**2)/len(line)
             amp0 = np.max(line)
-            popt, pcov = curve_fit(gauss_function, self.lamAx, line, p0 = [amp0, self.env.lam0, sig0])
+            popt, pcov = curve_fit(gauss_function, self.env.lamAx, line, p0 = [amp0, self.env.lam0, sig0])
             self.amp[lInd] = popt[0]
             self.mu[lInd] = popt[1] - self.env.lam0
             self.std[lInd] = popt[2] 
@@ -1208,10 +1164,10 @@ class multisim:
             #self.plotStats()
 
     def plotStats(self):
-        f, axArray = plt.subplots(3, 1, sharex=True)
+        f, axArray = plt.subplots(5, 1, sharex=True)
         mm = 0
-        titles = ['amp', 'mean', 'sigma']
-        ylabels = ['', 'Angstroms', 'Angstroms']
+        titles = ['amp', 'mean', 'sigma', 'skew', 'kurtosis']
+        ylabels = ['', 'Angstroms', 'Angstroms', '', '']
         for ax in axArray:
             if mm == 0:
                 ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
@@ -1270,6 +1226,10 @@ class batchjob:
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
 
+        self.simulate_now()
+
+    def simulate_now(self):
+        self.batch = self.fullBatch
         if self.root and self.print: bar = pb.ProgressBar(len(self.labels))
         self.sims = []
         self.profiles = []
@@ -1290,22 +1250,17 @@ class batchjob:
                     bar.increment()
                     bar.display()
         if self.root and self.print: bar.display(True)
-        if self.root: 
-            self.findStats()
-            self.makeVrms()
-            #self.plotStats()
-            # self.plotStatsV()
-
-        comm.Barrier()
 
     def findStats(self):
-        self.stat = [[[],[]],[[],[]],[[],[]]]
-        self.statV = [[[],[]],[[],[]],[[],[]]]
+        self.stat =  [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
+        self.statV = [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         for vars, impact in zip(self.lineStats, self.labels):
                 allAmp = [x[0] for x in vars]
                 allMean = [x[1] for x in vars]
                 allMeanC = [x[1] - self.env.lam0 for x in vars]
                 allStd = [x[2] for x in vars]
+                allSkew = [x[3] for x in vars]
+                allKurt = [x[4] for x in vars]
             
                 #Wavelength Units
                 self.stat[0][0].append(np.mean(allAmp))
@@ -1317,6 +1272,12 @@ class batchjob:
                 self.stat[2][0].append(np.mean(allStd))
                 self.stat[2][1].append(np.std(allStd))
 
+                self.stat[3][0].append(np.mean(allSkew))
+                self.stat[3][1].append(np.std(allSkew))
+
+                self.stat[4][0].append(np.mean(allKurt))
+                self.stat[4][1].append(np.std(allKurt))
+
                 #Velocity Units
                 self.statV[0][0].append(np.mean(allAmp))
                 self.statV[0][1].append(np.std(allAmp))
@@ -1327,6 +1288,12 @@ class batchjob:
                 T = self.env.interp_rx_dat(impact, self.env.T_raw)
                 self.statV[2][0].append(self.__std2V(np.mean(allStd), T))
                 self.statV[2][1].append(self.__std2V(np.std(allStd), T))
+#TODO make these in velocity units
+                self.statV[3][0].append(np.mean(allSkew))
+                self.statV[3][1].append(np.std(allSkew))
+
+                self.statV[4][0].append(np.mean(allKurt))
+                self.statV[4][1].append(np.std(allKurt))
 
     def __mean2V(self, mean):
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
@@ -1352,14 +1319,14 @@ class batchjob:
         plt.show(False)
 
     def plotStatsV(self):
-        f, axArray = plt.subplots(3, 1, sharex=True)
+        f, axArray = plt.subplots(5, 1, sharex=True)
         mm = 0
-        titles = ['Intensity', 'Mean Redshift', 'Line Width']
-        ylabels = ['', 'km/s', 'km/s']
+        titles = ['Intensity', 'Mean Redshift', 'Line Width', 'skew', 'kurtosis']
+        ylabels = ['', 'km/s', 'km/s', '', '']
         thisBlist = self.Blist
-        f.suptitle('Line Statistics HQ')
+        f.suptitle('Off Limb Line Statistics')
         for ax in axArray:
-            if mm == 0: ax.set_yscale('log')
+            if mm == 0 or mm == 3 or mm == 4: ax.set_yscale('log')
             ax.errorbar(self.labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
             if mm == 2:
                 for vRms in self.vRmsList:
@@ -1372,6 +1339,90 @@ class batchjob:
         ax.set_xlabel(self.xlabel)
         grid.maximizePlot()
         plt.show()
+
+    def save(self, batchName, keep = False):
+    
+        self.slash = os.path.sep
+        
+        batchPath = '..' + self.slash + 'dat' + self.slash + 'batches' + self.slash + batchName + '.batch'
+        sav = self
+
+
+        if not keep:
+            sav.profiles = []
+            sav.env = []
+            sav.sims = []
+            sav.envs = []
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))   
+        absPath = os.path.join(script_dir, batchPath)  
+        with open(absPath, 'wb') as output:
+            pickle.dump(sav, output, pickle.HIGHEST_PROTOCOL)
+            
+    def show(self):
+        #Print all properties and values
+        myVars = vars(self)
+        print("\nBatch Properties\n")
+        for ii in sorted(myVars.keys()):
+            if not "stat" in ii.lower():
+                print(ii, " : ", myVars[ii])
+                
+    def showAll(self):
+        #Print all properties and values
+        myVars = vars(self)
+        print("\nBatch Properties\n")
+        for ii in sorted(myVars.keys()):
+            print(ii, " : ", myVars[ii])
+
+    def doStats(self):
+        self.findStats()
+        self.makeVrms()
+        self.plotStatsV()
+
+           
+           
+# For doing a multisim at many impact parameters
+class impactsim(batchjob):
+    def __init__(self, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000)):
+    
+        #Figure out appropriate number of rotlines per env
+        comm = MPI.COMM_WORLD
+        self.size = comm.Get_size()
+        try:
+            self.Nenv = len(envs)
+        except: self.Nenv = 1
+        self.Nb = Nb
+        self.Nrot = iter * np.floor(self.size / self.Nenv)
+        self.Npt = self.Nrot * self.Nenv
+        self.Ntot = self.Npt * self.Nb
+
+        
+        self.print = True
+        self.printMulti = False
+
+        self.N = N
+        self.labels = np.linspace(b0,b1,Nb)
+        self.impacts = self.labels
+        self.xlabel = 'Impact Parameter'    
+        self.fullBatch = []
+        for ind in self.impacts:
+            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind)) 
+
+
+        super().__init__(envs)
+        
+        
+        if self.root: 
+            self.findStats()
+            self.makeVrms()
+            #self.plotStats()
+            # self.plotStatsV()
+
+        comm.Barrier()
+        
+        return
+        
+
 
     def makeVrms(self):
         self.vRmsList = []
@@ -1387,50 +1438,6 @@ class batchjob:
         #    plt.plot(self.labels, vRms)
 
         #plt.show()
-        return
-
-    def save(self, batchName):
-    
-        self.slash = os.path.sep
-        
-        batchPath = '..' + self.slash + 'dat' + self.slash + 'batches' + self.slash + batchName + '.batch'
-        
-        self.sims = []
-        self.envs = []
-        self.env = []
-        self.profiles = []
-        script_dir = os.path.dirname(os.path.abspath(__file__))   
-        absPath = os.path.join(script_dir, batchPath)  
-        with open(absPath, 'wb') as output:
-            pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
-           
-           
-# For doing a multisim at many impact parameters
-class impactsim(batchjob):
-    def __init__(self, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50):
-    
-        #Figure out appropriate number of rotlines per env
-        size = MPI.COMM_WORLD.Get_size()
-        try:
-            nEnv = len(envs)
-        except: nEnv = 1
-        rotN = np.floor(size / nEnv)
-        Nr = iter * rotN
-
-        
-        self.print = True
-        self.printMulti = False
-
-        self.N = (1500, 10000)
-        self.labels = np.linspace(b0,b1,Nb)
-        self.impacts = self.labels
-        self.xlabel = 'Impact Parameter'    
-        self.batch = []
-        for ind in self.impacts:
-            self.batch.append(grid.rotLines(N = Nr, b = ind)) 
-
-
-        super().__init__(envs)
         return
         
  
@@ -1506,138 +1513,8 @@ def loadBatch(batchName):
         
         
         
-        
-        
 
 def nothing():
     a = 1
     return a
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#Rand and Stream Velocities
-
-    #def findRandU(self):
-    #    #Wrong
-    #    #amp = 0.01 * self.vRms * (self.rho / self.rho_min)**1.2
-    #    #rand = simpoint.thermRand.standard_normal(3)
-    #    return 0,0,0 #amp*rand
-
-    #def findStreamU(self):
-    #    #if self.streamIndex == 0: return 0.0, 0.0 #Velocities for the regions between streams
-    #    #simpoint.streamRand.seed(int(self.streamIndex))
-    #    #thisRand = simpoint.streamRand.standard_normal(2)
-    #    ##Wrong scaling
-    #    #streamTheta = 0.1*self.vRms*thisRand[0]
-    #    #streamPhi = 0.1*self.vRms*thisRand[1]
-    #    return 0,0 #streamTheta, streamPhi
-
-
-            #self.streamTheta, self.streamPhi = self.findStreamU() #All Zeros for now
-            #self.randUr, self.randTheta, self.randPhi = self.findRandU() #All Zeros for now
-            #self.uTheta = self.streamTheta + self.randTheta + 0.05* self.vRms*self.xi(t - self.twave)
-            #self.uPhi = self.streamPhi + self.randPhi + 0.05*self.vRms*self.xi(t - self.twave) 
-
-
-#Density stuff
-
-        #self.num_den_min = self.minNumDense(self.rx)
-        #self.num_den = self.densfac * self.num_den_min
-        #self.rho_min = self.num2rho(self.num_den_min)
-        #self.rho = self.num2rho(self.num_den)
-        
-    #def minNumDense(self, rx):
-    #    #Find the number density floor
-    #    return self.interp_rx_dat(self.num_dens_raw)
-    #    #return 6.0e4 * (5796./rx**33.9 + 1500./rx**16. + 300./rx**8. + 25./rx**4. + 1./rx**2)
-        
-    #def num2rho(self, num_den):
-    #    #Convert number density to physical units (cgs)
-    #    return (1.841e-24) * num_den  
-
-
-
-
-
-
-    #def gauss_function(x, a, x0, sigma):
-    #    return a*np.exp(-(x-x0)**2/(2*sigma**2))
-
-
-
-
-
-
-
-
-    ##def timeV(self, t0 = 0, t1 = 100, tstep = 2):
-    ##    print('Timestepping...')
-    ##    self.times = np.arange(t0, t1, tstep)
-    ##    bar = pb.ProgressBar(self.Npoints*len(self.times))
-    ##    stdList = []
-    ##    vMeanList = []
-    ##    for tt in self.times:
-    ##        thisV = []
-    ##        for point in self.sPoints:
-    ##            point.setTime(tt)
-    ##            thisV.append(point.gradV(self.grid.ngrad))
-    ##            bar.increment()
-    ##            bar.display()
-    ##        stdList.append(np.std(np.array(thisV)))
-    ##        vMeanList.append(np.mean(np.array(thisV)))           
-    ##    bar.display(force = True)
-    ##    self.vStd = np.array(stdList)
-    ##    self.vStdErr = self.vStd / np.sqrt(len(stdList))
-    ##    self.vMean = np.array(vMeanList)
-    ##    self.timePlot()
-
-    ##def timePlot(self):
-    ##    #plt.semilogy(self.times, np.abs(self.vStd), self.times, np.abs(self.vSum))
-    ##    plt.figure()
-    ##    plt.plot(self.times, self.vMean)
-    ##    plt.plot(self.times, self.vStdErr)
-    ##    plt.title('mean and std of gradV over time')
-    ##    plt.show(block = False)
-
-
-
-    #def getPointSpeeds(self, pPos):
-    #    #Find all of the velocities for an arbitrary point
-    #    u = self.findU(pPos)
-    #    vAlf = self.findAlf(pPos)
-    #    vPh = self.u + self.vAlf
-    #    return vPh, u, vAlf
-    
-    #def getPointDensity(self, pPos):
-    #    #Find the density of another grid point
-    #    rx = self.r2rx(pPos[0])
-    #    B = self.findB(pPos, self.BMap)
-    #    num_den_min = self.minNumDense(rx)
-    #    num_den = self.actualDensity(num_den_min, B)
-    #    return self.num2rho(num_den), num_den

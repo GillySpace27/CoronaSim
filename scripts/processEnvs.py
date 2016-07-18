@@ -33,7 +33,7 @@ if __name__ == '__main__':
 
     # df = comm.bcast(df, root = 0)
     # envs = comm.bcast(envs, root = 0)
-    envs = sim.envs('hybridEnv').processEnvs()
+    envs = sim.envs('Multienv').processEnvs(1)
     
     
     

@@ -37,7 +37,7 @@ if __name__ == '__main__':
  
     ### Level 0 ### Simpoint 
     ###############
-    env = sim.envs('envs').loadEnvs(1)
+    #env = sim.envs('envs').loadEnvs(1)[0]
     #thisPoint = sim.simpoint(grid = df.bpolePlane, env = env) 
     #thisPoint.show()
 
@@ -51,11 +51,11 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 200, findT = True, printOut = True)
+    #bpoleSim = sim.simulate(df.bpolePlane, env[0], N = 750, findT = False, printOut = True)
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     #bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    #bpoleSim.plot('twave', scaling = 'none')
+    #bpoleSim.plot('t1', scaling = 'none')
 
     # env = sim.envs('envs').loadEnvs(1)[0]
     # print('Go')
@@ -67,9 +67,11 @@ if __name__ == '__main__':
     #lineSim.plotProfile()
     #print(lineSim.getStats())
 
-    #lineSim2 = sim.simulate(df.primeLine, N = 2e3, findT = True)
+    #lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
     #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
-    #lineSim.plot('densfac')
+    #lineSim2.evolveLine(150)
+    #lineSim2.setIntLam(200.01)
+    #lineSim2.plot('intensity')
     #print(lineSim2.getStats())
     ## Useful Functions
         #mysim.plot('property')
@@ -92,9 +94,9 @@ if __name__ == '__main__':
     ###############
     
 
-    lines = grid.rotLines(6)
-    lineSims = sim.multisim(lines, env, N = 200)
-    lineSims.plotLines()
+    #lines = grid.rotLines(6)
+    #lineSims = sim.multisim(lines, env, N = 200)
+    #lineSims.plotLines()
     #plt.imshow(np.log(lineSims.getLineArray()))
     #plt.show()
 
@@ -108,37 +110,42 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
+#TODO make stats doable at the batch level
+
+    envs = sim.envs('Multienv').processEnvs()
+
+
     #remote = False
 
-    #batchName = 'testBatch' 
+    #batchName = 'kurtest' 
     
     #if remote:
 
-    #    envs = sim.envs('hybridEnv').loadEnvs(1)
+    #    envs = sim.envs('Multienv').loadEnvs(1)
         
-    #    myBatch = sim.impactsim(envs, 20, 1)
+    #    myBatch = sim.impactsim(envs, 20, len(envs))
+
         
-    #    if root: myBatch.save(batchName)
+    #    if root: myBatch.save(batchName, True)
     
     #else:
     
     #    myBatch = sim.loadBatch(batchName)
-    #    myBatch.plotStatsV()
+    #    myBatch.doStats()
+    #    #myBatch.plotStatsV()
 
 
-    # for env in envs:
-        # print(env)
-    
+   
 
-    if root:
-        print('')
-        print('Sim Name =')
-        print([x for x in vars().keys() if "Sim" in x])
+    #if root:
+    #    print('')
+    #    print('Sim Name =')
+    #    print([x for x in vars().keys() if "Sim" in x])
         
-    if root:
-        print('')
-        print('Batch Name =')
-        print(batchName)     
+    #if root:
+    #    print('')
+    #    print('Batch Name =')
+    #    print(batchName)     
         
         
         
