@@ -111,7 +111,7 @@ class environment:
         else: self.Bfile = self.__relPath(Bfile)
         self.__loadBMap()
         self.__labelStreamers()
-        self.__analyze_BMap()
+        self.analyze_BMap()
 
         #Load Xi
         self.xiFile1 = self.def_xiFile1 
@@ -140,6 +140,9 @@ class environment:
 
         print("Done")
         print('')
+
+    def smallify(self):
+        self.label_im = []
 
     def save(self, name):
         with open(self.__relPath(name), 'wb') as output:
@@ -289,7 +292,7 @@ class environment:
             I2[idx[:,0], idx[:,1]] = label
         return I2, label
 
-    def __analyze_BMap(self):
+    def analyze_BMap(self):
         #print('')
         #Find the number of pixels for each label
         labels = np.arange(0, self.nb_labels+1) - 0.5
@@ -838,12 +841,9 @@ class simulate:
 
     ####################################################################
 
-    def getStats(self):
-        self.findMoments()
-        return self.findMomentStats()
-
     def getProfile(self):
-        return self.lineProfile()
+        self.profile = self.lineProfile()
+        return self.profile
 
     def plotProfile(self):
         if self.profile is None: self.lineProfile()
@@ -856,30 +856,13 @@ class simulate:
         
     def lineProfile(self):
         #Get a line profile at the current time
-        self.profile = np.zeros_like(self.env.lamAx)
+        profile = np.zeros_like(self.env.lamAx)
         index = 0
         for lam in self.env.lamAx:
             for point, step in zip(self.sPoints, self.steps):
-                self.profile[index] += point.findIntensity(self.env.lam0, lam) * step
+                profile[index] += point.findIntensity(self.env.lam0, lam) * step
             index += 1
-        return self.profile
-
-    def findMoments(self):
-        self.maxMoment = 5
-        self.moment = np.zeros(self.maxMoment)
-        for mm in np.arange(self.maxMoment):
-                self.moment[mm] = np.dot(self.profile, self.env.lamAx**mm)
-        return self.moment
-
-    def findMomentStats(self):
-        #TODO Implement Kurtosis correctly
-        self.power = self.moment[0] / self.Npoints
-        self.centroid = self.moment[1] / self.moment[0]
-        self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
-        self.skew = self.moment[3] / self.sigma**3
-        self.kurt = self.moment[4] / self.sigma**4
-        return [self.power, self.centroid, self.sigma, self.skew, self.kurt]
-
+        return profile
 
 ## Time Dependence ######################################################
     def setTime(self, tt):
@@ -1058,8 +1041,9 @@ class multisim:
         if type(envs) is list or type(envs) is tuple: 
             self.envs = envs
             self.Nenv = len(self.envs)
+            import copy
             for nn in np.arange(self.Nenv):
-                self.batch.extend(self.oneBatch)
+                self.batch.extend(copy.deepcopy(self.oneBatch))
                 self.envInd.extend([nn] * len(self.oneBatch))
         else: 
             self.envs = [envs]
@@ -1071,7 +1055,6 @@ class multisim:
         self.findT = findT
         self.MPI_init()
         self.findProfiles()
-        self.findProfileStats()
 
     def MPI_init(self):
         self.comm = MPI.COMM_WORLD
@@ -1091,11 +1074,16 @@ class multisim:
 
         if self.root and self.print: 
             print('PoolSize = ' + str(self.size))
-            print('JobSize = ' + str(len(self.gridLabels)))
-            print('ChunkSize = ' + str(len(self.gridList))) #Print Stuff
+            print('Nenv = ' + str(self.Nenv))
+            print('Lines\Env = ' + str(len(self.oneBatch)))
+            print('ChunkSize = ' + str(len(self.gridList))) 
+            print('JobSize = ' + str(len(self.gridList*self.size))) #Print Stuff
 
-        if self.root and self.print: bar = pb.ProgressBar(len(self.gridList))
+        if self.root and self.print: 
+            bar = pb.ProgressBar(len(self.gridList))
+            bar.display()
         self.simList = []
+
         for grd, envInd in zip(self.gridList, self.envIndList):
             self.envs[envInd].randomize()
             self.simList.append(simulate(grd, self.envs[envInd], self.N, findT = self.findT))
@@ -1108,19 +1096,18 @@ class multisim:
         if self.root and self.print: 
             bar = pb.ProgressBar(len(self.gridList))
             print('Simulating Spectral Lines')
-        self.lines = []
-        #self.lineStats = []
+        self.profiles = []
         for lsim in self.simList:
-            self.lines.append(lsim.getProfile())
-            #self.stats.append(lsim.getStats())
+            self.profiles.append(lsim.getProfile())
             if self.root and self.print:
                 bar.increment()
                 bar.display()
+
         if self.root and self.print: bar.display(force = True)
-        return self.lines    
+        return self.profiles    
 
     def getLineArray(self):
-        return np.asarray(self.lines)
+        return np.asarray(self.profiles)
             
     def __seperate(self, list, N):
         #Breaks a list up into chunks
@@ -1139,45 +1126,23 @@ class multisim:
                 chunks[NN].extend([list.pop(0)])
         return chunks
 
-    def findProfileStats(self):
-        #if self.root: 
-        #    print('Calculating Line Statistics...')
-        #    bar = pb.ProgressBar(len(self.simList))
-            #t = time.time()
-        self.lineStats = []
-        for line in self.simList:
-            self.lineStats.append(line.getStats())
-        #    if self.root:
-        #        bar.increment()
-        #        bar.display()
-        #if self.root: bar.display(force = True)
 
-        lineStats = self.comm.gather(self.lineStats, root = 0)
-        if self.root:
-            self.lineStats = []
-            for stat in lineStats:
-                self.lineStats.extend(stat)
 
-            #print('')
-            #print('Elapsed Time: ' + str(time.time() - t))
-            sys.stdout.flush()
-            #self.plotStats()
-
-    def plotStats(self):
-        f, axArray = plt.subplots(5, 1, sharex=True)
-        mm = 0
-        titles = ['amp', 'mean', 'sigma', 'skew', 'kurtosis']
-        ylabels = ['', 'Angstroms', 'Angstroms', '', '']
-        for ax in axArray:
-            if mm == 0:
-                ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
-            else:
-                ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
-            ax.set_title(titles[mm])
-            ax.set_ylabel(ylabels[mm])
-            mm += 1
-        ax.set_xlabel('Impact Parameter')
-        plt.show()
+    #def plotStats(self):
+    #    f, axArray = plt.subplots(5, 1, sharex=True)
+    #    mm = 0
+    #    titles = ['amp', 'mean', 'sigma', 'skew', 'kurtosis']
+    #    ylabels = ['', 'Angstroms', 'Angstroms', '', '']
+    #    for ax in axArray:
+    #        if mm == 0:
+    #            ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
+    #        else:
+    #            ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
+    #        ax.set_title(titles[mm])
+    #        ax.set_ylabel(ylabels[mm])
+    #        mm += 1
+    #    ax.set_xlabel('Impact Parameter')
+    #    plt.show()
 
     def init(self):
         #Serial Version
@@ -1206,6 +1171,26 @@ class multisim:
             line.plot(axes = axes)   
         plt.show()   
 
+    def dict(self):
+        """
+        Determine existing fields
+        """
+        return {field:getattr(self, field) 
+                for field in dir(self) 
+                if field.upper() == field 
+                and not field.startswith('_')}
+
+    def getSmall(self):
+        profiles = self.profiles 
+
+        for field in self.dict():
+            delattr(self, field)
+
+        self.profiles = profiles
+        print(vars(self))
+        return self
+
+
             
 #Inputs: (self, batch, envs, N = 1000, findT = None, printOut = False)
 #Public Methods: 
@@ -1227,31 +1212,73 @@ class batchjob:
         self.root = comm.rank == 0
 
         self.simulate_now()
+        if self.root: self.__findBatchStats()
 
     def simulate_now(self):
         self.batch = self.fullBatch
-        if self.root and self.print: bar = pb.ProgressBar(len(self.labels))
+        if self.root and self.print: 
+            bar = pb.ProgressBar(len(self.labels))
+        if self.root and self.print and self.printMulti: 
+            print('\nBatch Progress')
+            bar.display()
         self.sims = []
         self.profiles = []
-        self.lineStats = []
+        firstrun = True
         for ind in self.labels:
-            if self.root and self.printMulti: print('\n\n' + self.xlabel +' = ' + str(ind)) 
-            if self.root: bar.display()
-            thisBatch = self.batch.pop(0) 
-            #if self.root: print(thisBatch)
+            if self.root and self.printMulti: print('\n\n--' + self.xlabel +' = ' + str(ind)) 
+            if self.root and not firstrun: bar.display()
+            firstrun = False
 
+            thisBatch = self.batch.pop(0) 
             thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti)
+
             if self.root:
                 self.sims.append(thisSim)
-                self.profiles.append(thisSim.lines)
-                self.lineStats.append(thisSim.lineStats)
+                self.profiles.append(thisSim.profiles)
                 if self.print:
                     if self.root and self.print and self.printMulti: print('\nBatch Progress')
                     bar.increment()
                     bar.display()
         if self.root and self.print: bar.display(True)
 
-    def findStats(self):
+
+    def doStats(self):
+        self.__findSampleStats()
+        self.makeVrms()
+        self.plotStatsV()
+
+    def redoStats(self):
+        self.__findBatchStats()
+        self.doStats()
+
+    def __findBatchStats(self):
+        self.lineStats = []
+        for profiles in self.profiles:
+            self.lineStats.append(self.__findSimStats(profiles))
+
+    def __findSimStats(self, profiles):
+        simStats = []
+        for profile in profiles:
+            simStats.append(self.__findProfileStats(profile))
+        return simStats
+
+    def __findProfileStats(self, profile):
+        maxMoment = 5
+        moment = np.zeros(maxMoment)
+        for mm in np.arange(maxMoment):
+                moment[mm] = np.dot(profile, self.env.lamAx**mm)
+
+        #TODO Implement Kurtosis correctly
+        power = moment[0] 
+        mu = moment[1] / moment[0]
+        sigma = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
+        skew = (moment[3]/moment[0] - 3*mu*sigma**2 - mu**3) / sigma**3
+        kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigma**2 + 3*mu**4) / sigma**4
+        return [power, mu, sigma, skew, kurt]
+
+
+    def __findSampleStats(self):
+        #Does statistics on the statistics
         self.stat =  [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         self.statV = [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         for vars, impact in zip(self.lineStats, self.labels):
@@ -1324,9 +1351,9 @@ class batchjob:
         titles = ['Intensity', 'Mean Redshift', 'Line Width', 'skew', 'kurtosis']
         ylabels = ['', 'km/s', 'km/s', '', '']
         thisBlist = self.Blist
-        f.suptitle('Off Limb Line Statistics')
+        f.suptitle('Off Limb Line Statistics \nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + '\nLines per Env: ' + str(self.Nrot))
         for ax in axArray:
-            if mm == 0 or mm == 3 or mm == 4: ax.set_yscale('log')
+            if mm == 0: ax.set_yscale('log')
             ax.errorbar(self.labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
             if mm == 2:
                 for vRms in self.vRmsList:
@@ -1343,21 +1370,28 @@ class batchjob:
     def save(self, batchName, keep = False):
     
         self.slash = os.path.sep
+
+        #Save with all data
+        if keep:
+            batchPath = '..' + self.slash + 'dat' + self.slash + 'batches' + self.slash + batchName + '_keep.batch'            
+            script_dir = os.path.dirname(os.path.abspath(__file__))   
+            absPath = os.path.join(script_dir, batchPath)  
+            with open(absPath, 'wb') as output:
+                pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+        
+        #Save Without Data
         
         batchPath = '..' + self.slash + 'dat' + self.slash + 'batches' + self.slash + batchName + '.batch'
-        sav = self
-
-
-        if not keep:
-            sav.profiles = []
-            sav.env = []
-            sav.sims = []
-            sav.envs = []
+        
+        self.sims = []
+        self.envs = []
+        self.env.smallify()
 
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         absPath = os.path.join(script_dir, batchPath)  
         with open(absPath, 'wb') as output:
-            pickle.dump(sav, output, pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+
             
     def show(self):
         #Print all properties and values
@@ -1374,31 +1408,34 @@ class batchjob:
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
 
-    def doStats(self):
-        self.findStats()
-        self.makeVrms()
-        self.plotStatsV()
+
 
            
            
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000)):
-    
+        self.Nb = Nb
         #Figure out appropriate number of rotlines per env
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
+        self.root = comm.Get_rank() == 0
         try:
             self.Nenv = len(envs)
         except: self.Nenv = 1
-        self.Nb = Nb
-        self.Nrot = iter * np.floor(self.size / self.Nenv)
+
+        #Lines per environment
+        if self.root and self.size < self.Nenv:
+            print('**Warning: More envs than PEs, will take additional time**')
+        self.Nrot = np.floor(iter * max(1, self.size / self.Nenv))
+
+        #Lines per impact
         self.Npt = self.Nrot * self.Nenv
+        #Total Lines
         self.Ntot = self.Npt * self.Nb
 
-        
         self.print = True
-        self.printMulti = False
+        self.printMulti = True
 
         self.N = N
         self.labels = np.linspace(b0,b1,Nb)
@@ -1412,11 +1449,11 @@ class impactsim(batchjob):
         super().__init__(envs)
         
         
-        if self.root: 
-            self.findStats()
-            self.makeVrms()
-            #self.plotStats()
-            # self.plotStatsV()
+        #if self.root: 
+        #    self.__findStats()
+        #    self.__makeVrms()
+        #    #self.plotStats()
+        #    # self.plotStatsV()
 
         comm.Barrier()
         

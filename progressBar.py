@@ -25,7 +25,7 @@ class ProgressBar():
     noEtaString = " ETA -:--:--"  # For when the ETA is still settling
                                   # or is infinite
     percentString = " {0:3}%"  # e.g. " 100%" or "   1%"
-    rateString = " [{0:3}/s]"  # e.g. " [  5/s]" or " [1234/s]"
+    rateString = " [{0:3}/m]"  # e.g. " [  5/s]" or " [1234/s]"
     noRateString = " [---/s]"  # For when the rate is settling
     
     disable = False
@@ -40,6 +40,7 @@ class ProgressBar():
         self.start = None
         self.lastUpdate = None
         self.lastDisplay = None
+        self.minAdjust = 60
     
     def setTarget(self, target):
         self.target = target
@@ -88,7 +89,7 @@ class ProgressBar():
             secondsSinceBenchmark = self.totalSeconds(now - benchmark[0])
             benchmarkValue = benchmark[1]
             
-            incrementRate = (current - benchmarkValue) / secondsSinceBenchmark
+            incrementRate = ((current - benchmarkValue) / secondsSinceBenchmark)
             # Prepare the eta display
             if(elapsedSeconds < 1 or percent == 0 or incrementRate == 0):
                 # For the first little while, the ETA is absolute nonsense.
@@ -103,9 +104,9 @@ class ProgressBar():
             if(elapsedSeconds < 1 or percent == 0):
                 rateString = self.noRateString
             elif incrementRate < 1:
-                rateString = self.rateString.format(round(incrementRate, 1))
+                rateString = self.rateString.format(round(incrementRate * self.minAdjust, 1))
             else:
-                rateString = self.rateString.format(int(incrementRate))
+                rateString = self.rateString.format(int(incrementRate * self.minAdjust))
             self.lastRate = rateString
         
         # Prepare the progress bar display

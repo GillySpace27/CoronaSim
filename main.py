@@ -112,27 +112,27 @@ if __name__ == '__main__':
     
 #TODO make stats doable at the batch level
 
-    envs = sim.envs('Multienv').processEnvs()
+    #envs = sim.envs('Multienv').processEnvs()
 
 
-    #remote = False
+    remote = True
 
-    #batchName = 'kurtest' 
+    batchName = 'FinalLong' 
     
-    #if remote:
+    if remote:
 
-    #    envs = sim.envs('Multienv').loadEnvs(1)
+        envs = sim.envs('Multienv').loadEnvs()
         
-    #    myBatch = sim.impactsim(envs, 20, len(envs))
-
+        myBatch = sim.impactsim(envs, 40, 100)
         
-    #    if root: myBatch.save(batchName, True)
+        if root: myBatch.save(batchName)
     
-    #else:
-    
-    #    myBatch = sim.loadBatch(batchName)
-    #    myBatch.doStats()
-    #    #myBatch.plotStatsV()
+    else:
+        #env = sim.envs('Multienv').loadEnvs(1)[0]
+        myBatch = sim.loadBatch(batchName)
+        #myBatch.env = env
+        myBatch.redoStats()
+        #myBatch.plotStatsV()
 
 
    
