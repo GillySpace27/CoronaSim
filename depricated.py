@@ -147,6 +147,22 @@
 
 
 
+    #def plotStats(self):
+    #    f, axArray = plt.subplots(5, 1, sharex=True)
+    #    mm = 0
+    #    titles = ['amp', 'mean', 'sigma', 'skew', 'kurtosis']
+    #    ylabels = ['', 'Angstroms', 'Angstroms', '', '']
+    #    for ax in axArray:
+    #        if mm == 0:
+    #            ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
+    #        else:
+    #            ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
+    #        ax.set_title(titles[mm])
+    #        ax.set_ylabel(ylabels[mm])
+    #        mm += 1
+    #    ax.set_xlabel('Impact Parameter')
+    #    plt.show()
+
 
 
 

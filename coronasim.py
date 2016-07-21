@@ -1063,7 +1063,7 @@ class multisim:
         self.size = self.comm.Get_size()
 
         if self.root and self.print: 
-            print('\nRunning MultiSim:')
+            print('Running MultiSim:')
             t = time.time() #Print Stuff
 
         gridList = self.__seperate(self.batch, self.size)
@@ -1116,7 +1116,10 @@ class multisim:
     def __seperate(self, list, N):
         #Breaks a list up into chunks
         chunkSize = float(len(list)/N)
-        assert chunkSize >= 1
+        if chunkSize < 1:
+            print(' Chunk Size Too Small: ' + str(chunkSize) + '\n')
+            assert False
+            
         chunkSizeInt = int(chunkSize)
         remainder = int((chunkSize % float(chunkSizeInt)) * N)
     
@@ -1131,22 +1134,6 @@ class multisim:
         return chunks
 
 
-
-    #def plotStats(self):
-    #    f, axArray = plt.subplots(5, 1, sharex=True)
-    #    mm = 0
-    #    titles = ['amp', 'mean', 'sigma', 'skew', 'kurtosis']
-    #    ylabels = ['', 'Angstroms', 'Angstroms', '', '']
-    #    for ax in axArray:
-    #        if mm == 0:
-    #            ax.plot(self.gridLabels, np.log([x[mm] for x in self.lineStats]))
-    #        else:
-    #            ax.plot(self.gridLabels, [x[mm] for x in self.lineStats])
-    #        ax.set_title(titles[mm])
-    #        ax.set_ylabel(ylabels[mm])
-    #        mm += 1
-    #    ax.set_xlabel('Impact Parameter')
-    #    plt.show()
 
     def init(self):
         #Serial Version
@@ -1211,39 +1198,58 @@ class batchjob:
             self.envs = envs
         else: self.envs = [envs]
         self.env = self.envs[0]
-        
+        self.firstRunEver = True
+        self.complete = False
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
 
         self.simulate_now()
-        if self.root: self.__findBatchStats()
+
 
     def simulate_now(self):
-        self.batch = self.fullBatch
-        if self.root and self.print: 
-            bar = pb.ProgressBar(len(self.labels))
-        if self.root and self.print and self.printMulti: 
-            print('\nBatch Progress')
-            bar.display()
-        self.sims = []
-        self.profiles = []
-        firstrun = True
-        for ind in self.labels:
-            if self.root and self.printMulti: print('\n\n--' + self.xlabel +' = ' + str(ind)) 
-            if self.root and not firstrun: bar.display()
-            firstrun = False
+        if self.root:
+            print('\nCoronaSim!')
+            print('Written by Chris Gilbert')
+            print('-------------------------\n')
 
-            thisBatch = self.batch.pop(0) 
+        if self.firstRunEver:
+            self.batch = self.fullBatch
+            if self.root and self.print: 
+                self.bar = pb.ProgressBar(len(self.labels))
+
+            self.sims = []
+            self.profiles = []
+            self.doLabels = self.labels.tolist()
+
+        if self.print and self.printMulti: 
+            print('\nBatch Progress')
+            self.bar.display()
+
+        while len(self.doLabels) > 0:
+            ind = self.doLabels.pop(0)
+            thisBatch = self.batch.pop(0)
+
+            if self.root and self.printMulti: print('\n\n\n--' + self.xlabel +' = ' + str(ind)) 
+
+            self.firstRunEver = False
+            
             thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti)
 
             if self.root:
                 self.sims.append(thisSim)
                 self.profiles.append(thisSim.profiles)
+
                 if self.print:
-                    if self.root and self.print and self.printMulti: print('\nBatch Progress')
-                    bar.increment()
-                    bar.display()
-        if self.root and self.print: bar.display(True)
+                    if self.printMulti: print('\nBatch Progress')
+                    self.bar.increment()
+                    self.bar.display()
+
+                self.save(self.batchName)
+
+        if self.root and self.print: self.bar.display(True)
+        if self.root: 
+            self.__findBatchStats()
+            self.complete = True
 
 
     def doStats(self):
@@ -1388,15 +1394,19 @@ class batchjob:
         #Save Without Data
         
         batchPath = '..' + self.slash + 'dat' + self.slash + 'batches' + self.slash + batchName + '.batch'
-        
+
+        sims = self.sims
         self.sims = []
-        self.envs = []
-        self.env.smallify()
+
 
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         absPath = os.path.join(script_dir, batchPath)  
         with open(absPath, 'wb') as output:
             pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+
+        self.sims = sims
+        #self.env = env
+        print('\nFile Saved')
 
             
     def show(self):
@@ -1420,8 +1430,10 @@ class batchjob:
            
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
-    def __init__(self, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000)):
+    def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000)):
         self.Nb = Nb
+        self.batchName = batchName
+
         #Figure out appropriate number of rotlines per env
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
@@ -1450,7 +1462,6 @@ class impactsim(batchjob):
         self.fullBatch = []
         for ind in self.impacts:
             self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind)) 
-
 
         super().__init__(envs)
         
@@ -1491,6 +1502,16 @@ def loadBatch(batchName):
     absPth = absPath(batchPath)
     with open(absPth, 'rb') as input:
         return pickle.load(input)
+
+def restartBatch(batchName):
+    myBatch = loadBatch(batchName)
+    if myBatch.complete:
+        print('Batch Complete')
+    else:
+        myBatch.simulate_now()
+    return myBatch
+
+
        
         
         

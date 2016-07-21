@@ -14,13 +14,8 @@ if __name__ == '__main__':
     rank = comm.Get_rank()
     size = comm.Get_size()
     root = rank == 0
-    envPath = '../dat/primeEnv'
+    #envPath = '../dat/primeEnv'
     
-    
-    if root:
-        print('\nCoronaSim!')
-        print('Written by Chris Gilbert')
-        print('-------------------------\n')
     #Simulate Common Grids
     df = grid.defGrid()
     #Initialize Simulation Environment
@@ -110,32 +105,33 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
-#TODO make stats doable at the batch level
-
     #envs = sim.envs('Multienv').processEnvs()
 
+    firstRun = False
+    remote = True
+    batchName = 'saveTest' 
+    envName = 'Multienv'
 
-    remote = False
-
-    batchName = 'FinalLong' 
-    
     if remote:
 
-        envs = sim.envs('Multienv').loadEnvs()
-        
-        myBatch = sim.impactsim(envs, 40, 100)
-        
-        if root: myBatch.save(batchName)
+        if firstRun:       
+            envs = sim.envs(envName).loadEnvs(4)
+            myBatch = sim.impactsim(batchName, envs, 100, 1)
+        else:
+            myBatch = sim.restartBatch(batchName)        
+        #if root: myBatch.save(batchName)
     
     else:
-        #env = sim.envs('Multienv').loadEnvs(1)[0]
+
         myBatch = sim.loadBatch(batchName)
-        #myBatch.env = env
         myBatch.redoStats()
+
+        #env = sim.envs('Multienv').loadEnvs(1)[0]
+        #myBatch.env = env
         #myBatch.plotStatsV()
 
-
-   
+  
+ 
 
     #if root:
     #    print('')

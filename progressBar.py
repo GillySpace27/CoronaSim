@@ -109,13 +109,16 @@ class ProgressBar():
                 rateString = self.rateString.format(int(incrementRate * self.minAdjust))
             self.lastRate = rateString
         
+
+        iterString = ' [' + str(int(self.current)) + '/' + str(int(self.target)) + ']'
+
         # Prepare the progress bar display
         terminalSize = getTerminalSize()[0]
         # The 4 accounts for an initial space, two brackets, and a
         # 'rest space' at the end of the line to keep the cursor from
         # filling the line and moving the cursor to the next line.
         availableSize = terminalSize - 4 - len(elapsedString) \
-                        - len(percentString) - len(etaString) - len(rateString)
+                        - len(percentString) - len(etaString) - len(rateString) - len(iterString)
         if percent > 100:
             percent = 100
         nTickMarks = int(availableSize * 2 * percent / 100)
@@ -125,11 +128,13 @@ class ProgressBar():
         #progressString += ' ' * int(availableSize - (nTickMarks + 1) / 2)
         progressString += ' ' * int(availableSize - len(progressString) + 2)
         progressString += ']'
+
+
         
         # An \r character moves the cursor to the beginning of the line
         # so we can re-print the line.
         print("\r", end='')
-        print(elapsedString + percentString + rateString \
+        print(elapsedString + percentString + iterString + rateString \
               + progressString + etaString, end='')
         # Without this, Python may buffer the output but not actually show it,
         # since we haven't finished a line.
