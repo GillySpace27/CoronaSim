@@ -1073,11 +1073,11 @@ class multisim:
         self.envIndList = envIndList[self.rank]
 
         if self.root and self.print: 
+            print('JobSize = ' + str(len(self.gridList*self.size)))
             print('PoolSize = ' + str(self.size))
-            print('Nenv = ' + str(self.Nenv))
-            print('Lines\Env = ' + str(len(self.oneBatch)))
             print('ChunkSize = ' + str(len(self.gridList))) 
-            print('JobSize = ' + str(len(self.gridList*self.size))) #Print Stuff
+            print('Nenv = ' + str(self.Nenv), end = '; ')
+            print('Lines\Env = ' + str(len(self.oneBatch))) #Print Stuff
 
         if self.root and self.print: 
             bar = pb.ProgressBar(len(self.gridList))
@@ -1221,7 +1221,7 @@ class batchjob:
             self.profiles = []
             self.doLabels = self.labels.tolist()
 
-        if self.print and self.printMulti: 
+        if self.root and self.print and self.printMulti: 
             print('\nBatch Progress')
             self.bar.display()
 
@@ -1242,14 +1242,15 @@ class batchjob:
                 if self.print:
                     if self.printMulti: print('\nBatch Progress')
                     self.bar.increment()
-                    self.bar.display()
+                    self.bar.display(True)
 
-                self.save(self.batchName)
+                self.save()
 
-        if self.root and self.print: self.bar.display(True)
         if self.root: 
             self.__findBatchStats()
             self.complete = True
+            print('\nBatch Complete')
+            self.save(printout = False)
 
 
     def doStats(self):
@@ -1379,7 +1380,8 @@ class batchjob:
         grid.maximizePlot()
         plt.show()
 
-    def save(self, batchName, keep = False):
+    def save(self, batchName = None, keep = False, printout = True):
+        if batchName is None: batchName = self.batchName
     
         self.slash = os.path.sep
 
@@ -1406,7 +1408,7 @@ class batchjob:
 
         self.sims = sims
         #self.env = env
-        print('\nFile Saved')
+        if printout: print('\nFile Saved')
 
             
     def show(self):
@@ -1465,19 +1467,8 @@ class impactsim(batchjob):
 
         super().__init__(envs)
         
-        
-        #if self.root: 
-        #    self.__findStats()
-        #    self.__makeVrms()
-        #    #self.plotStats()
-        #    # self.plotStatsV()
-
-        comm.Barrier()
-        
         return
         
-
-
     def makeVrms(self):
         self.vRmsList = []
         self.Blist = np.linspace(5,100,5).tolist()
@@ -1500,15 +1491,18 @@ def loadBatch(batchName):
     batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + batchName + '.batch'
  
     absPth = absPath(batchPath)
-    with open(absPth, 'rb') as input:
-        return pickle.load(input)
+    fail = False
+    try:
+        with open(absPth, 'rb') as input:
+            return pickle.load(input)
+    except:
+        fail = True
+    if fail:
+        sys.exit('Batch Not found')
 
 def restartBatch(batchName):
     myBatch = loadBatch(batchName)
-    if myBatch.complete:
-        print('Batch Complete')
-    else:
-        myBatch.simulate_now()
+    myBatch.simulate_now()
     return myBatch
 
 

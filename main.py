@@ -107,22 +107,21 @@ if __name__ == '__main__':
     
     #envs = sim.envs('Multienv').processEnvs()
 
-    firstRun = False
+    firstRun = True
     remote = True
-    batchName = 'saveTest' 
+    batchName = 'Long' 
     envName = 'Multienv'
+    maxEnvs = 10
+    impactPoints = 20
+    iterations = 250
 
     if remote:
-
         if firstRun:       
-            envs = sim.envs(envName).loadEnvs(4)
-            myBatch = sim.impactsim(batchName, envs, 100, 1)
+            envs = sim.envs(envName).loadEnvs(maxEnvs)
+            myBatch = sim.impactsim(batchName, envs, impactPoints, iterations)
         else:
             myBatch = sim.restartBatch(batchName)        
-        #if root: myBatch.save(batchName)
-    
     else:
-
         myBatch = sim.loadBatch(batchName)
         myBatch.redoStats()
 
