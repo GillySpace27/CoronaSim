@@ -1086,8 +1086,12 @@ class multisim:
 
         for grd, envInd in zip(self.gridList, self.envIndList):
             self.envs[envInd].randomize()
+            t = time.time()
             self.simList.append(simulate(grd, self.envs[envInd], self.N, findT = self.findT))
+            elapsed = time.time() - t
             if self.root and self.print:
+                #print('')
+                #print(elapsed)
                 bar.increment()
                 bar.display()
         if self.root and self.print: bar.display(force = True)
@@ -1268,12 +1272,11 @@ class batchjob:
         for mm in np.arange(maxMoment):
                 moment[mm] = np.dot(profile, self.env.lamAx**mm)
 
-        #TODO Implement Kurtosis correctly
         power = moment[0] 
         mu = moment[1] / moment[0]
         sigma = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
         skew = (moment[3]/moment[0] - 3*mu*sigma**2 - mu**3) / sigma**3
-        kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigma**2 + 3*mu**4) / sigma**4
+        kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigma**2 + 3*mu**4) / sigma**4 - 3
         return [power, mu, sigma, skew, kurt]
 
 
@@ -1347,11 +1350,12 @@ class batchjob:
 
     def plotStatsV(self):
         f, axArray = plt.subplots(5, 1, sharex=True)
+        f.canvas.set_window_title('Coronasim')
         mm = 0
-        titles = ['Intensity', 'Mean Redshift', 'Line Width', 'skew', 'kurtosis']
+        titles = ['Intensity', 'Mean Redshift', 'Line Width', 'Skew', 'Excess Kurtosis']
         ylabels = ['', 'km/s', 'km/s', '', '']
         thisBlist = self.Blist
-        f.suptitle('Off Limb Line Statistics \nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + '\nLines per Env: ' + str(self.Nrot))
+        f.suptitle('Off Limb Line Statistics \n Wavelength: ' + str(self.env.lam0) + ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + '; Lines per Env: ' + str(self.Nrot))
         for ax in axArray:
             if mm == 0: ax.set_yscale('log')
             ax.errorbar(self.labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
@@ -1359,6 +1363,8 @@ class batchjob:
                 for vRms in self.vRmsList:
                     ax.plot(self.labels, vRms, label = str(thisBlist.pop(0)) + 'G')
                 ax.legend(loc = 2)
+            if mm == 1 or mm == 3 or mm == 4:
+                ax.plot(self.labels, np.zeros_like(self.labels))
             ax.set_title(titles[mm])
             ax.set_ylabel(ylabels[mm])
             mm += 1

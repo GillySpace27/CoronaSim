@@ -115,7 +115,7 @@ if __name__ == '__main__':
     #envs = sim.envs('Multienv').processEnvs()
 
 
-    remote = True
+    remote = False
 
     batchName = 'FinalLong' 
     
