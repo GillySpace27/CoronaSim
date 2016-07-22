@@ -1100,6 +1100,7 @@ class multisim:
         if self.root and self.print: 
             bar = pb.ProgressBar(len(self.gridList))
             print('Simulating Spectral Lines')
+            bar.display()
         self.profiles = []
         for lsim in self.simList:
             self.profiles.append(lsim.getProfile())
@@ -1115,15 +1116,17 @@ class multisim:
             
     def __seperate(self, list, N):
         #Breaks a list up into chunks
-        chunkSize = float(len(list)/N)
-        if chunkSize < 1:
-            print(' Chunk Size Too Small: ' + str(chunkSize) + '\n')
-            assert False
-            
-        chunkSizeInt = int(chunkSize)
-        remainder = int((chunkSize % float(chunkSizeInt)) * N)
-    
+        Nlist = len(list)
+        chunkSize = float(Nlist/N)
         chunks = [ [] for _ in range(N)] 
+        chunkSizeInt = int(chunkSize)
+
+        if chunkSize < 1:
+            remainder = Nlist
+            chunkSizeInt = 0
+        else:
+            remainder = int((chunkSize % float(chunkSizeInt)) * N)
+
         for NN in np.arange(N):
             thisLen = chunkSizeInt
             if remainder > 0:
@@ -1181,8 +1184,6 @@ class multisim:
         print(vars(self))
         return self
 
-
-            
 #Inputs: (self, batch, envs, N = 1000, findT = None, printOut = False)
 #Public Methods: 
 #Attributes: lines, lineStats
@@ -1207,12 +1208,14 @@ class batchjob:
 
 
     def simulate_now(self):
+        comm = MPI.COMM_WORLD
         if self.root:
             print('\nCoronaSim!')
             print('Written by Chris Gilbert')
             print('-------------------------\n')
 
         if self.firstRunEver:
+            self.count = 0
             self.batch = self.fullBatch
             if self.root and self.print: 
                 self.bar = pb.ProgressBar(len(self.labels))
@@ -1220,6 +1223,7 @@ class batchjob:
             self.sims = []
             self.profiles = []
             self.doLabels = self.labels.tolist()
+            self.doneLabels = []
 
         if self.root and self.print and self.printMulti: 
             print('\nBatch Progress')
@@ -1227,14 +1231,18 @@ class batchjob:
 
         while len(self.doLabels) > 0:
             ind = self.doLabels.pop(0)
+            self.doneLabels.append(ind)
             thisBatch = self.batch.pop(0)
-
-            if self.root and self.printMulti: print('\n\n\n--' + self.xlabel +' = ' + str(ind)) 
+            try:
+                self.count += 1
+            except:
+                self.count = 1
+            if self.root and self.printMulti: print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']') 
 
             self.firstRunEver = False
             
             thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti)
-
+            comm.barrier()
             if self.root:
                 self.sims.append(thisSim)
                 self.profiles.append(thisSim.profiles)
@@ -1251,6 +1259,11 @@ class batchjob:
             self.complete = True
             print('\nBatch Complete')
             self.save(printout = False)
+
+    def findRank(self):
+        comm = MPI.COMM_WORLD
+        self.rank = comm.Get_rank()
+        self.root = self.rank == 0
 
 
     def doStats(self):
@@ -1358,6 +1371,12 @@ class batchjob:
     def plotStatsV(self):
         f, axArray = plt.subplots(5, 1, sharex=True)
         f.canvas.set_window_title('Coronasim')
+        doRms = True
+        try:
+            labels = np.asarray(self.doneLabels)
+        except: 
+            labels = np.arange(len(self.profiles))
+            doRms = False
         mm = 0
         titles = ['Intensity', 'Mean Redshift', 'Line Width', 'Skew', 'Excess Kurtosis']
         ylabels = ['', 'km/s', 'km/s', '', '']
@@ -1365,13 +1384,13 @@ class batchjob:
         f.suptitle('Off Limb Line Statistics \n Wavelength: ' + str(self.env.lam0) + ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + '; Lines per Env: ' + str(self.Nrot))
         for ax in axArray:
             if mm == 0: ax.set_yscale('log')
-            ax.errorbar(self.labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
-            if mm == 2:
+            ax.errorbar(labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
+            if mm == 2 and doRms:
                 for vRms in self.vRmsList:
-                    ax.plot(self.labels, vRms, label = str(thisBlist.pop(0)) + 'G')
+                    ax.plot(labels, vRms, label = str(thisBlist.pop(0)) + 'G')
                 ax.legend(loc = 2)
             if mm == 1 or mm == 3 or mm == 4:
-                ax.plot(self.labels, np.zeros_like(self.labels))
+                ax.plot(labels, np.zeros_like(labels))
             ax.set_title(titles[mm])
             ax.set_ylabel(ylabels[mm])
             mm += 1
@@ -1381,6 +1400,7 @@ class batchjob:
         plt.show()
 
     def save(self, batchName = None, keep = False, printout = True):
+
         if batchName is None: batchName = self.batchName
     
         self.slash = os.path.sep
@@ -1428,8 +1448,6 @@ class batchjob:
 
 
 
-           
-           
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000)):
@@ -1502,12 +1520,14 @@ def loadBatch(batchName):
 
 def restartBatch(batchName):
     myBatch = loadBatch(batchName)
+    myBatch.findRank()
     myBatch.simulate_now()
     return myBatch
 
-
-       
-        
+def plotBatch(batchName):
+    myBatch = loadBatch(batchName)
+    myBatch.findRank()
+    myBatch.redoStats()
         
         
         

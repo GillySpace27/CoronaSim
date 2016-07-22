@@ -10,6 +10,18 @@ from mpi4py import MPI
 
 if __name__ == '__main__':
 
+    firstRun = False
+    remote = False
+    batchName = 'test'#'Long' 
+    envName = 'Multienv'
+    maxEnvs = 10
+    impactPoints = 20
+    iterations = 250
+
+
+
+
+
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
@@ -107,13 +119,7 @@ if __name__ == '__main__':
     
     #envs = sim.envs('Multienv').processEnvs()
 
-    firstRun = True
-    remote = True
-    batchName = 'Long' 
-    envName = 'Multienv'
-    maxEnvs = 10
-    impactPoints = 20
-    iterations = 250
+
 
     if remote:
         if firstRun:       
@@ -122,8 +128,9 @@ if __name__ == '__main__':
         else:
             myBatch = sim.restartBatch(batchName)        
     else:
-        myBatch = sim.loadBatch(batchName)
-        myBatch.redoStats()
+        myBatch = sim.plotBatch(batchName)
+        #myBatch = sim.loadBatch(batchName)
+        #myBatch.redoStats()
 
         #env = sim.envs('Multienv').loadEnvs(1)[0]
         #myBatch.env = env
