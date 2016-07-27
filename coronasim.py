@@ -518,7 +518,7 @@ class simpoint:
         #RMS Velocity
         S0 = 7.0e5 #* np.sqrt(1/2)
         return np.sqrt(S0*self.vAlf/((self.vPh)**2 * 
-            self.rx**2*self.f*self.rho))
+            self.rx**2*self.f*self.rho))/4 #TODO This factor of 4 is ad hoc
 
     def __findVLOS(self, nGrad = None):
         if nGrad is not None: self.nGrad = nGrad
@@ -1054,40 +1054,46 @@ class multisim:
         self.N = N
         self.findT = findT
         self.MPI_init()
-        self.findProfiles()
+        #self.findProfiles()
 
     def MPI_init(self):
+
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
 
         if self.root and self.print: 
-            print('Running MultiSim:')
+            print('Running MultiSim: ' + time.asctime())
             t = time.time() #Print Stuff
 
         gridList = self.__seperate(self.batch, self.size)
-        self.gridList = gridList[self.rank]
-        
+        self.gridList = gridList[self.rank]      
         envIndList = self.__seperate(self.envInd, self.size)
         self.envIndList = envIndList[self.rank]
 
         if self.root and self.print: 
-            print('JobSize = ' + str(len(self.gridList*self.size)))
-            print('PoolSize = ' + str(self.size))
-            print('ChunkSize = ' + str(len(self.gridList))) 
+            #print(self.oneBatch)
             print('Nenv = ' + str(self.Nenv), end = '; ')
-            print('Lines\Env = ' + str(len(self.oneBatch))) #Print Stuff
+            print('Lines\Env = ' + str(len(self.oneBatch)), end = '; ')
+            print('JobSize = ' + str(len(self.batch)))
+
+            print('PoolSize = ' + str(self.size), end = '; ')
+            print('ChunkSize = ' + str(len(self.gridList)), end = '; ') 
+            print('Short Cores: ' + str(self.size * len(self.gridList) - len(self.batch)))#Print Stuff
 
         if self.root and self.print: 
             bar = pb.ProgressBar(len(self.gridList))
             bar.display()
-        self.simList = []
+        #self.simList = []
+        profiles = []
 
         for grd, envInd in zip(self.gridList, self.envIndList):
             self.envs[envInd].randomize()
             t = time.time()
-            self.simList.append(simulate(grd, self.envs[envInd], self.N, findT = self.findT))
+            simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT)
+            #self.simList.append(simulation)
+            profiles.append(simulation.getProfile())
             elapsed = time.time() - t
             if self.root and self.print:
                 #print('')
@@ -1095,27 +1101,30 @@ class multisim:
                 bar.increment()
                 bar.display()
         if self.root and self.print: bar.display(force = True)
+        self.profiles = self.comm.gather(profiles, root = 0)
 
-    def findProfiles(self):
-        if self.root and self.print: 
-            bar = pb.ProgressBar(len(self.gridList))
-            print('Simulating Spectral Lines')
-            bar.display()
-        self.profiles = []
-        for lsim in self.simList:
-            self.profiles.append(lsim.getProfile())
-            if self.root and self.print:
-                bar.increment()
-                bar.display()
+    #def findProfiles(self):
+    #    if self.root and self.print: 
+    #        bar = pb.ProgressBar(len(self.gridList))
+    #        print('Simulating Spectral Lines')
+    #        bar.display()
+    #    self.profiles = []
+    #    for lsim in self.simList:
+    #        self.profiles.append(lsim.getProfile())
+    #        if self.root and self.print:
+    #            bar.increment()
+    #            bar.display()
 
-        if self.root and self.print: bar.display(force = True)
-        return self.profiles    
+    #    if self.root and self.print: bar.display(force = True)
+    #    return self.profiles    
 
     def getLineArray(self):
         return np.asarray(self.profiles)
             
     def __seperate(self, list, N):
         #Breaks a list up into chunks
+        import copy
+        newList = copy.deepcopy(list)
         Nlist = len(list)
         chunkSize = float(Nlist/N)
         chunks = [ [] for _ in range(N)] 
@@ -1124,6 +1133,7 @@ class multisim:
         if chunkSize < 1:
             remainder = Nlist
             chunkSizeInt = 0
+            if self.root: print(' **Note: All PEs not being utilized** ')
         else:
             remainder = int((chunkSize % float(chunkSizeInt)) * N)
 
@@ -1133,10 +1143,8 @@ class multisim:
                 thisLen += 1
                 remainder -= 1
             for nn in np.arange(thisLen):
-                chunks[NN].extend([list.pop(0)])
+                chunks[NN].extend([newList.pop(0)])
         return chunks
-
-
 
     def init(self):
         #Serial Version
@@ -1226,7 +1234,7 @@ class batchjob:
             self.doneLabels = []
 
         if self.root and self.print and self.printMulti: 
-            print('\nBatch Progress')
+            print('\nBatch Progress: '+ str(self.batchName))
             self.bar.display()
 
         while len(self.doLabels) > 0:
@@ -1237,7 +1245,7 @@ class batchjob:
                 self.count += 1
             except:
                 self.count = 1
-            if self.root and self.printMulti: print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']') 
+            if self.root and self.printMulti: print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']--') 
 
             self.firstRunEver = False
             
@@ -1257,7 +1265,8 @@ class batchjob:
         if self.root: 
             self.__findBatchStats()
             self.complete = True
-            print('\nBatch Complete')
+            print('\nBatch Complete: '+ str(self.batchName))
+            self.envs = []
             self.save(printout = False)
 
     def findRank(self):
@@ -1388,7 +1397,7 @@ class batchjob:
             if mm == 2 and doRms:
                 for vRms in self.vRmsList:
                     ax.plot(labels, vRms, label = str(thisBlist.pop(0)) + 'G')
-                ax.legend(loc = 2)
+                ax.legend(loc = 4)
             if mm == 1 or mm == 3 or mm == 4:
                 ax.plot(labels, np.zeros_like(labels))
             ax.set_title(titles[mm])
@@ -1476,7 +1485,7 @@ class impactsim(batchjob):
         self.printMulti = True
 
         self.N = N
-        self.labels = np.linspace(b0,b1,Nb)
+        self.labels = np.round(np.linspace(b0,b1,Nb), 4)
         self.impacts = self.labels
         self.xlabel = 'Impact Parameter'    
         self.fullBatch = []
@@ -1489,7 +1498,7 @@ class impactsim(batchjob):
         
     def makeVrms(self):
         self.vRmsList = []
-        self.Blist = np.linspace(5,100,5).tolist()
+        self.Blist = np.linspace(0,30,5).tolist()
 
         for B in self.Blist:
             thisV = []

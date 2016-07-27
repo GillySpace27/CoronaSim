@@ -10,15 +10,17 @@ from mpi4py import MPI
 
 if __name__ == '__main__':
 
-    firstRun = False
     remote = False
-    batchName = 'test'#'Long' 
+    firstRun = True
+    batchName = 'Work'
+    impactPoints = 10
+    iterations = 300
+
+    b0 = 1.05
+    b1 = 2.0
+
     envName = 'Multienv'
     maxEnvs = 10
-    impactPoints = 20
-    iterations = 250
-
-
 
 
 
@@ -124,7 +126,7 @@ if __name__ == '__main__':
     if remote:
         if firstRun:       
             envs = sim.envs(envName).loadEnvs(maxEnvs)
-            myBatch = sim.impactsim(batchName, envs, impactPoints, iterations)
+            myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1)
         else:
             myBatch = sim.restartBatch(batchName)        
     else:
