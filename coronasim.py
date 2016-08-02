@@ -48,7 +48,7 @@ def absPath(path):
     return os.path.join(script_dir, path)
     
 ####################################################################
-##                          Environment                                                                                                    ##
+##                          Environment                           ##
 ####################################################################
 
 #Environment Class contains simulation parameters
@@ -391,7 +391,7 @@ class envs:
             
        
 ####################################################################                            
-##                           Simulation                                                                                                      ##
+##                           Simulation                           ##
 ####################################################################
 
 ## Level 0: Simulates physical properties at a given coordinate
@@ -518,7 +518,7 @@ class simpoint:
         #RMS Velocity
         S0 = 7.0e5 #* np.sqrt(1/2)
         return np.sqrt(S0*self.vAlf/((self.vPh)**2 * 
-            self.rx**2*self.f*self.rho))/4 #TODO This factor of 4 is ad hoc
+            self.rx**2*self.f*self.rho))
 
     def __findVLOS(self, nGrad = None):
         if nGrad is not None: self.nGrad = nGrad
@@ -1062,13 +1062,16 @@ class multisim:
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
+        #print(self.rank)
 
         if self.root and self.print: 
             print('Running MultiSim: ' + time.asctime())
             t = time.time() #Print Stuff
 
         gridList = self.__seperate(self.batch, self.size)
-        self.gridList = gridList[self.rank]      
+        self.gridList = gridList[self.rank]  
+        #print("Rank: " + str(self.rank) + " ChunkSize: " + str(len(self.gridList))) 
+        sys.stdout.flush()   
         envIndList = self.__seperate(self.envInd, self.size)
         self.envIndList = envIndList[self.rank]
 
@@ -1082,41 +1085,33 @@ class multisim:
             print('ChunkSize = ' + str(len(self.gridList)), end = '; ') 
             print('Short Cores: ' + str(self.size * len(self.gridList) - len(self.batch)))#Print Stuff
 
-        if self.root and self.print: 
             bar = pb.ProgressBar(len(self.gridList))
             bar.display()
+
         #self.simList = []
         profiles = []
 
         for grd, envInd in zip(self.gridList, self.envIndList):
             self.envs[envInd].randomize()
-            t = time.time()
+            #t = time.time()
             simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT)
             #self.simList.append(simulation)
             profiles.append(simulation.getProfile())
-            elapsed = time.time() - t
+            #elapsed = time.time() - t
             if self.root and self.print:
                 #print('')
                 #print(elapsed)
                 bar.increment()
                 bar.display()
         if self.root and self.print: bar.display(force = True)
-        self.profiles = self.comm.gather(profiles, root = 0)
 
-    #def findProfiles(self):
-    #    if self.root and self.print: 
-    #        bar = pb.ProgressBar(len(self.gridList))
-    #        print('Simulating Spectral Lines')
-    #        bar.display()
-    #    self.profiles = []
-    #    for lsim in self.simList:
-    #        self.profiles.append(lsim.getProfile())
-    #        if self.root and self.print:
-    #            bar.increment()
-    #            bar.display()
-
-    #    if self.root and self.print: bar.display(force = True)
-    #    return self.profiles    
+        profilebin = self.comm.gather(profiles, root = 0)
+        if self.root:
+            self.profiles = []
+            for core in profilebin:
+                for line in core:
+                    self.profiles.append(line)
+            print("Total Lines: " + str(len(self.profiles)))
 
     def getLineArray(self):
         return np.asarray(self.profiles)
@@ -1125,7 +1120,7 @@ class multisim:
         #Breaks a list up into chunks
         import copy
         newList = copy.deepcopy(list)
-        Nlist = len(list)
+        Nlist = len(newList)
         chunkSize = float(Nlist/N)
         chunks = [ [] for _ in range(N)] 
         chunkSizeInt = int(chunkSize)
@@ -1135,7 +1130,7 @@ class multisim:
             chunkSizeInt = 0
             if self.root: print(' **Note: All PEs not being utilized** ')
         else:
-            remainder = int((chunkSize % float(chunkSizeInt)) * N)
+            remainder = np.ceil((chunkSize % float(chunkSizeInt)) * N)
 
         for NN in np.arange(N):
             thisLen = chunkSizeInt
@@ -1144,6 +1139,10 @@ class multisim:
                 remainder -= 1
             for nn in np.arange(thisLen):
                 chunks[NN].extend([newList.pop(0)])
+        #if self.root: 
+        #    print('lala')
+        #    print(len(newList))
+                
         return chunks
 
     def init(self):
@@ -1251,12 +1250,12 @@ class batchjob:
             
             thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti)
             comm.barrier()
+
             if self.root:
                 self.sims.append(thisSim)
                 self.profiles.append(thisSim.profiles)
-
                 if self.print:
-                    if self.printMulti: print('\nBatch Progress')
+                    if self.printMulti: print('\nBatch Progress: '+ str(self.batchName))
                     self.bar.increment()
                     self.bar.display(True)
 
@@ -1264,8 +1263,13 @@ class batchjob:
 
         if self.root: 
             self.__findBatchStats()
+            if self.complete is False:
+                self.completeTime = time.asctime()
             self.complete = True
+
             print('\nBatch Complete: '+ str(self.batchName))
+            try: print(self.completeTime)
+            except: print('')
             self.envs = []
             self.save(printout = False)
 
@@ -1273,7 +1277,6 @@ class batchjob:
         comm = MPI.COMM_WORLD
         self.rank = comm.Get_rank()
         self.root = self.rank == 0
-
 
     def doStats(self):
         self.__findSampleStats()
@@ -1314,46 +1317,47 @@ class batchjob:
         self.stat =  [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         self.statV = [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         for vars, impact in zip(self.lineStats, self.labels):
-                allAmp = [x[0] for x in vars]
-                allMean = [x[1] for x in vars]
-                allMeanC = [x[1] - self.env.lam0 for x in vars]
-                allStd = [x[2] for x in vars]
-                allSkew = [x[3] for x in vars]
-                allKurt = [x[4] for x in vars]
+            allAmp = [x[0] for x in vars]
+            allMean = [x[1] for x in vars]
+            allMeanC = [x[1] - self.env.lam0 for x in vars]
+            allStd = [x[2] for x in vars]
+            allSkew = [x[3] for x in vars]
+            allKurt = [x[4] for x in vars]
             
-                #Wavelength Units
-                self.stat[0][0].append(np.mean(allAmp))
-                self.stat[0][1].append(np.std(allAmp))
+            #Wavelength Units
+            self.stat[0][0].append(np.mean(allAmp))
+            self.stat[0][1].append(np.std(allAmp))
 
-                self.stat[1][0].append(np.mean(allMeanC))
-                self.stat[1][1].append(np.std(allMeanC))
+            self.stat[1][0].append(np.mean(allMeanC))
+            self.stat[1][1].append(np.std(allMeanC))
             
-                self.stat[2][0].append(np.mean(allStd))
-                self.stat[2][1].append(np.std(allStd))
+            self.stat[2][0].append(np.mean(allStd))
+            self.stat[2][1].append(np.std(allStd))
 
-                self.stat[3][0].append(np.mean(allSkew))
-                self.stat[3][1].append(np.std(allSkew))
+            self.stat[3][0].append(np.mean(allSkew))
+            self.stat[3][1].append(np.std(allSkew))
 
-                self.stat[4][0].append(np.mean(allKurt))
-                self.stat[4][1].append(np.std(allKurt))
+            self.stat[4][0].append(np.mean(allKurt))
+            self.stat[4][1].append(np.std(allKurt))
 
-                #Velocity Units
-                self.statV[0][0].append(np.mean(allAmp))
-                self.statV[0][1].append(np.std(allAmp))
+            #Velocity Units
+            self.statV[0][0].append(np.mean(allAmp))
+            self.statV[0][1].append(np.std(allAmp))
 
-                self.statV[1][0].append(self.__mean2V(np.mean(allMean)))
-                self.statV[1][1].append(np.std([self.__mean2V(x) for x in allMean]))
+            self.statV[1][0].append(self.__mean2V(np.mean(allMean)))
+            self.statV[1][1].append(np.std([self.__mean2V(x) for x in allMean]))
                 
-                T = self.env.interp_rx_dat(impact, self.env.T_raw)
-                self.statV[2][0].append(self.__std2V(np.mean(allStd), T))
-                self.statV[2][1].append(self.__std2V(np.std(allStd), T))
+            T = self.env.interp_rx_dat(impact, self.env.T_raw)
+            self.statV[2][0].append(self.__std2V(np.mean(allStd), T))
+            self.statV[2][1].append(self.__std2V(np.std(allStd), T))
 #TODO make these in velocity units
-                self.statV[3][0].append(np.mean(allSkew))
-                self.statV[3][1].append(np.std(allSkew))
+            self.statV[3][0].append(np.mean(allSkew))
+            self.statV[3][1].append(np.std(allSkew))
 
-                self.statV[4][0].append(np.mean(allKurt))
-                self.statV[4][1].append(np.std(allKurt))
+            self.statV[4][0].append(np.mean(allKurt))
+            self.statV[4][1].append(np.std(allKurt))
 
+        print(self.statV[2][1])
     def __mean2V(self, mean):
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
                 (self.env.ang2cm(self.env.lam0)))
@@ -1477,7 +1481,7 @@ class impactsim(batchjob):
         self.Nrot = np.floor(iter * max(1, self.size / self.Nenv))
 
         #Lines per impact
-        self.Npt = self.Nrot * self.Nenv
+        self.Npt = self.Nrot * self.Nenv 
         #Total Lines
         self.Ntot = self.Npt * self.Nb
 

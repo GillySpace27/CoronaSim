@@ -24,6 +24,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="coronasim.py" />
+    <Compile Include="depricated.py" />
     <Compile Include="gridgen.py" />
     <Compile Include="main.py" />
     <Compile Include="MPI_main.py">

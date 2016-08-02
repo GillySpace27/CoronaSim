@@ -6,15 +6,15 @@ import gridgen as grid
 import coronasim as sim
 import time
 from mpi4py import MPI
-import sys
+
 
 if __name__ == '__main__':
 
     remote = True
     firstRun = True
-    batchName = 'test'
+    batchName = 'Work'
     impactPoints = 5
-    iterations = 1
+    iterations = 4
 
     b0 = 1.05
     b1 = 2.0
@@ -30,9 +30,6 @@ if __name__ == '__main__':
     root = rank == 0
     #envPath = '../dat/primeEnv'
     
-
-    #sys.stdout.flush()
-
     #Simulate Common Grids
     df = grid.defGrid()
     #Initialize Simulation Environment

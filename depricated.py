@@ -144,7 +144,20 @@
     #    return a*np.exp(-(x-x0)**2/(2*sigma**2))
 
 
+    #def findProfiles(self):
+    #    if self.root and self.print: 
+    #        bar = pb.ProgressBar(len(self.gridList))
+    #        print('Simulating Spectral Lines')
+    #        bar.display()
+    #    self.profiles = []
+    #    for lsim in self.simList:
+    #        self.profiles.append(lsim.getProfile())
+    #        if self.root and self.print:
+    #            bar.increment()
+    #            bar.display()
 
+    #    if self.root and self.print: bar.display(force = True)
+    #    return self.profiles   
 
 
     #def plotStats(self):
