@@ -734,7 +734,7 @@ class simulate:
             if doBar and self.print: 
                 bar.increment()
                 bar.display()
-        
+        self.cumSteps = np.cumsum(self.steps)
         if doBar and self.print: bar.display(force = True)
         if self.print: print('Elapsed Time: ' + str(time.time() - t))
 
@@ -765,10 +765,9 @@ class simulate:
     def plot(self, property, dim = None, scaling = 'None', cmap = 'jet'):
         scaleProp, datSum = self.get(property, dim, scaling)
         self.fig, ax = self.grid.plot(iL = self.iL)
- 
         if type(self.grid) is grid.sightline:
             #Line Plot
-            im = ax.plot(scaleProp)
+            im = ax.plot(self.cumSteps, scaleProp)
             datSum = datSum / self.N
         elif type(self.grid) is grid.plane:
             #Image Plot
@@ -787,7 +786,7 @@ class simulate:
             ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling + ', sum = {}'.format(datSum))
 
         grid.maximizePlot()
-        plt.show(block = False)
+        plt.show()
 
     def compare(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None):
         scaleprop = []
@@ -1071,7 +1070,7 @@ class multisim:
         gridList = self.__seperate(self.batch, self.size)
         self.gridList = gridList[self.rank]  
         #print("Rank: " + str(self.rank) + " ChunkSize: " + str(len(self.gridList))) 
-        sys.stdout.flush()   
+        #sys.stdout.flush()   
         envIndList = self.__seperate(self.envInd, self.size)
         self.envIndList = envIndList[self.rank]
 
@@ -1095,6 +1094,7 @@ class multisim:
             self.envs[envInd].randomize()
             #t = time.time()
             simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT)
+            #if self.root: simulation.plot('vLOS')
             #self.simList.append(simulation)
             profiles.append(simulation.getProfile())
             #elapsed = time.time() - t
@@ -1123,14 +1123,14 @@ class multisim:
         Nlist = len(newList)
         chunkSize = float(Nlist/N)
         chunks = [ [] for _ in range(N)] 
-        chunkSizeInt = int(chunkSize)
+        chunkSizeInt = int(np.floor(chunkSize))
 
         if chunkSize < 1:
             remainder = Nlist
             chunkSizeInt = 0
             if self.root: print(' **Note: All PEs not being utilized** ')
         else:
-            remainder = np.ceil((chunkSize % float(chunkSizeInt)) * N)
+            remainder = Nlist - N * chunkSizeInt
 
         for NN in np.arange(N):
             thisLen = chunkSizeInt

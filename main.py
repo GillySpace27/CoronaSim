@@ -12,12 +12,12 @@ if __name__ == '__main__':
 
     remote = True
     firstRun = True
-    batchName = 'test'
-    impactPoints = 5
-    iterations = 1
+    batchName = 'Work2'
+    impactPoints = 20
+    iterations = 3
 
     b0 = 1.05
-    b1 = 2.0
+    b1 = 1.5
 
     envName = 'Multienv'
     maxEnvs = 10
@@ -34,7 +34,7 @@ if __name__ == '__main__':
     #sys.stdout.flush()
 
     #Simulate Common Grids
-    df = grid.defGrid()
+    #df = grid.defGrid()
     #Initialize Simulation Environment
         # env = sim.environment()
         # env.save(envPath)
@@ -63,11 +63,11 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    #bpoleSim = sim.simulate(df.bpolePlane, env[0], N = 750, findT = False, printOut = True)
+    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     #bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    #bpoleSim.plot('t1', scaling = 'none')
+    #bpoleSim.plot('vLOS', scaling = 'none')
 
     # env = sim.envs('envs').loadEnvs(1)[0]
     # print('Go')
@@ -134,6 +134,9 @@ if __name__ == '__main__':
             myBatch = sim.restartBatch(batchName)        
     else:
         myBatch = sim.plotBatch(batchName)
+
+
+
         #myBatch = sim.loadBatch(batchName)
         #myBatch.redoStats()
 
