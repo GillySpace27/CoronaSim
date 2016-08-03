@@ -101,14 +101,17 @@ class environment:
     primeRand = np.random.RandomState(primeSeed)
 
     def __init__(self, Bfile = None, bkFile = None):
-    
-        print('  Loading Environment...', end = '', flush = True)
+
 
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
 
         #Load Bmap
         if Bfile is None: self.Bfile = self.def_Bfile 
         else: self.Bfile = self.__relPath(Bfile)
+
+        self.thisLabel = self.Bfile.rsplit(os.path.sep, 1)[-1]    
+        print('Loading Environment: ' + str(self.thisLabel) +'...', end = '', flush = True)
+
         self.__loadBMap()
         self.__labelStreamers()
         self.analyze_BMap()
@@ -227,17 +230,22 @@ class environment:
     def __loadBMap(self):
         Bobj = io.readsav(self.Bfile)
         self.BMap_raw = Bobj.get('data_cap')
-        #plt.imshow((np.abs(simpoint.BMap_raw)), cmap = "winter_r")
+
+        sigma = 4
+        self.BMap_smoothed = ndimage.filters.gaussian_filter(self.BMap_raw, sigma)
+
+        #plt.imshow((np.abs(self.BMap_smoothed)))
         #plt.colorbar()
         #plt.show()
+
         self.BMap_x = Bobj.get('x_cap')
         self.BMap_y = Bobj.get('y_cap')
-        self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_raw)
+        self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_smoothed)
 
     def __labelStreamers(self, thresh = 0.9):
         #Take magnitude and find valid region
-        bdata = np.abs(self.BMap_raw)
-        validMask = bdata != 0
+        bdata = np.abs(self.BMap_smoothed)
+        validMask = self.BMap_raw != 0
 
         #Find all above the threshold and label
         blist = bdata.flatten().tolist()
@@ -253,20 +261,22 @@ class environment:
         #Get voronoi background
         self.label_im, self.nb_labels = self.__voronoify_sklearn(label_im, coordinates)
         
-        #Add in threshold regions
-        highLabelIm = label_im + self.nb_labels
-        self.label_im *= np.logical_not(bmask)
-        self.label_im += highLabelIm * bmask
+        ##Add in threshold regions
+        #highLabelIm = label_im + self.nb_labels
+        #self.label_im *= np.logical_not(bmask)
+        #self.label_im += highLabelIm * bmask
         
         #Clean Edges
         self.label_im *= validMask
         
-        if False: #Plot Slice of Map
-            (label_im + 40) * validMask
+        if True: #Plot Slice of Map
+            #(label_im + 40) * validMask 
             plt.imshow(self.label_im, cmap = 'Paired', interpolation='none')
-            plt.imshow(highLabelIm, cmap = 'Set1', interpolation='none', alpha = 0.5)
-            plt.xlim(600,950)
-            plt.ylim(350,650)
+            plt.colorbar()
+            plt.title('Strong Field Regions')
+            #plt.imshow(highLabelIm, cmap = 'Set1', interpolation='none', alpha = 0.5)
+            #plt.xlim(600,950)
+            #plt.ylim(350,650)
             #for co in coordinates:
             #    plt.scatter(*co)
             plt.show()
@@ -330,11 +340,13 @@ class environment:
         radius_Mm = np.sqrt(area_Mm/ np.pi)
 
         #Plot Hist
-        plt.plot(radius_Mm, hist2)
+
+        plt.plot(radius_Mm, hist2, label = self.thisLabel)
         plt.title('Distribution of Region Sizes')
         plt.xlabel('Radius (Mm)')
         plt.ylabel('Number of Regions')
-        plt.show()
+        plt.legend()
+        #plt.show()
 
 
   ## Light ############################################################################
@@ -387,6 +399,7 @@ class envs:
     def processEnvs(self, maxN = 1e8, name = 'environment'):
         envs = self.__createEnvs(maxN)
         self.__saveEnvs(envs, maxN, name)
+        plt.show(False)
         return envs
             
        
@@ -1138,11 +1151,7 @@ class multisim:
                 thisLen += 1
                 remainder -= 1
             for nn in np.arange(thisLen):
-                chunks[NN].extend([newList.pop(0)])
-        #if self.root: 
-        #    print('lala')
-        #    print(len(newList))
-                
+                chunks[NN].extend([newList.pop(0)])              
         return chunks
 
     def init(self):
@@ -1212,7 +1221,6 @@ class batchjob:
         self.root = comm.rank == 0
 
         self.simulate_now()
-
 
     def simulate_now(self):
         comm = MPI.COMM_WORLD
@@ -1311,7 +1319,6 @@ class batchjob:
         kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigma**2 + 3*mu**4) / sigma**4 - 3
         return [power, mu, sigma, skew, kurt]
 
-
     def __findSampleStats(self):
         #Does statistics on the statistics
         self.stat =  [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
@@ -1358,6 +1365,7 @@ class batchjob:
             self.statV[4][1].append(np.std(allKurt))
 
         print(self.statV[2][1])
+
     def __mean2V(self, mean):
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
                 (self.env.ang2cm(self.env.lam0)))
@@ -1394,15 +1402,17 @@ class batchjob:
         titles = ['Intensity', 'Mean Redshift', 'Line Width', 'Skew', 'Excess Kurtosis']
         ylabels = ['', 'km/s', 'km/s', '', '']
         thisBlist = self.Blist
-        f.suptitle('Off Limb Line Statistics \n Wavelength: ' + str(self.env.lam0) + ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + '; Lines per Env: ' + str(self.Nrot))
+        f.suptitle(str(self.batchName) + ': ' + str(self.completeTime) + '\n Wavelength: ' + str(self.env.lam0) + 
+            ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + 
+            '; Lines per Env: ' + str(self.Nrot))
         for ax in axArray:
-            if mm == 0: ax.set_yscale('log')
+            if mm == 0: ax.set_yscale('log') #Set first plot to log axis
             ax.errorbar(labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
-            if mm == 2 and doRms:
+            if mm == 2 and doRms: #Plot Vrms
                 for vRms in self.vRmsList:
                     ax.plot(labels, vRms, label = str(thisBlist.pop(0)) + 'G')
                 ax.legend(loc = 4)
-            if mm == 1 or mm == 3 or mm == 4:
+            if mm == 1 or mm == 3 or mm == 4: #Plot a zero line
                 ax.plot(labels, np.zeros_like(labels))
             ax.set_title(titles[mm])
             ax.set_ylabel(ylabels[mm])
@@ -1442,7 +1452,6 @@ class batchjob:
         self.sims = sims
         #self.env = env
         if printout: print('\nFile Saved')
-
             
     def show(self):
         #Print all properties and values
@@ -1506,7 +1515,7 @@ class impactsim(batchjob):
 
         for B in self.Blist:
             thisV = []
-            for impact in self.impacts:
+            for impact in self.doneLabels:
                 thisV.append(self.env.cm2km(self.env.findVrms(impact, B)))
             self.vRmsList.append(thisV)
 

@@ -10,31 +10,73 @@ import sys
 
 if __name__ == '__main__':
 
-    remote = True
+    remote = False
     firstRun = True
-    batchName = 'Work2'
+    batchName = 'NewBmap'
     impactPoints = 20
-    iterations = 3
+    iterations = 5
 
     b0 = 1.05
     b1 = 1.5
 
-    envName = 'Multienv'
+    envName = 'smoothEnvs'
     maxEnvs = 10
-
-
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
     root = rank == 0
-    #envPath = '../dat/primeEnv'
+   
+    ### Level 3 ### BatchSim
+    ###############
     
+    #envs = sim.envs('smoothEnvs').processEnvs(1)
+
+    if remote:
+        if firstRun:       
+            envs = sim.envs(envName).loadEnvs(maxEnvs)
+            myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1)
+        else:
+            myBatch = sim.restartBatch(batchName)        
+    else:
+        myBatch = sim.plotBatch(batchName)
+
+
+
+        #myBatch = sim.loadBatch(batchName)
+        #myBatch.redoStats()
+
+        #env = sim.envs('Multienv').loadEnvs(1)[0]
+        #myBatch.env = env
+        #myBatch.plotStatsV()
+
+
 
     #sys.stdout.flush()
 
     #Simulate Common Grids
     #df = grid.defGrid()
+
+
+
+    ### Level 2 ### MultiSim
+    ###############
+    
+
+    #lines = grid.rotLines(6)
+    #lineSims = sim.multisim(lines, env, N = 200)
+    #lineSims.plotLines()
+    #plt.imshow(np.log(lineSims.getLineArray()))
+    #plt.show()
+
+    
+    #lines = grid.rotLines()
+    #lineSims = sim.multisim(lines, env, N = 1000)
+    #plt.pcolormesh(np.log(lineSims.getLineArray()))
+    #plt.show()
+
+
+
     #Initialize Simulation Environment
         # env = sim.environment()
         # env.save(envPath)
@@ -45,13 +87,6 @@ if __name__ == '__main__':
 
     # df = comm.bcast(df, root = 0)
     # envs = comm.bcast(envs, root = 0)
-
- 
-    ### Level 0 ### Simpoint 
-    ###############
-    #env = sim.envs('envs').loadEnvs(1)[0]
-    #thisPoint = sim.simpoint(grid = df.bpolePlane, env = env) 
-    #thisPoint.show()
 
 
     ### Level 1 ### Simulate
@@ -100,49 +135,22 @@ if __name__ == '__main__':
 
 
     #The whole code in one line. WOO!
-    #mySim = sim.simulate(sim.defGrid().bpolePlane, step = 0.1)#.plot('rho', scale = 'log')
+    #mySim = sim.simulate(sim.defGrid().bpolePlane, step = 0.1)#.plot('rho', scale = 'log') 
 
-    ### Level 2 ### MultiSim
+
+    ### Level 0 ### Simpoint 
     ###############
-    
-
-    #lines = grid.rotLines(6)
-    #lineSims = sim.multisim(lines, env, N = 200)
-    #lineSims.plotLines()
-    #plt.imshow(np.log(lineSims.getLineArray()))
-    #plt.show()
-
-    
-    #lines = grid.rotLines()
-    #lineSims = sim.multisim(lines, env, N = 1000)
-    #plt.pcolormesh(np.log(lineSims.getLineArray()))
-    #plt.show()
+    #env = sim.envs('envs').loadEnvs(1)[0]
+    #thisPoint = sim.simpoint(grid = df.bpolePlane, env = env) 
+    #thisPoint.show()
 
 
-    ### Level 3 ### BatchSim
-    ###############
-    
-    #envs = sim.envs('Multienv').processEnvs()
+   
+
+  
 
 
 
-    if remote:
-        if firstRun:       
-            envs = sim.envs(envName).loadEnvs(maxEnvs)
-            myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1)
-        else:
-            myBatch = sim.restartBatch(batchName)        
-    else:
-        myBatch = sim.plotBatch(batchName)
-
-
-
-        #myBatch = sim.loadBatch(batchName)
-        #myBatch.redoStats()
-
-        #env = sim.envs('Multienv').loadEnvs(1)[0]
-        #myBatch.env = env
-        #myBatch.plotStatsV()
 
   
  
