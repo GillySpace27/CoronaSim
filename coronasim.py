@@ -243,11 +243,9 @@ class environment:
         self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_smoothed)
 
     def __labelStreamers(self, thresh = 0.9):
-        #Take magnitude and find valid region
-        bdata = np.abs(self.BMap_smoothed)
-        validMask = self.BMap_raw != 0
 
         #Find all above the threshold and label
+        bdata = np.abs(self.BMap_smoothed)
         blist = bdata.flatten().tolist()
         bmean =  np.mean([v for v in blist if v!=0])
         bmask = bdata > bmean * thresh
@@ -255,30 +253,31 @@ class environment:
         
         #Create seeds for voronoi
         coord = ndimage.maximum_position(bdata, label_im, np.arange(1, nb_labels))
-        coordinates = []
-        for co in coord: coordinates.append(co[::-1])
+
+        #Get voronoi transform
+        self.label_im, self.nb_labels = self.__voronoify_sklearn(label_im, coord)
         
-        #Get voronoi background
-        self.label_im, self.nb_labels = self.__voronoify_sklearn(label_im, coordinates)
-        
-        ##Add in threshold regions
-        #highLabelIm = label_im + self.nb_labels
-        #self.label_im *= np.logical_not(bmask)
-        #self.label_im += highLabelIm * bmask
+                    ##Add in threshold regions
+                    #highLabelIm = label_im + self.nb_labels
+                    #self.label_im *= np.logical_not(bmask)
+                    #self.label_im += highLabelIm * bmask
         
         #Clean Edges
+        validMask = self.BMap_raw != 0
         self.label_im *= validMask
         
         if False: #Plot Slice of Map
             #(label_im + 40) * validMask 
-            plt.imshow(self.label_im, cmap = 'Paired', interpolation='none')
+            plt.imshow(self.label_im, cmap = 'prism', interpolation='none')
             plt.colorbar()
-            plt.title('Strong Field Regions')
+            plt.title('Threshold Regions')
             #plt.imshow(highLabelIm, cmap = 'Set1', interpolation='none', alpha = 0.5)
             #plt.xlim(600,950)
             #plt.ylim(350,650)
-            #for co in coordinates:
-            #    plt.scatter(*co)
+            coordinates = []
+            for co in coord: coordinates.append(co[::-1])
+            for co in coordinates:
+                plt.scatter(*co, c='r')
             plt.show()
         return
 

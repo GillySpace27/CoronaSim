@@ -26,8 +26,8 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
-    #envs = sim.envs('smoothEnvs').processEnvs(1)
-    if True:
+    #envs = sim.envs('smoothEnvs').processEnvs()
+    if False:
         if remote:
             if firstRun:       
                 envs = sim.envs(envsName).loadEnvs(maxEnvs)
@@ -77,20 +77,10 @@ if __name__ == '__main__':
 
 
 
-    #Initialize Simulation Environment
-        # env = sim.environment()
-        # env.save(envPath)
-
-    # else:
-        # df = None
-        # envs = None
-
-    # df = comm.bcast(df, root = 0)
-    # envs = comm.bcast(envs, root = 0)
-
-
     ### Level 1 ### Simulate
     ###############
+
+    env = sim.envs(envsName).loadEnvs(1)[0]
 
     ## Misc Sims ##
     #topSim = sim.simulate(df.topPlane, N = 1000)
@@ -98,13 +88,13 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
+    bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     #bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    #bpoleSim.plot('vLOS', scaling = 'none')
+    bpoleSim.plot('streamIndex', scaling = 'none')
 
-    # env = sim.envs('envs').loadEnvs(1)[0]
+
     # print('Go')
     # lineSim = sim.simulate(df.impLine, env, N = 1500, findT = True)
     # lineSim.peekLamTime()
