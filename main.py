@@ -10,13 +10,13 @@ import sys
 
 if __name__ == '__main__':
 
-    remote = False
-    firstRun = False
+    remote = True
+    firstRun = True
     redoStats = False
 
-    batchName = 'test'
+    batchName = 'Smooth'
     impactPoints = 20
-    iterations = 1
+    iterations = 200
     b0 = 1.05
     b1 = 1.5
 
@@ -26,7 +26,8 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
-    #envs = sim.envs('smoothEnvs').processEnvs()
+    envs = sim.envs(envsName).processEnvs()
+
     if False:
         if remote:
             if firstRun:       
@@ -39,25 +40,10 @@ if __name__ == '__main__':
 
 
 
-
-        #myBatch = sim.loadBatch(batchName)
-        #myBatch.redoStats()
-
-        #env = sim.envs('Multienv').loadEnvs(1)[0]
-        #myBatch.env = env
-        #myBatch.plotStatsV()
-
     #comm = MPI.COMM_WORLD
     #rank = comm.Get_rank()
     #size = comm.Get_size()
     #root = rank == 0
-
-    #sys.stdout.flush()
-
-    #Simulate Common Grids
-    df = grid.defGrid()
-
-
 
     ### Level 2 ### MultiSim
     ###############
@@ -80,7 +66,14 @@ if __name__ == '__main__':
     ### Level 1 ### Simulate
     ###############
 
-    env = sim.envs(envsName).loadEnvs(1)[0]
+    #df = grid.defGrid()
+    #env = sim.envs(envsName).loadEnvs(1)[0]
+
+    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
+    #bpoleSim.plot('streamIndex', scaling = 'none')
+
+    #lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
+    #lineSim2.evolveLine(200, 0, 200)
 
     ## Misc Sims ##
     #topSim = sim.simulate(df.topPlane, N = 1000)
@@ -88,11 +81,11 @@ if __name__ == '__main__':
 
     ## bpoleSim ##
     #t = time.time()
-    bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
+
     #t = time.time()
     #print('Elapsed Time: ' + str(time.time() - t))
     #bpoleSim.compare('rho', 'intensity', p1Scaling = 'log', p2Scaling = 'log')
-    bpoleSim.plot('streamIndex', scaling = 'none')
+
 
 
     # print('Go')
@@ -106,8 +99,7 @@ if __name__ == '__main__':
     #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
 
     #env = sim.envs('smoothEnvs').loadEnvs(1)[0]
-    #lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
-    #lineSim2.evolveLine(200, 0, 200)
+
 
     #lineSim2.setIntLam(200.01)
     #lineSim2.plot('intensity')
