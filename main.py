@@ -26,9 +26,9 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
-    envs = sim.envs(envsName).processEnvs()
+    #envs = sim.envs(envsName).processEnvs()
 
-    if False:
+    if True:
         if remote:
             if firstRun:       
                 envs = sim.envs(envsName).loadEnvs(maxEnvs)

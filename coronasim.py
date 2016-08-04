@@ -719,14 +719,14 @@ class simulate:
         t = time.time()
         stepInd = 0
         rhoSum = 0
-        tol = 0.5
+        tol = 1
         for cPos, step in self.grid: 
 
             thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
 
             if self.adapt:
                 #Adaptive Mesh
-                thisDens = thisPoint.intensity
+                thisDens = thisPoint.densfac
 
                 if (thisDens > tol) and self.grid.backflag:
                     self.grid.back()
@@ -993,11 +993,13 @@ class simulate:
         cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
         self.fig.colorbar(im, cax=cbar_ax)
 
-
+        #Plot the Centroid vs Time
         self.fig.subplots_adjust(right=0.7)
         cent_ax = self.fig.add_axes([0.74, 0.10, 0.15, 0.8], autoscaley_on = True)
         cent_ax.set_xlabel('Centroid')
         cent_ax.plot(self.centroid, self.times)
+        cent_ax.plot(np.ones_like(self.times)*self.env.lam0, self.times)
+        #cent_ax.set_xlim([np.min(self.env.lamAx), np.max(self.env.lamAx)])
         cent_ax.xaxis.get_major_formatter().set_useOffset(False)
         max_xticks = 4
         xloc = plt.MaxNLocator(max_xticks)
