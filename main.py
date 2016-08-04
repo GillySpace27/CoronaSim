@@ -11,35 +11,32 @@ import sys
 if __name__ == '__main__':
 
     remote = False
-    firstRun = True
-    batchName = 'NewBmap'
-    impactPoints = 20
-    iterations = 5
+    firstRun = False
+    redoStats = False
 
+    batchName = 'test'
+    impactPoints = 20
+    iterations = 1
     b0 = 1.05
     b1 = 1.5
 
-    envName = 'smoothEnvs'
+    envsName = 'smoothEnvs'
     maxEnvs = 10
-
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-    root = rank == 0
    
     ### Level 3 ### BatchSim
     ###############
     
     #envs = sim.envs('smoothEnvs').processEnvs(1)
-    if False:
+    if True:
         if remote:
             if firstRun:       
-                envs = sim.envs(envName).loadEnvs(maxEnvs)
+                envs = sim.envs(envsName).loadEnvs(maxEnvs)
                 myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1)
             else:
                 myBatch = sim.restartBatch(batchName)        
         else:
-            myBatch = sim.plotBatch(batchName)
+            myBatch = sim.plotBatch(batchName, redoStats)
+
 
 
 
@@ -50,7 +47,10 @@ if __name__ == '__main__':
         #myBatch.env = env
         #myBatch.plotStatsV()
 
-
+    #comm = MPI.COMM_WORLD
+    #rank = comm.Get_rank()
+    #size = comm.Get_size()
+    #root = rank == 0
 
     #sys.stdout.flush()
 
@@ -115,9 +115,9 @@ if __name__ == '__main__':
     #print(lineSim.getStats())
     #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
 
-    env = sim.envs('smoothEnvs').loadEnvs(1)[0]
-    lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
-    lineSim2.evolveLine(200, 0, 200)
+    #env = sim.envs('smoothEnvs').loadEnvs(1)[0]
+    #lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
+    #lineSim2.evolveLine(200, 0, 200)
 
     #lineSim2.setIntLam(200.01)
     #lineSim2.plot('intensity')

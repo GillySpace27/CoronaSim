@@ -1283,6 +1283,8 @@ class batchjob:
 
         if self.root: 
             self.__findBatchStats()
+            self.__findSampleStats()
+            self.makeVrms()
             if self.complete is False:
                 self.completeTime = time.asctime()
             self.complete = True
@@ -1299,13 +1301,16 @@ class batchjob:
         self.root = self.rank == 0
 
     def doStats(self):
-        self.__findSampleStats()
-        self.makeVrms()
-        self.plotStatsV()
+        if self.complete:
+            self.plotStatsV()
+        else:
+            self.redoStats()
 
     def redoStats(self):
         self.__findBatchStats()
-        self.doStats()
+        self.__findSampleStats()
+        self.makeVrms()
+        self.plotStatsV()
 
     def __findBatchStats(self):
         self.lineStats = []
@@ -1369,14 +1374,15 @@ class batchjob:
             T = self.env.interp_rx_dat(impact, self.env.T_raw)
             self.statV[2][0].append(self.__std2V(np.mean(allStd), T))
             self.statV[2][1].append(self.__std2V(np.std(allStd), T))
-#TODO make these in velocity units
+
+            #TODO make these in velocity units
             self.statV[3][0].append(np.mean(allSkew))
             self.statV[3][1].append(np.std(allSkew))
 
             self.statV[4][0].append(np.mean(allKurt))
             self.statV[4][1].append(np.std(allKurt))
 
-        print(self.statV[2][1])
+        #print(self.statV[2][1])
 
     def __mean2V(self, mean):
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
@@ -1413,7 +1419,11 @@ class batchjob:
         mm = 0
         titles = ['Intensity', 'Mean Redshift', 'Line Width', 'Skew', 'Excess Kurtosis']
         ylabels = ['', 'km/s', 'km/s', '', '']
-        thisBlist = self.Blist
+        import copy
+        thisBlist = copy.deepcopy(self.Blist)
+        try:
+            self.completeTime
+        except: self.completeTime = 'Incomplete Job'
         f.suptitle(str(self.batchName) + ': ' + str(self.completeTime) + '\n Wavelength: ' + str(self.env.lam0) + 
             ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + 
             '; Lines per Env: ' + str(self.Nrot))
@@ -1429,7 +1439,8 @@ class batchjob:
             ax.set_title(titles[mm])
             ax.set_ylabel(ylabels[mm])
             mm += 1
-            ax.autoscale(tight = False)
+            spread = 0.05
+            ax.set_xlim([labels[0]-spread, labels[-1]+spread]) #Get away from the edges
         ax.set_xlabel(self.xlabel)
         grid.maximizePlot()
         plt.show()
@@ -1558,10 +1569,11 @@ def restartBatch(batchName):
     myBatch.simulate_now()
     return myBatch
 
-def plotBatch(batchName):
+def plotBatch(batchName, redo = False):
     myBatch = loadBatch(batchName)
     myBatch.findRank()
-    myBatch.redoStats()
+    if redo: myBatch.redoStats()
+    else: myBatch.doStats()
         
         
         
