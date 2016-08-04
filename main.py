@@ -31,15 +31,15 @@ if __name__ == '__main__':
     ###############
     
     #envs = sim.envs('smoothEnvs').processEnvs(1)
-
-    if remote:
-        if firstRun:       
-            envs = sim.envs(envName).loadEnvs(maxEnvs)
-            myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1)
+    if False:
+        if remote:
+            if firstRun:       
+                envs = sim.envs(envName).loadEnvs(maxEnvs)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1)
+            else:
+                myBatch = sim.restartBatch(batchName)        
         else:
-            myBatch = sim.restartBatch(batchName)        
-    else:
-        myBatch = sim.plotBatch(batchName)
+            myBatch = sim.plotBatch(batchName)
 
 
 
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     #sys.stdout.flush()
 
     #Simulate Common Grids
-    #df = grid.defGrid()
+    df = grid.defGrid()
 
 
 
@@ -113,10 +113,12 @@ if __name__ == '__main__':
     #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
     #lineSim.plotProfile()
     #print(lineSim.getStats())
-
-    #lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
     #poleLineSim = sim.simulate(df.poleLine, findT = True, N = 1000)
-    #lineSim2.evolveLine(150)
+
+    env = sim.envs('smoothEnvs').loadEnvs(1)[0]
+    lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
+    lineSim2.evolveLine(200, 0, 200)
+
     #lineSim2.setIntLam(200.01)
     #lineSim2.plot('intensity')
     #print(lineSim2.getStats())

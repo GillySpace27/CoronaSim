@@ -269,7 +269,7 @@ class environment:
         #Clean Edges
         self.label_im *= validMask
         
-        if True: #Plot Slice of Map
+        if False: #Plot Slice of Map
             #(label_im + 40) * validMask 
             plt.imshow(self.label_im, cmap = 'Paired', interpolation='none')
             plt.colorbar()
@@ -911,22 +911,23 @@ class simulate:
         #self.makeLamAxis(self, Ln, lam0, lamPm)
         self.lineArray = np.zeros((tn, self.env.Ln))
 
-        bar = pb.ProgressBar(self.Npoints*len(self.times))
+        bar = pb.ProgressBar(len(self.times))
         timeInd = 0
         for tt in self.times:
             for point in self.sPoints:
                 point.setTime(tt)
-                bar.increment()
-                bar.display()   
             self.lineArray[timeInd][:] = self.lineProfile()
+            bar.increment()
+            bar.display()  
             timeInd += 1       
         bar.display(force = True)
 
         self.lineList = self.lineArray.tolist()
 
-        self.plotLineArray_t()
+
         self.__fitGaussians_t()
         self.__findMoments_t()
+        self.plotLineArray_t()
 
     def __findMoments_t(self):
         #Find the moments of each line in lineList
@@ -949,7 +950,7 @@ class simulate:
         self.power = self.moment[0]
         self.centroid = self.moment[1] / self.moment[0]
         self.sigma = np.sqrt(self.moment[2]/self.moment[0] - (self.moment[1]/self.moment[0])**2)
-        self.plotMomentStats_t()
+        #self.plotMomentStats_t()
 
     def plotMomentStats_t(self):
         f, (ax1, ax2, ax3) = plt.subplots(3,1, sharex=True)
@@ -992,6 +993,17 @@ class simulate:
         self.fig.subplots_adjust(right=0.89)
         cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
         self.fig.colorbar(im, cax=cbar_ax)
+
+
+        self.fig.subplots_adjust(right=0.7)
+        cent_ax = self.fig.add_axes([0.74, 0.10, 0.15, 0.8], autoscaley_on = True)
+        cent_ax.set_xlabel('Centroid')
+        cent_ax.plot(self.centroid, self.times)
+        cent_ax.xaxis.get_major_formatter().set_useOffset(False)
+        max_xticks = 4
+        xloc = plt.MaxNLocator(max_xticks)
+        cent_ax.xaxis.set_major_locator(xloc)
+
         grid.maximizePlot()
         plt.show(False)
 
@@ -1020,7 +1032,7 @@ class simulate:
             #plt.show()
             lInd += 1
 
-        self.plotGaussStats_t()
+        #self.plotGaussStats_t()
 
     def plotGaussStats_t(self):
         f, (ax1, ax2, ax3, ax4) = plt.subplots(4,1, sharex=True)
