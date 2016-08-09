@@ -10,15 +10,17 @@ import sys
 
 if __name__ == '__main__':
 
-    remote = True
+    remote = False
     firstRun = True
-    redoStats = False
+    redoStats = True
 
     batchName = 'Smooth'
-    impactPoints = 20
-    iterations = 200
+    impactPoints = 3
+    iterations = 2
     b0 = 1.05
     b1 = 1.5
+
+    N_line = (1500, 5000)
 
     envsName = 'smoothEnvs'
     maxEnvs = 10
@@ -32,7 +34,7 @@ if __name__ == '__main__':
         if remote:
             if firstRun:       
                 envs = sim.envs(envsName).loadEnvs(maxEnvs)
-                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line)
             else:
                 myBatch = sim.restartBatch(batchName)        
         else:
@@ -69,10 +71,11 @@ if __name__ == '__main__':
     #df = grid.defGrid()
     #env = sim.envs(envsName).loadEnvs(1)[0]
 
-    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
-    #bpoleSim.plot('streamIndex', scaling = 'none')
+    ##bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
+    ##bpoleSim.plot('streamIndex', scaling = 'none')
 
     #lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
+    #print((lineSim2.Npoints))
     #lineSim2.evolveLine(200, 0, 200)
 
     ## Misc Sims ##

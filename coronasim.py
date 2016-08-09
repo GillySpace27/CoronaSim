@@ -193,6 +193,12 @@ class environment:
     def cm2ang(self, var):
         return var * 1e8
 
+    def ang2km(self, var):
+        return var * 1e-13
+
+    def km2ang(self, var):
+        return var * 1e13
+
     ## Velocities #####################################################################
 
     def findVrms(self, rx, B):
@@ -393,6 +399,7 @@ class envs:
         for file in files:
             if ind < maxN: envs.append(self.__loadEnv(file))
             ind += 1
+        assert len(envs) > 0
         return envs
         
     def processEnvs(self, maxN = 1e8, name = 'environment'):
@@ -1382,16 +1389,23 @@ class batchjob:
 
             self.statV[4][0].append(np.mean(allKurt))
             self.statV[4][1].append(np.std(allKurt))
-
-        #print(self.statV[2][1])
+        print(self.statV[2][0])
+        print('')
+        print(self.statV[2][1])
 
     def __mean2V(self, mean):
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
                 (self.env.ang2cm(self.env.lam0)))
 
     def __std2V(self, std, T):
-        return self.env.cm2km(np.sqrt((np.sqrt(2) * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.env.lam0)))**2 - \
-            (2 * self.env.KB * T / self.env.mi)))
+
+        A = self.env.ang2km(np.sqrt(2) * std * self.env.cm2ang(self.env.c) / self.env.lam0)
+        B = self.env.cm2km(np.sqrt(2 * self.env.KB * T / self.env.mi))
+        vel =  np.sqrt(  A**2 - B**2 )
+        return vel
+
+        #return self.env.cm2km(np.sqrt((np.sqrt(2) * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.env.lam0)))**2 - \
+        #    (2 * self.env.KB * T / self.env.mi)**2))
                            
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)
