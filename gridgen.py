@@ -174,22 +174,27 @@ class sightline(generator):
 
     default_N = 1000
 
-    def __init__(self, position = None, target = None, iL = 1, coords = 'Cart', findT = True):
+    def __init__(self, position = None, target = None, 
+            iL = 1, coords = 'Cart', findT = True, rez = None, size = None):
         #print('Initializing Sightline, Observer at {pos}, looking at {targ}'.format(pos = position, targ = target))
         if position is None:
             position, target = [2, 1*np.pi/4, 1e-8], [2, -np.pi/4, 1e-8]
             coords = 'sphere'  
         self.iL = iL
         self.findT = findT
-        self.look(position, target, coords)  
-        self.currS = 0
         self.maxStep = 1/1500
         self.minStep = 1/10000
-        self.step = self.maxStep
+        self.coords = coords
+        self.currLine = 0
+        self.look(position, target, coords)
         self.stepChange = 4
+        if rez is not None:
+            self.makeLineList(rez, size)
  
     def look(self, position, target, coords = 'Cart'):
 #        Initialize the sight line between two points
+        self.currS = 0
+        self.step = self.maxStep
         if coords == 'Cart':
             self.cPos = position
             self.cTarg = target
@@ -207,6 +212,13 @@ class sightline(generator):
         self.norm = np.linalg.norm(self.gradArr)  
         self.ngrad = self.gradArr / self.norm
 
+    def makeLineList(self, rez, size):
+        self.NLines = rez[0] * rez[1]
+        rotAxis = [0,0,1]
+        self.currS = 1e8
+        self.startPoints = plane(self.ngrad, self.cPos, 0.5, rotAxis, absolute = True).cGrid(rez[0], size[0], rez[1], size[1])
+        self.endPoints = plane(self.ngrad, self.cTarg, 0.5, rotAxis, absolute = True).cGrid(rez[0], size[0], rez[1], size[1])
+
     def cPoint(self, s):
         #Return the coordinates of a point along the line
         return (np.array(self.cPos) + self.gradArr*s).tolist()
@@ -219,8 +231,15 @@ class sightline(generator):
         #Return the coordinates of the sightline
         if N is None: N = self.default_N
         line = []
-        for ss in np.linspace(smin, iL, N):
-            line.append(self.cPoint(ss)) 
+        try:
+            for start, end in zip(self.startPoints, self.endPoints):
+                self.look(start, end)
+                for ss in np.linspace(smin, iL, N):
+                    line.append(self.cPoint(ss)) 
+        except:
+            for ss in np.linspace(smin, iL, N):
+                line.append(self.cPoint(ss)) 
+            
         self.shape = [len(line), 1]  
         return line
     
@@ -238,7 +257,13 @@ class sightline(generator):
 
     def __next__(self):
         if self.currS > 1:
-            raise StopIteration
+            try: 
+                start = self.startPoints[self.currLine]
+                end = self.endPoints[self.currLine]
+                self.look(start, end)
+                self.currLine += 1
+            except:
+                raise StopIteration
         pt = self.cPoint(self.currS)
         self.currS += self.step
         return (pt, self.step)
@@ -252,13 +277,13 @@ class plane(generator):
     #TODO Make plane adaptive
     default_N = 1000
 
-    def __init__(self, normal = [0,1,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False):
+    def __init__(self, normal = [0,1,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False, absolute = False):
         #print("Initializing Plane, normal = {}, offset = {}".format(normal, offset))
-
+        self.absolute = absolute
         self.findT = findT
         self.iL = iL
         self.rotArray = np.asarray(rotAxis)
-        if ncoords == 'Cart':
+        if ncoords.lower() == 'cart':
             self.normal = np.asarray(normal).astype(float)
             self.offset = offset
         else:
@@ -288,32 +313,43 @@ class plane(generator):
         self.ngrad2 = grad2 / np.linalg.norm(grad2)
         self.ngrad = self.ngrad2
         self.nnormal = self.normal / np.linalg.norm(self.normal)
-        self.noffset = self.nnormal*self.offset[0] + self.ngrad1*self.offset[1] + self.ngrad2*self.offset[2]
+        if self.absolute:
+            self.noffset = self.offset 
+        else:
+            self.noffset = self.nnormal*self.offset[0] + self.ngrad1*self.offset[1] + self.ngrad2*self.offset[2]
 
-    def cGrid(self, N = None, iL = 1):
+    def cGrid(self, N = None, iL = 1, N2 = None, iL2 = None):
         #Return a list of points in the plane
         if N is None: self.N = self.default_N
         else: self.N = N
-        
-        L = self.rstar*iL
+        if N2 is None: self.N2 = self.N
+        else: self.N2 = N2
+        if iL2 is None: iL2 = iL
 
-        sGrad1 = self.ngrad1*L
-        sGrad2 = self.ngrad2*L
+        L1 = self.rstar*iL
+        L2 = self.rstar*iL2
+
+        sGrad1 = self.ngrad1*L1
+        sGrad2 = self.ngrad2*L2
 
         baseLine = sightline(sGrad1 + self.noffset, -sGrad1 + self.noffset).cGrid(self.N)
         pos0 = baseLine[0]
         self.nx = len(baseLine)
-        self.ny = len(sightline(pos0+sGrad2, pos0-sGrad2).cGrid(self.N))
+        self.ny = len(sightline(pos0+sGrad2, pos0-sGrad2).cGrid(self.N2))
         self.shape = [self.nx, self.ny]
         self.Npoints = self.nx * self.ny
         thisPlane = []
         for pos in baseLine:
-           thisPlane.extend(sightline(pos+sGrad2, pos-sGrad2).cGrid(self.N))
+           thisPlane.extend(sightline(pos+sGrad2, pos-sGrad2).cGrid(self.N2))
         return thisPlane
 
-    def pGrid(self, N = None, iL = 1):
+    def pGrid(self, N = None, iL = 1, N2 = None):
         #Return a list of points in the plane in polar Coords
-        return [self.cart2sph(pos) for pos in self.cGrid(N, iL)]
+        if N is None: self.N = self.default_N
+        else: self.N = N
+        if N2 is None: self.N2 = self.N
+        else: self.N2 = N2
+        return [self.cart2sph(pos) for pos in self.cGrid(N, iL, N2)]
 
 
 #Generates default grids

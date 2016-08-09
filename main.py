@@ -12,9 +12,9 @@ if __name__ == '__main__':
 
     remote = False
     firstRun = True
-    redoStats = True
+    redoStats = False
 
-    batchName = 'Smooth'
+    batchName = 'test'
     impactPoints = 3
     iterations = 2
     b0 = 1.05
@@ -30,7 +30,7 @@ if __name__ == '__main__':
     
     #envs = sim.envs(envsName).processEnvs()
 
-    if True:
+    if False:
         if remote:
             if firstRun:       
                 envs = sim.envs(envsName).loadEnvs(maxEnvs)
@@ -69,7 +69,15 @@ if __name__ == '__main__':
     ###############
 
     #df = grid.defGrid()
+
     #env = sim.envs(envsName).loadEnvs(1)[0]
+
+
+    #position, target = [1, 1, 1.5], [-1, -1, 1.5]
+    #cyline = grid.sightline(position, target, coords = 'Cart', rez = [3,3], size = [0.002,0.01])
+
+    #cylSim = sim.simulate(cyline, env, [100,200], 1, False, True)
+    #cylSim.plot('densfac')
 
     ##bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
     ##bpoleSim.plot('streamIndex', scaling = 'none')
