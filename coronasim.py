@@ -497,6 +497,7 @@ class simpoint:
         self.vAlf = self.__findAlf()
         self.vPh = self.__findVPh()
         self.vRms = self.__findvRms()
+        self.vLOSwind = self.__findVLOS2(self.__findCU([self.ur,0,0]))
         #self.findWaveSpeeds(t)
 
     def findWaveSpeeds(self, t = 0):
@@ -508,7 +509,8 @@ class simpoint:
         self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
         self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
         self.pU = [self.ur, self.uTheta, self.uPhi]
-        self.cU = self.__findCU() 
+        self.cU = self.__findCU(self.pU) 
+        [self.ux, self.uy, self.uz] = self.cU
         self.vLOS = self.__findVLOS()      
        
     def __streamInit(self):
@@ -545,12 +547,20 @@ class simpoint:
         self.vLOS = np.dot(self.nGrad, self.cU)
         return self.vLOS
 
-    def __findCU(self):
+    def __findVLOS2(self, vel, nGrad = None):
+        if nGrad is not None: self.nGrad = nGrad
+        else: self.nGrad = self.grid.ngrad
+        vLOS2 = np.dot(self.nGrad, vel)
+        #print(self.vLOS2)
+        return vLOS2
+
+    def __findCU(self, pU):
         #Finds the cartesian velocity components
-        self.ux = -np.cos(self.pPos[2])*(self.ur*np.sin(self.pPos[1]) + self.uTheta*np.cos(self.pPos[1])) - np.sin(self.pPos[2])*self.uPhi
-        self.uy = -np.sin(self.pPos[2])*(self.ur*np.sin(self.pPos[1]) + self.uTheta*np.cos(self.pPos[1])) - np.cos(self.pPos[2])*self.uPhi
-        self.uz = self.ur*np.cos(self.pPos[1]) - self.uTheta*np.sin(self.pPos[1])
-        return [self.ux, self.uy, self.uz]
+        [ur, uTheta, uPhi] = pU
+        ux = -np.cos(self.pPos[2])*(ur*np.sin(self.pPos[1]) + uTheta*np.cos(self.pPos[1])) - np.sin(self.pPos[2])*uPhi
+        uy = -np.sin(self.pPos[2])*(ur*np.sin(self.pPos[1]) + uTheta*np.cos(self.pPos[1])) - np.cos(self.pPos[2])*uPhi
+        uz = ur*np.cos(self.pPos[1]) - uTheta*np.sin(self.pPos[1])
+        return [ux, uy, uz]
     
 
   ## Time Dependence #######################################################################    
@@ -787,12 +797,20 @@ class simulate:
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
-    def plot(self, property, dim = None, scaling = 'None', cmap = 'jet'):
+    def plot(self, property, dim = None, scaling = 'None', cmap = 'jet', axes = True):
         scaleProp, datSum = self.get(property, dim, scaling)
         self.fig, ax = self.grid.plot(iL = self.iL)
         if type(self.grid) is grid.sightline:
             #Line Plot
             im = ax.plot(self.cumSteps, scaleProp)
+            if axes:
+                ax.plot(self.cumSteps, np.zeros_like(self.cumSteps), 'k')
+                tall = np.amax(scaleProp)
+                short = np.amin(scaleProp)
+                tallline = np.linspace(short, tall, 10)
+                tallAbsic = np.ones_like(tallline) * 0.5
+                ax.plot(tallAbsic, tallline, 'k')
+            datSum = datSum / self.N
             datSum = datSum / self.N
         elif type(self.grid) is grid.plane:
             #Image Plot
@@ -809,6 +827,43 @@ class simulate:
             ax.set_title(property + ", scaling = " + scaling + ', sum = {}'.format(datSum))
         else:
             ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling + ', sum = {}'.format(datSum))
+
+        grid.maximizePlot()
+        plt.show()
+
+    def plot2(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None, axes = True):
+        scaleProp1, datSum1 = self.get(p1, p1Dim, p1Scaling)
+        scaleProp2, datSum2 = self.get(p2, p2Dim, p2Scaling)
+        datSum = datSum1
+        self.fig, ax = self.grid.plot(iL = self.iL)
+        if type(self.grid) is grid.sightline:
+            #Line Plot
+            im = ax.plot(self.cumSteps, scaleProp1)
+            im = ax.plot(self.cumSteps, scaleProp2)
+            if axes:
+                ax.plot(self.cumSteps, np.zeros_like(self.cumSteps), 'k')
+                tall = np.amax( [np.amax(scaleProp1), np.amax(scaleProp2)])
+                short = np.amin( [np.amin(scaleProp1), np.amin(scaleProp2)])
+                tallline = np.linspace(short, tall, 10)
+                tallAbsic = np.ones_like(tallline) * 0.5
+                ax.plot(tallAbsic, tallline, 'k')
+            datSum = datSum / self.N
+        elif type(self.grid) is grid.plane:
+            #Image Plot
+            im = ax.imshow(scaleProp, interpolation='none', cmap = cmap)
+            self.fig.subplots_adjust(right=0.89)
+            cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
+            self.fig.colorbar(im, cax=cbar_ax)
+            datSum = datSum / self.N ** 2
+        else: 
+            print("Invalid Grid")
+            return
+
+        if p1Dim is None:
+            ax.set_title(p1 + ", scaling = " + p1Scaling + ', sum = {}'.format(datSum1) + '\n' +
+                            p2 + ", scaling = " + p2Scaling + ', sum = {}'.format(datSum2))
+        else:
+            ax.set_title(p1 + ", dim = " + p1Dim.__str__() + ", scaling = " + scaling + ', sum = {}'.format(datSum))
 
         grid.maximizePlot()
         plt.show()
@@ -899,7 +954,7 @@ class simulate:
         return profile
 
 ## Time Dependence ######################################################
-    def setTime(self, tt):
+    def setTime(self, tt = 0):
         for point in self.sPoints:
             point.setTime(tt)
 
