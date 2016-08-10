@@ -1510,7 +1510,7 @@ class batchjob:
 
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
-    def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000)):
+    def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), rez = None, size = None):
         self.Nb = Nb
         self.batchName = batchName
 
@@ -1541,7 +1541,7 @@ class impactsim(batchjob):
         self.xlabel = 'Impact Parameter'    
         self.fullBatch = []
         for ind in self.impacts:
-            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind)) 
+            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size)) 
 
         super().__init__(envs)
         

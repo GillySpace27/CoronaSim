@@ -21,20 +21,22 @@ if __name__ == '__main__':
     b1 = 1.5
 
     N_line = (1500, 5000)
+    rez = [3,3]
+    size = [0.002, 0.01]
 
     envsName = 'smoothEnvs'
-    maxEnvs = 10
+    maxEnvs = 1
    
     ### Level 3 ### BatchSim
     ###############
     
     #envs = sim.envs(envsName).processEnvs()
 
-    if False:
+    if True:
         if remote:
             if firstRun:       
                 envs = sim.envs(envsName).loadEnvs(maxEnvs)
-                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size)
             else:
                 myBatch = sim.restartBatch(batchName)        
         else:

@@ -392,7 +392,7 @@ def impactLines(N=5, b0 = 1.05, b1= 1.5):
     #List of grids, list of labels
     return [lines, bax] 
 
-def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5):
+def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, rez = None, size = None):
     #Generate lines with a fixed impact parameter but varying angle
     lines = []
     y0 = 1e-8
@@ -401,7 +401,7 @@ def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5):
         theta += offset
         x = x0 * np.sin(theta) + y0 * np.cos(theta)
         y = x0 * np.cos(theta) - y0 * np.sin(theta)
-        thisLine = sightline([x,y,b], [-x,-y,b], findT = True)
+        thisLine = sightline([x,y,b], [-x,-y,b], findT = True, rez = rez, size = size)
         #thisLine.plot(show = True)
         lines.append(thisLine)
     return [lines, angles]      
