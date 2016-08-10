@@ -14,18 +14,20 @@ if __name__ == '__main__':
     firstRun = True
     redoStats = False
 
-    batchName = 'test'
-    impactPoints = 3
-    iterations = 2
+    batchName = 'sightPlane'
+    impactPoints = 10
+    iterations = 1
     b0 = 1.05
     b1 = 1.5
 
-    N_line = (1500, 5000)
-    rez = [3,3]
+    N_line = (1000, 3000)
+    rez = None #[3,3]
     size = [0.002, 0.01]
+    timeAx = np.arange(0,1500)
+    printSim = True
 
     envsName = 'smoothEnvs'
-    maxEnvs = 1
+    maxEnvs = 100
    
     ### Level 3 ### BatchSim
     ###############
@@ -36,11 +38,12 @@ if __name__ == '__main__':
         if remote:
             if firstRun:       
                 envs = sim.envs(envsName).loadEnvs(maxEnvs)
-                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim)
             else:
                 myBatch = sim.restartBatch(batchName)        
         else:
             myBatch = sim.plotBatch(batchName, redoStats)
+            myBatch.plotProfiles(3)
 
 
 
@@ -76,10 +79,11 @@ if __name__ == '__main__':
 
 
     #position, target = [1, 1, 1.5], [-1, -1, 1.5]
-    #cyline = grid.sightline(position, target, coords = 'Cart', rez = [3,3], size = [0.002,0.01])
-
-    #cylSim = sim.simulate(cyline, env, [100,200], 1, False, True)
-    #cylSim.plot('densfac')
+    #cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
+    
+    #timeAx = [0] #np.arange(0,2000)
+    #cylSim = sim.simulate(cyline, env, [1500, 3000], 1, False, True, timeAx = timeAx)
+    #cylSim.plotProfile()
 
     ##bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
     ##bpoleSim.plot('streamIndex', scaling = 'none')

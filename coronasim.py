@@ -436,7 +436,7 @@ class simpoint:
         self.findTwave()
         self.__streamInit()
         self.findSpeeds()
-        self.findIntensity(self.env.lam0, self.env.lam0)
+        #self.findIntensity(self.env.lam0, self.env.lam0)
         if pbar is not None:
             pbar.increment()
             pbar.display()
@@ -497,7 +497,7 @@ class simpoint:
         self.vAlf = self.__findAlf()
         self.vPh = self.__findVPh()
         self.vRms = self.__findvRms()
-        self.findWaveSpeeds(t)
+        #self.findWaveSpeeds(t)
 
     def findWaveSpeeds(self, t = 0):
         #Find all of the wave velocities
@@ -681,15 +681,21 @@ class simpoint:
 ## Level 1: Initializes many Simpoints into a Simulation
 class simulate: 
     #Level 1: Initializes many Simpoints into a Simulation
-    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, nMin = None):
+    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, timeAx = [0]):
         self.print = printOut
-        if self.print: print("Initializing Simulation...")
+        #if self.print: print("Initializing Simulation...")
         self.grid  = gridObj
         self.findT = findT
         self.env = envObj
+        self.timeAx = timeAx
         self.profile = None
         self.adapt = False
 
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.root = self.rank == 0
+        self.size = self.comm.Get_size()
+        
 
         if findT is None:
             self.findT = self.grid.findT
@@ -721,7 +727,7 @@ class simulate:
         self.sPoints = []
         self.steps = []
         self.pData = []
-        if self.print: print("Beginning Simulation...")
+        #if self.print: print("\nBeginning Simulation...")
 
         t = time.time()
         stepInd = 0
@@ -755,7 +761,7 @@ class simulate:
                 bar.display()
         self.cumSteps = np.cumsum(self.steps)
         if doBar and self.print: bar.display(force = True)
-        if self.print: print('Elapsed Time: ' + str(time.time() - t))
+        #if self.print: print('Elapsed Time: ' + str(time.time() - t))
 
         self.Npoints = len(self.sPoints)
         if type(self.grid) is grid.sightline:
@@ -873,13 +879,23 @@ class simulate:
             point.findIntensity(self.env.lam0, lam)
         
     def lineProfile(self):
-        #Get a line profile at the current time
+        #Get a line profile integrated over time
         profile = np.zeros_like(self.env.lamAx)
-        index = 0
-        for lam in self.env.lamAx:
-            for point, step in zip(self.sPoints, self.steps):
-                profile[index] += point.findIntensity(self.env.lam0, lam) * step
-            index += 1
+        if self.print and self.root: 
+            print('\nGenerating Profile...')
+            bar = pb.ProgressBar(len(self.sPoints) * len(self.timeAx) * len(self.env.lamAx))
+        for point, step in zip(self.sPoints, self.steps):
+            for tt in self.timeAx:
+                point.setTime(tt)
+                index = 0
+                for lam in self.env.lamAx:
+                    profile[index] += point.findIntensity(self.env.lam0, lam) * step
+                    index += 1
+                    if self.print and self.root:
+                        bar.increment()
+                        bar.display()
+        self.profile = profile
+        if self.print and self.root: bar.display(True)
         return profile
 
 ## Time Dependence ######################################################
@@ -1063,8 +1079,10 @@ class simulate:
 ## Level 2: Initializes many simulations (MPI Enabled) for statistics
 class multisim:
     #Level 2: Initializes many simulations
-    def __init__(self, batch, envs, N = 1000, findT = None, printOut = False):
+    def __init__(self, batch, envs, N = 1000, findT = None, printOut = False, printSim = False, timeAx = [0]):
         self.print = printOut
+        self.printSim = printSim
+        self.timeAx = timeAx
         self.gridLabels = batch[1]
         self.oneBatch = batch[0]
         self.batch = []
@@ -1126,7 +1144,7 @@ class multisim:
         for grd, envInd in zip(self.gridList, self.envIndList):
             self.envs[envInd].randomize()
             #t = time.time()
-            simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT)
+            simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim)
             #if self.root: simulation.plot('vLOS')
             #self.simList.append(simulation)
             profiles.append(simulation.getProfile())
@@ -1276,7 +1294,7 @@ class batchjob:
 
             self.firstRunEver = False
             
-            thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti)
+            thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti, printSim = self.printSim, timeAx = self.timeAx)
             comm.barrier()
 
             if self.root:
@@ -1406,7 +1424,19 @@ class batchjob:
 
         #return self.env.cm2km(np.sqrt((np.sqrt(2) * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.env.lam0)))**2 - \
         #    (2 * self.env.KB * T / self.env.mi)**2))
-                           
+         
+    def plotProfiles(self, max):
+        for profiles, impact in zip(self.profiles, self.doneLabels):
+            plt.figure()
+            plt.title('Impact: ' + str(impact))
+            plt.xlabel('Wavelength')
+            count = 0
+            for profile in profiles:
+                if count < max:
+                    plt.plot(self.env.lamAx, profile)
+                    count += 1
+            plt.show()
+                  
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)
         mm = 0
@@ -1510,9 +1540,11 @@ class batchjob:
 
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
-    def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), rez = None, size = None):
+    def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
+            rez = None, size = None, timeAx = [0], printSim = False, printOut = True, printMulti = True):
         self.Nb = Nb
         self.batchName = batchName
+        self.timeAx = timeAx
 
         #Figure out appropriate number of rotlines per env
         comm = MPI.COMM_WORLD
@@ -1532,8 +1564,9 @@ class impactsim(batchjob):
         #Total Lines
         self.Ntot = self.Npt * self.Nb
 
-        self.print = True
-        self.printMulti = True
+        self.print = printOut
+        self.printMulti = printMulti
+        self.printSim = printSim
 
         self.N = N
         self.labels = np.round(np.linspace(b0,b1,Nb), 4)
@@ -1589,6 +1622,7 @@ def plotBatch(batchName, redo = False):
     myBatch.findRank()
     if redo: myBatch.redoStats()
     else: myBatch.doStats()
+    return myBatch
         
         
         
