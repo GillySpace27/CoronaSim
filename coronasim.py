@@ -96,6 +96,12 @@ class environment:
     lam0 = 200
     lamPm = 0.5
 
+    fullMin = 0
+    fullMax = 0
+    fullMean = 0
+    fullMedian = 0
+    mapCount = 0
+
 
     streamRand = np.random.RandomState()
     primeRand = np.random.RandomState(primeSeed)
@@ -113,8 +119,8 @@ class environment:
         print('Loading Environment: ' + str(self.thisLabel) +'...', end = '', flush = True)
 
         self.__loadBMap()
-        self.__labelStreamers()
-        self.analyze_BMap()
+
+        self.analyze_BMap2()
 
         #Load Xi
         self.xiFile1 = self.def_xiFile1 
@@ -143,6 +149,212 @@ class environment:
 
         print("Done")
         print('')
+
+
+  ## Magnets ##########################################################################
+        
+    def __loadBMap(self):
+        Bobj = io.readsav(self.Bfile)
+        self.BMap_raw = Bobj.get('data_cap')
+
+        sigma = 4
+        self.BMap_smoothed = ndimage.filters.gaussian_filter(self.BMap_raw, sigma)
+
+        #plt.imshow((np.abs(self.BMap_smoothed)))
+        #plt.colorbar()
+        #plt.show()
+
+        self.__processBMap()
+
+        self.BMap_x = Bobj.get('x_cap')
+        self.BMap_y = Bobj.get('y_cap')
+        #self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_smoothed)
+        self.BMap = self.voroBMap 
+
+    def __processBMap(self, thresh = 0.9):
+
+        #Find all above the threshold and label
+        bdata = np.abs(self.BMap_smoothed)
+        blist = bdata.flatten().tolist()
+        bmean =  np.mean([v for v in blist if v!=0])
+        bmask = bdata > bmean * thresh
+        label_im, nb_labels = ndimage.label(bmask)
+        
+        #Create seeds for voronoi
+        coord = ndimage.maximum_position(bdata, label_im, np.arange(1, nb_labels))
+
+        #Get voronoi transform
+        self.label_im, self.nb_labels, self.voroBMap = self.__voronoify_sklearn(label_im, coord, bdata)
+        
+                    ##Add in threshold regions
+                    #highLabelIm = label_im + self.nb_labels
+                    #self.label_im *= np.logical_not(bmask)
+                    #self.label_im += highLabelIm * bmask
+        
+        #Clean Edges
+        validMask = self.BMap_raw != 0
+        self.label_im *= validMask
+        self.voroBMap *= validMask
+        
+        if False: #Plot Slice of Map
+            #(label_im + 40) * validMask 
+            plt.imshow(self.voroBMap, cmap = 'jet', interpolation='none')
+            plt.colorbar()
+            plt.title('Voronoi Average')
+            #plt.imshow(highLabelIm, cmap = 'Set1', interpolation='none', alpha = 0.5)
+            #plt.xlim(600,950)
+            #plt.ylim(350,650)
+            #coordinates = []
+            #for co in coord: coordinates.append(co[::-1])
+            #for co in coordinates:
+            #    plt.scatter(*co, c='r')
+            plt.show()
+            #plt.figure()
+            #plt.imshow(self.BMap_smoothed)
+            #plt.colorbar()
+            #plt.show()
+        return
+
+    def __voronoify_sklearn(self, I, seeds, data):
+        import sklearn.neighbors as nb
+        #Uses the voronoi algorithm to assign stream labels
+        tree_sklearn = nb.KDTree(seeds)
+        pixels = ([(r,c) for r in range(I.shape[0]) for c in range(I.shape[1])])
+        d, pos = tree_sklearn.query(pixels)
+        cells = defaultdict(list)
+
+        for i in range(len(pos)):
+            cells[pos[i][0]].append(pixels[i])
+
+        I2 = I.copy()
+        I3 = I.copy().astype('float32')
+        label = 0
+        for idx in cells.values():
+            idx = np.array(idx)
+            label += 1
+            mean_col = data[idx[:,0], idx[:,1]].mean() #The pretty pictures part
+            I2[idx[:,0], idx[:,1]] = label
+            I3[idx[:,0], idx[:,1]] = mean_col
+        #for point in I3: print(point)
+        return I2, label, I3
+
+    def analyze_BMap(self):
+        #print('')
+        #Find the number of pixels for each label
+        labels = np.arange(0, self.nb_labels+1) - 0.5
+        hist, bin_edges = np.histogram(self.label_im, bins = labels)
+        #Get rid of region zero
+        hist = np.delete(hist, 0)
+        labels = np.delete(labels, [0, self.nb_labels])
+
+        ##Plot Hist
+        #plt.bar(labels, hist)
+        #plt.xlabel('Region Label')
+        #plt.ylabel('Number of Pixels')
+        #plt.show()
+
+        #Find a histogram of the region areas in terms of pixel count
+        bins2 = np.arange(0, np.max(hist))
+        hist2, bin_edges2 = np.histogram(hist, bins = 30)
+
+        area_pixels = np.delete(bin_edges2, len(bin_edges2)-1)
+
+        ##Plot Hist
+        #width = (area_pixels[1] - area_pixels[0])*0.8
+        #plt.bar(area_pixels, hist2 , width = width)
+        #plt.xlabel('Pixel Area')
+        #plt.ylabel('Number of Regions')
+        #plt.show()
+
+        #Find the area of a pixel in Mm
+        pixWidth_rx = np.abs(self.BMap_x[1] - self.BMap_x[0])
+        pixWidth_Mm = self.r_Mm * pixWidth_rx
+        pixArea_Mm = pixWidth_Mm**2
+
+        #Convert the area in pixels to an equivalent radius in Mm
+        area_Mm = area_pixels * pixArea_Mm
+        radius_Mm = np.sqrt(area_Mm/ np.pi)
+
+        #Plot Hist
+
+        plt.plot(radius_Mm, hist2, label = self.thisLabel)
+        plt.title('Distribution of Region Sizes')
+        plt.xlabel('Radius (Mm)')
+        plt.ylabel('Number of Regions')
+        plt.legend()
+        #plt.show()
+
+    def analyze_BMap2(self, NENV = 6):
+        fullMap = np.abs(self.BMap_smoothed.flatten())
+        thisMap = [x for x in fullMap if not x == 0]
+
+        min = np.min(thisMap)
+        max = np.max(thisMap)
+        mean = np.mean(thisMap)
+        median = np.median(thisMap)
+
+        environment.fullMin += min
+        environment.fullMax += max
+        environment.fullMean += mean
+        environment.fullMedian += median
+        environment.mapCount += 1
+
+        plt.hist(thisMap, histtype = 'step', bins = 100, label = self.thisLabel)
+
+        if environment.mapCount == NENV:
+            environment.fullMin /= NENV
+            environment.fullMax /= NENV
+            environment.fullMean /= NENV
+            environment.fullMedian /= NENV
+
+            plt.yscale('log')
+            plt.xlabel('Field Strength (G)')
+            plt.ylabel('Number of Pixels')
+            plt.suptitle('Histograms of the Field Strengths')
+            plt.title('Mean: ' + str(environment.fullMean) + ', Median: ' + str(environment.fullMedian) +
+                        '\nMin: ' + str(environment.fullMin) + ', Max: ' + str(environment.fullMax))
+            plt.legend()
+            plt.show()
+
+  ## Light ############################################################################
+
+    def makeLamAxis(self, Ln = 100, lam0 = 200, lamPm = 0.5):
+        self.lam0 = lam0
+        self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
+
+
+  ## Velocities #####################################################################
+
+    def findVrms(self, rx, B):
+        #RMS Velocity
+        densfac = self.__findDensFac(B)
+        ur = self.__findUr(rx, densfac)
+        vAlf = self.__findAlf(rx,densfac)
+        vPh = ur + vAlf
+        rho = self.__findRho(rx, densfac)
+        Hfit  = 2.2*(self.fmax/10.)**0.62
+        f = self.fmax + (1.-self.fmax)*np.exp(-((rx-1.)/Hfit)**1.1)
+        return np.sqrt(self.S0*vAlf/((vPh)**2*rx**2*f*rho))
+
+    def __findDensFac(self, B):
+        # Find the density factor
+        if np.abs(B) < np.abs(self.B_thresh):
+            return 1
+        else:
+            return (np.abs(B) / self.B_thresh)**0.5
+
+    def __findUr(self, rx, densfac):
+        #Wind Velocity
+        return self.interp_rx_dat(rx, self.ur_raw) / densfac
+
+    def __findAlf(self, rx, densfac):
+        #Alfen Velocity
+        return self.interp_rx_dat(rx, self.vAlf_raw) / np.sqrt(densfac)
+
+    def __findRho(self, rx, densfac):
+        return self.interp_rx_dat(rx, self.rho_raw) * densfac 
+
+  ## Misc Methods #################################################################
 
     def smallify(self):
         self.label_im = []
@@ -198,167 +410,6 @@ class environment:
 
     def km2ang(self, var):
         return var * 1e13
-
-    ## Velocities #####################################################################
-
-    def findVrms(self, rx, B):
-        #RMS Velocity
-        densfac = self.__findDensFac(B)
-        ur = self.__findUr(rx, densfac)
-        vAlf = self.__findAlf(rx,densfac)
-        vPh = ur + vAlf
-        rho = self.__findRho(rx, densfac)
-        Hfit  = 2.2*(self.fmax/10.)**0.62
-        f = self.fmax + (1.-self.fmax)*np.exp(-((rx-1.)/Hfit)**1.1)
-        return np.sqrt(self.S0*vAlf/((vPh)**2*rx**2*f*rho))
-
-    def __findDensFac(self, B):
-        # Find the density factor
-        if np.abs(B) < np.abs(self.B_thresh):
-            return 1
-        else:
-            return (np.abs(B) / self.B_thresh)**0.5
-
-    def __findUr(self, rx, densfac):
-        #Wind Velocity
-        return self.interp_rx_dat(rx, self.ur_raw) / densfac
-
-    def __findAlf(self, rx, densfac):
-        #Alfen Velocity
-        return self.interp_rx_dat(rx, self.vAlf_raw) / np.sqrt(densfac)
-
-    def __findRho(self, rx, densfac):
-        return self.interp_rx_dat(rx, self.rho_raw) * densfac 
-
-
-  ## Magnets ##########################################################################
-        
-    def __loadBMap(self):
-        Bobj = io.readsav(self.Bfile)
-        self.BMap_raw = Bobj.get('data_cap')
-
-        sigma = 4
-        self.BMap_smoothed = ndimage.filters.gaussian_filter(self.BMap_raw, sigma)
-
-        #plt.imshow((np.abs(self.BMap_smoothed)))
-        #plt.colorbar()
-        #plt.show()
-
-        self.BMap_x = Bobj.get('x_cap')
-        self.BMap_y = Bobj.get('y_cap')
-        self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_smoothed)
-
-    def __labelStreamers(self, thresh = 0.9):
-
-        #Find all above the threshold and label
-        bdata = np.abs(self.BMap_smoothed)
-        blist = bdata.flatten().tolist()
-        bmean =  np.mean([v for v in blist if v!=0])
-        bmask = bdata > bmean * thresh
-        label_im, nb_labels = ndimage.label(bmask)
-        
-        #Create seeds for voronoi
-        coord = ndimage.maximum_position(bdata, label_im, np.arange(1, nb_labels))
-
-        #Get voronoi transform
-        self.label_im, self.nb_labels = self.__voronoify_sklearn(label_im, coord)
-        
-                    ##Add in threshold regions
-                    #highLabelIm = label_im + self.nb_labels
-                    #self.label_im *= np.logical_not(bmask)
-                    #self.label_im += highLabelIm * bmask
-        
-        #Clean Edges
-        validMask = self.BMap_raw != 0
-        self.label_im *= validMask
-        
-        if False: #Plot Slice of Map
-            #(label_im + 40) * validMask 
-            plt.imshow(self.label_im, cmap = 'prism', interpolation='none')
-            plt.colorbar()
-            plt.title('Threshold Regions')
-            #plt.imshow(highLabelIm, cmap = 'Set1', interpolation='none', alpha = 0.5)
-            #plt.xlim(600,950)
-            #plt.ylim(350,650)
-            coordinates = []
-            for co in coord: coordinates.append(co[::-1])
-            for co in coordinates:
-                plt.scatter(*co, c='r')
-            plt.show()
-        return
-
-    def __voronoify_sklearn(self, I, seeds):
-        import sklearn.neighbors as nb
-        #Uses the voronoi algorithm to assign stream labels
-        tree_sklearn = nb.KDTree(seeds)
-        pixels = ([(r,c) for r in range(I.shape[0]) for c in range(I.shape[1])])
-        d, pos = tree_sklearn.query(pixels)
-        cells = defaultdict(list)
-
-        for i in range(len(pos)):
-            cells[pos[i][0]].append(pixels[i])
-
-        I2 = I.copy()
-        label = 0
-        for idx in cells.values():
-            idx = np.array(idx)
-            label += 1
-            #mean_col = I[idx[:,0], idx[:,1]].mode(axis=0) #The pretty pictures part
-            I2[idx[:,0], idx[:,1]] = label
-        return I2, label
-
-    def analyze_BMap(self):
-        #print('')
-        #Find the number of pixels for each label
-        labels = np.arange(0, self.nb_labels+1) - 0.5
-        hist, bin_edges = np.histogram(self.label_im, bins = labels)
-        #Get rid of region zero
-        hist = np.delete(hist, 0)
-        labels = np.delete(labels, [0, self.nb_labels])
-
-        ##Plot Hist
-        #plt.bar(labels, hist)
-        #plt.xlabel('Region Label')
-        #plt.ylabel('Number of Pixels')
-        #plt.show()
-
-        #Find a histogram of the region areas in terms of pixel count
-        bins2 = np.arange(0, np.max(hist))
-        hist2, bin_edges2 = np.histogram(hist, bins = 30)
-
-        area_pixels = np.delete(bin_edges2, len(bin_edges2)-1)
-
-        ##Plot Hist
-        #width = (area_pixels[1] - area_pixels[0])*0.8
-        #plt.bar(area_pixels, hist2 , width = width)
-        #plt.xlabel('Pixel Area')
-        #plt.ylabel('Number of Regions')
-        #plt.show()
-
-        #Find the area of a pixel in Mm
-        pixWidth_rx = np.abs(self.BMap_x[1] - self.BMap_x[0])
-        pixWidth_Mm = self.r_Mm * pixWidth_rx
-        pixArea_Mm = pixWidth_Mm**2
-
-        #Convert the area in pixels to an equivalent radius in Mm
-        area_Mm = area_pixels * pixArea_Mm
-        radius_Mm = np.sqrt(area_Mm/ np.pi)
-
-        #Plot Hist
-
-        plt.plot(radius_Mm, hist2, label = self.thisLabel)
-        plt.title('Distribution of Region Sizes')
-        plt.xlabel('Radius (Mm)')
-        plt.ylabel('Number of Regions')
-        plt.legend()
-        #plt.show()
-
-
-  ## Light ############################################################################
-
-    def makeLamAxis(self, Ln = 100, lam0 = 200, lamPm = 0.5):
-        self.lam0 = lam0
-        self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
 
         
 #envs Class handles creation, saving, and loading of environments
@@ -453,7 +504,10 @@ class simpoint:
     def findFootB(self):
         #Find B
         self.__findfoot_Pos()
-        self.footB = self.env.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
+        #self.footB = self.env.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
+        self.footB = self.env.BMap[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
+                                            self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
+        a = 1
 
     def __findfoot_Pos(self):
         #Find the footpoint of the field line

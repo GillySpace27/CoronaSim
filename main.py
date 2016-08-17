@@ -10,11 +10,11 @@ import sys
 
 if __name__ == '__main__':
 
-    remote = False
+    remote = True
     firstRun = True
     redoStats = False
 
-    batchName = 'time'
+    batchName = 'test'
     impactPoints = 10
     iterations = 1
     b0 = 1.05
@@ -23,16 +23,17 @@ if __name__ == '__main__':
     N_line = (1000, 3000)
     rez = None #[3,3]
     size = [0.002, 0.01]
-    timeAx = np.arange(0,1500)
-    printSim = True
+    timeAx = [0] #np.arange(0,1500)
+    printSim = False
 
-    envsName = 'smoothEnvs'
+    envsName = 'voroMap'
     maxEnvs = 100
+    maxPlotLines = 3
    
     ### Level 3 ### BatchSim
     ###############
     
-    #envs = sim.envs(envsName).processEnvs()
+    envs = sim.envs(envsName).processEnvs()
 
     if False:
         if remote:
@@ -43,50 +44,36 @@ if __name__ == '__main__':
                 myBatch = sim.restartBatch(batchName)        
         else:
             myBatch = sim.plotBatch(batchName, redoStats)
-            myBatch.plotProfiles(10)
+            myBatch.plotProfiles(maxPlotLines)
 
 
+    #### Level 1 ### Simulate
+    ################
 
-    #comm = MPI.COMM_WORLD
-    #rank = comm.Get_rank()
-    #size = comm.Get_size()
-    #root = rank == 0
 
-    ### Level 2 ### MultiSim
-    ###############
+    if False:
+        df = grid.defGrid()
+
+        env = sim.envs(envsName).loadEnvs(1)[0]
+
+        position, target = [10, 3, 1.5], [-10, -3, 1.5]
+        cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
     
+        timeAx = [0] #np.arange(0,2000)
+        cylSim = sim.simulate(cyline, env, [1500, 3000], 1, False, True, timeAx = timeAx)
+        cylSim.setTime()
 
-    #lines = grid.rotLines(6)
-    #lineSims = sim.multisim(lines, env, N = 200)
-    #lineSims.plotLines()
-    #plt.imshow(np.log(lineSims.getLineArray()))
-    #plt.show()
-
-    
-    #lines = grid.rotLines()
-    #lineSims = sim.multisim(lines, env, N = 1000)
-    #plt.pcolormesh(np.log(lineSims.getLineArray()))
-    #plt.show()
+        cylSim.plot('densfac')
+        cylSim.plot2('vLOS','vLOSwind')
 
 
+        df = grid.defGrid()
 
-    ### Level 1 ### Simulate
-    ###############
+        env = sim.envs(envsName).loadEnvs(1)[0]
 
-    df = grid.defGrid()
+        bpoleSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, printOut = True)
+        bpoleSim.plot('alfU1', cmap = 'BuRd')
 
-    env = sim.envs(envsName).loadEnvs(1)[0]
-
-    position, target = [10, 3, 1.5], [-10, -3, 1.5]
-    cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
-    
-    timeAx = [0] #np.arange(0,2000)
-    cylSim = sim.simulate(cyline, env, [1500, 3000], 1, False, True, timeAx = timeAx)
-    cylSim.setTime()
-    cylSim.plot('densfac')
-    cylSim.plot2('vLOS','vLOSwind')
-
-    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
     #bpoleSim.plot('vLOS', scaling = 'none', cmap = 'RdBu' )
 
     #lineSim2 = sim.simulate(df.primeLine, env, N = (1000,10000), findT = True)
@@ -138,6 +125,28 @@ if __name__ == '__main__':
 
     #The whole code in one line. WOO!
     #mySim = sim.simulate(sim.defGrid().bpolePlane, step = 0.1)#.plot('rho', scale = 'log') 
+
+
+    #comm = MPI.COMM_WORLD
+    #rank = comm.Get_rank()
+    #size = comm.Get_size()
+    #root = rank == 0
+
+    ### Level 2 ### MultiSim
+    ###############
+    
+
+    #lines = grid.rotLines(6)
+    #lineSims = sim.multisim(lines, env, N = 200)
+    #lineSims.plotLines()
+    #plt.imshow(np.log(lineSims.getLineArray()))
+    #plt.show()
+
+    
+    #lines = grid.rotLines()
+    #lineSims = sim.multisim(lines, env, N = 1000)
+    #plt.pcolormesh(np.log(lineSims.getLineArray()))
+    #plt.show()
 
 
     ### Level 0 ### Simpoint 
