@@ -33,7 +33,7 @@ if __name__ == '__main__':
     ### Level 3 ### BatchSim
     ###############
     
-    envs = sim.envs(envsName).processEnvs()
+    #envs = sim.envs(envsName).processEnvs()
 
     if False:
         if remote:
@@ -51,7 +51,7 @@ if __name__ == '__main__':
     ################
 
 
-    if False:
+    if True:
         df = grid.defGrid()
 
         env = sim.envs(envsName).loadEnvs(1)[0]
@@ -59,20 +59,20 @@ if __name__ == '__main__':
         position, target = [10, 3, 1.5], [-10, -3, 1.5]
         cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
     
-        timeAx = [0] #np.arange(0,2000)
+        timeAx = [0] #np.arange(0,1500)
         cylSim = sim.simulate(cyline, env, [1500, 3000], 1, False, True, timeAx = timeAx)
-        cylSim.setTime()
+        #cylSim.getProfile()
 
         cylSim.plot('densfac')
-        cylSim.plot2('vLOS','vLOSwind')
+        #cylSim.plot2('vLOS','vLOSwind')
 
 
-        df = grid.defGrid()
+        #df = grid.defGrid()
 
-        env = sim.envs(envsName).loadEnvs(1)[0]
+        #env = sim.envs(envsName).loadEnvs(1)[0]
 
-        bpoleSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, printOut = True)
-        bpoleSim.plot('alfU1', cmap = 'BuRd')
+        #bpoleSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, printOut = True)
+        #bpoleSim.plot('alfU1', cmap = 'BuRd')
 
     #bpoleSim.plot('vLOS', scaling = 'none', cmap = 'RdBu' )
 
@@ -151,8 +151,10 @@ if __name__ == '__main__':
 
     ### Level 0 ### Simpoint 
     ###############
-    #env = sim.envs('envs').loadEnvs(1)[0]
+    #env = sim.envs(envsName).loadEnvs(1)[0]
+    #df = grid.defGrid()
     #thisPoint = sim.simpoint(grid = df.bpolePlane, env = env) 
+    #thisPoint.setTime()
     #thisPoint.show()
 
 

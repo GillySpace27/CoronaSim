@@ -640,7 +640,7 @@ class simpoint:
             self.twave = self.twave_fit  
         self.twave_rat = self.twave/self.twave_fit
         
-    def setTime(self,t):
+    def setTime(self,t = 0):
         #Updates velocities to input time
         self.findWaveSpeeds(t)
         self.__findVLOS()
