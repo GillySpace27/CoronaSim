@@ -15,12 +15,12 @@ if __name__ == '__main__':
     redoStats = False
 
     batchName = 'test'
-    impactPoints = 10
+    impactPoints = 2
     iterations = 1
     b0 = 1.05
     b1 = 1.5
 
-    N_line = (1000, 3000)
+    N_line = (2000)
     rez = None #[3,3]
     size = [0.002, 0.01]
     timeAx = [0] #np.arange(0,1500)
@@ -30,12 +30,23 @@ if __name__ == '__main__':
     maxEnvs = 100
     maxPlotLines = 3
    
+
+
+    #x = np.loadtxt('fomo-output2.txt')
+
+    #lam = x[:,2]
+    #int = x[:,3]
+
+    #plt.plot(lam, int)
+    #plt.show()
+
+
     ### Level 3 ### BatchSim
     ###############
     
     #envs = sim.envs(envsName).processEnvs()
 
-    if False:
+    if True:
         if remote:
             if firstRun:       
                 envs = sim.envs(envsName).loadEnvs(maxEnvs)
@@ -51,19 +62,19 @@ if __name__ == '__main__':
     ################
 
 
-    if True:
+    if False:
         df = grid.defGrid()
 
         env = sim.envs(envsName).loadEnvs(1)[0]
 
-        position, target = [10, 3, 1.5], [-10, -3, 1.5]
-        cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
+        #position, target = [10, 3, 1.5], [-10, -3, 1.5]
+        #cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
     
-        timeAx = [0] #np.arange(0,1500)
-        cylSim = sim.simulate(cyline, env, [1500, 3000], 1, False, True, timeAx = timeAx)
-        #cylSim.getProfile()
+        #timeAx = [0] #np.arange(0,1500)
+        #cylSim = sim.simulate(cyline, env, [1500, 3000], 1, False, True, timeAx = timeAx)
+        ##cylSim.getProfile()
 
-        cylSim.plot('densfac')
+        #cylSim.plot('densfac')
         #cylSim.plot2('vLOS','vLOSwind')
 
 
@@ -71,8 +82,9 @@ if __name__ == '__main__':
 
         #env = sim.envs(envsName).loadEnvs(1)[0]
 
-        #bpoleSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, printOut = True)
-        #bpoleSim.plot('alfU1', cmap = 'BuRd')
+        bpoleSim = sim.simulate(df.bpolePlane, env, N = 750, findT = False, printOut = True)
+        bpoleSim.setTime()
+        bpoleSim.plot('intensity')
 
     #bpoleSim.plot('vLOS', scaling = 'none', cmap = 'RdBu' )
 
@@ -189,8 +201,8 @@ if __name__ == '__main__':
         
         
         
-        
-        
+#import calccorrect as cc
+#cc.message()        
         
         
         

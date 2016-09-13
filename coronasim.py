@@ -558,8 +558,8 @@ class simpoint:
         #Find all of the wave velocities
         self.t1 = t - self.twave + self.alfT1
         self.t2 = t - self.twave + self.alfT2
-        self.alfU1 = self.vRms*self.xi1(self.t1)
-        self.alfU2 = self.vRms*self.xi2(self.t2)
+        self.alfU1 = self.vRms*self.xi1(self.t1)*np.sin(self.omega * self.t1)
+        self.alfU2 = self.vRms*self.xi2(self.t2)*np.sin(self.omega * self.t2)
         self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
         self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
         self.pU = [self.ur, self.uTheta, self.uPhi]
@@ -570,10 +570,12 @@ class simpoint:
     def __streamInit(self):
         self.__findStreamIndex()
         self.env.streamRand.seed(int(self.streamIndex))
-        thisRand = self.env.streamRand.random_sample(3)
+        thisRand = self.env.streamRand.random_sample(5)
         self.alfT1 =  thisRand[0] * self.env.last_xi1_t
         self.alfT2 =  thisRand[1] * self.env.last_xi2_t
         self.alfAngle = thisRand[2] * 2 * np.pi
+        self.omega = 0.1
+
 
     def __findUr(self):
         #Wind Velocity
@@ -989,23 +991,52 @@ class simulate:
         
     def lineProfile(self):
         #Get a line profile integrated over time
+        fomo = True
+        if fomo: self.fomoInit()
         profile = np.zeros_like(self.env.lamAx)
         if self.print and self.root: 
             print('\nGenerating Profile...')
-            bar = pb.ProgressBar(len(self.sPoints) * len(self.timeAx) * len(self.env.lamAx))
+            if not fomo: bar = pb.ProgressBar(len(self.sPoints) * len(self.timeAx) * len(self.env.lamAx))
+        cStep = 0
         for point, step in zip(self.sPoints, self.steps):
             for tt in self.timeAx:
                 point.setTime(tt)
-                index = 0
-                for lam in self.env.lamAx:
-                    profile[index] += point.findIntensity(self.env.lam0, lam) * step
-                    index += 1
-                    if self.print and self.root:
-                        bar.increment()
-                        bar.display()
-        self.profile = profile
+                cStep += step
+                if fomo: self.fomoPoint(point, cStep)
+                else:
+                    index = 0
+                    for lam in self.env.lamAx:
+                        profile[index] += point.findIntensity(self.env.lam0, lam) * step
+                        index += 1
+                        if self.print and self.root:
+                            bar.increment()
+                            bar.display()
+        if fomo: self.profile = self.fomoProfile()
+        else: self.profile = profile
         if self.print and self.root: bar.display(True)
         return profile
+
+    def fomoInit(self):
+        #Initialize FoMo
+        self.fomoFolder = '..' + os.path.sep + 'dat' + os.path.sep + 'fomo'
+        self.fomoFileName = self.fomoFolder + os.path.sep + "simfile_" + str(self.rank)
+        if not os.path.exists(self.fomoFolder):
+            os.mkdir(self.fomoFolder)
+        self.fomoFile = open(self.fomoFileName, "w")
+
+    def fomoPoint(self, point, cStep):
+        #Add this point to fomo
+        x,y,z = 0, 0, cStep*self.grid.norm*self.env.r_Mm  #= [x*self.env.r_Mm for x in point.cPos]
+        rho = point.rho / self.env.mi
+        vx, vy, vz = 0, 0, point.vLOS/100   #= [x/100 for x in point.cU]
+        string = "{} {} {} {} {} {} {} {}\n".format(x, y, z, rho, point.T, vx, vy, vz)
+        self.fomoFile.write(string)
+
+    def fomoProfile(self):
+        #Make fomo output a line Profile
+        self.fomoFile.close()
+        assert(False)
+        return np.zeros_like(self.env.lamAx)
 
 ## Time Dependence ######################################################
     def setTime(self, tt = 0):
