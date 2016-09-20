@@ -558,8 +558,8 @@ class simpoint:
         #Find all of the wave velocities
         self.t1 = t - self.twave + self.alfT1
         self.t2 = t - self.twave + self.alfT2
-        self.alfU1 = self.vRms*self.xi1(self.t1)
-        self.alfU2 = self.vRms*self.xi2(self.t2)
+        self.alfU1 = self.vRms*self.xi1(self.t1)*np.sin(self.omega * self.t1)
+        self.alfU2 = self.vRms*self.xi2(self.t2)*np.sin(self.omega * self.t2)
         self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
         self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
         self.pU = [self.ur, self.uTheta, self.uPhi]
@@ -574,6 +574,7 @@ class simpoint:
         self.alfT1 =  thisRand[0] * self.env.last_xi1_t
         self.alfT2 =  thisRand[1] * self.env.last_xi2_t
         self.alfAngle = thisRand[2] * 2 * np.pi
+        self.omega = 0.1
 
     def __findUr(self):
         #Wind Velocity
