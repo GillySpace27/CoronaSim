@@ -856,7 +856,7 @@ class simulate:
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
-    def plot(self, property, dim = None, scaling = 'None', cmap = 'jet', axes = True):
+    def plot(self, property, dim = None, scaling = 'None', cmap = 'jet', axes = True, center = False):
         scaleProp, datSum = self.get(property, dim, scaling)
         self.fig, ax = self.grid.plot(iL = self.iL)
         if type(self.grid) is grid.sightline:
@@ -873,7 +873,11 @@ class simulate:
             datSum = datSum / self.N
         elif type(self.grid) is grid.plane:
             #Image Plot
-            im = ax.imshow(scaleProp, interpolation='none', cmap = cmap)
+            if center:
+                v = np.nanmax(np.abs(scaleProp))
+                im = ax.imshow(scaleProp, interpolation='none', cmap = cmap, vmin = -v, vmax = v)
+            else:
+                im = ax.imshow(scaleProp, interpolation='none', cmap = cmap)
             self.fig.subplots_adjust(right=0.89)
             cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
             self.fig.colorbar(im, cax=cbar_ax)
