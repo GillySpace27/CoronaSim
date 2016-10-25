@@ -41,12 +41,11 @@ from mpi4py import MPI
 
 np.seterr(invalid = 'ignore')
 
-    
 def absPath(path):
     #Converts a relative path to an absolute path
     script_dir = os.path.dirname(os.path.abspath(__file__))   
-    return os.path.join(script_dir, path)
-    
+    return os.path.join(script_dir, path)    
+
 ####################################################################
 ##                          Environment                           ##
 ####################################################################
@@ -61,10 +60,10 @@ class environment:
     rel_def_Bfile = datFolder + 'mgram_iseed0033.sav'    
     def_Bfile = absPath(rel_def_Bfile)
 
-    rel_def_xiFile1 = datFolder + 'xi_1.dat'    
+    rel_def_xiFile1 = datFolder + 'new_xi1.dat'    
     def_xiFile1 = absPath(rel_def_xiFile1)
 
-    rel_def_xiFile2 = datFolder + 'xi_2.dat'    
+    rel_def_xiFile2 = datFolder + 'new_xi2.dat'    
     def_xiFile2 = absPath(rel_def_xiFile2)
 
     rel_def_bkFile = datFolder + 'plasma_background.dat'    
@@ -125,16 +124,20 @@ class environment:
         #Load Xi
         self.xiFile1 = self.def_xiFile1 
         self.xiFile2 = self.def_xiFile2 
+        #plt.figure()
 
         x = np.loadtxt(self.xiFile1, skiprows=1)
         self.xi1_t = x[:,0]
         self.xi1_raw = x[:,1]
         self.last_xi1_t = x[-1,0]
+        #plt.plot(self.xi1_t, self.xi1_raw)
 
         y = np.loadtxt(self.xiFile2, skiprows=1)
         self.xi2_t = y[:,0]
         self.xi2_raw = y[:,1]
         self.last_xi2_t = y[-1,0]
+        #plt.plot(self.xi2_t, self.xi2_raw)
+        #plt.show()
 
         #Load Plasma Background
         if bkFile is None: self.bkFile = self.def_bkFile 
@@ -547,7 +550,7 @@ class simpoint:
 
     def findSpeeds(self, t = 0):
         #Find all of the various velocities
-        self.ur = self.__findUr()
+        self.ur = 0 #self.__findUr() #WIND VELOCITY
         self.vAlf = self.__findAlf()
         self.vPh = self.__findVPh()
         self.vRms = self.__findvRms()
@@ -558,8 +561,8 @@ class simpoint:
         #Find all of the wave velocities
         self.t1 = t - self.twave + self.alfT1
         self.t2 = t - self.twave + self.alfT2
-        self.alfU1 = self.vRms*self.xi1(self.t1)*np.sin(self.omega * self.t1)
-        self.alfU2 = self.vRms*self.xi2(self.t2)*np.sin(self.omega * self.t2)
+        self.alfU1 = self.vRms*self.xi1(self.t1) #*np.sin(self.omega * self.t1) #SIN WAVE UNDER ENV
+        self.alfU2 = self.vRms*self.xi2(self.t2) #*np.sin(self.omega * self.t2) #SIN WAVE UNDER ENV
         self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
         self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
         self.pU = [self.ur, self.uTheta, self.uPhi]
@@ -574,7 +577,7 @@ class simpoint:
         self.alfT1 =  thisRand[0] * self.env.last_xi1_t
         self.alfT2 =  thisRand[1] * self.env.last_xi2_t
         self.alfAngle = thisRand[2] * 2 * np.pi
-        self.omega = 0.1
+        self.omega = 0.01
 
     def __findUr(self):
         #Wind Velocity
@@ -582,7 +585,7 @@ class simpoint:
         return self.interp_rx_dat(self.env.ur_raw) / self.densfac
 
     def __findAlf(self):
-        #Alfen Velocity
+        #Alfven Velocity
         #return 10.0 / (self.f * self.rx * self.rx * np.sqrt(4.*np.pi*self.rho))
         return self.interp_rx_dat(self.env.vAlf_raw) / np.sqrt(self.densfac)
 
@@ -592,7 +595,7 @@ class simpoint:
     
     def __findvRms(self):
         #RMS Velocity
-        S0 = 7.0e5 #* np.sqrt(1/2)
+        S0 = 7.0e5 * np.sqrt(1/2)
         return np.sqrt(S0*self.vAlf/((self.vPh)**2 * 
             self.rx**2*self.f*self.rho))
 
@@ -600,6 +603,7 @@ class simpoint:
         if nGrad is not None: self.nGrad = nGrad
         else: self.nGrad = self.grid.ngrad
         self.vLOS = np.dot(self.nGrad, self.cU)
+        #self.vLOS = self.alfU1 #FOR TESTING
         return self.vLOS
 
     def __findVLOS2(self, vel, nGrad = None):
@@ -1517,9 +1521,9 @@ class batchjob:
 
             self.statV[4][0].append(np.mean(allKurt))
             self.statV[4][1].append(np.std(allKurt))
-        print(self.statV[2][0])
-        print('')
-        print(self.statV[2][1])
+        #print(self.statV[2][0])
+        #print('')
+        #print(self.statV[2][1])
 
     def __mean2V(self, mean):
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
@@ -1536,16 +1540,17 @@ class batchjob:
         #    (2 * self.env.KB * T / self.env.mi)**2))
          
     def plotProfiles(self, max):
-        for profiles, impact in zip(self.profiles, self.doneLabels):
-            plt.figure()
-            plt.title('Impact: ' + str(impact))
-            plt.xlabel('Wavelength')
-            count = 0
-            for profile in profiles:
-                if count < max:
-                    plt.plot(self.env.lamAx, profile)
-                    count += 1
-            plt.show()
+        if max is not None:
+            for profiles, impact in zip(self.profiles, self.doneLabels):
+                plt.figure()
+                plt.title('Impact: ' + str(impact))
+                plt.xlabel('Wavelength')
+                count = 0
+                for profile in profiles:
+                    if count < max:
+                        plt.plot(self.env.lamAx, profile)
+                        count += 1
+                plt.show()
                   
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)
@@ -1589,6 +1594,9 @@ class batchjob:
                 for vRms in self.vRmsList:
                     ax.plot(labels, vRms, label = str(thisBlist.pop(0)) + 'G')
                 ax.legend(loc = 4)
+                #Put numbers on plot of widths
+                for xy in zip(labels, self.statV[mm][0]): 
+                    ax.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
             if mm == 1 or mm == 3 or mm == 4: #Plot a zero line
                 ax.plot(labels, np.zeros_like(labels))
             ax.set_title(titles[mm])
@@ -1734,7 +1742,8 @@ def plotBatch(batchName, redo = False):
     else: myBatch.doStats()
     return myBatch
         
-        
+
+            
         
         
         

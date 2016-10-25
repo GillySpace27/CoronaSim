@@ -10,13 +10,16 @@ import sys
 
 if __name__ == '__main__':
 
-    remote = True
+    mainProgram = True
+    simOne = False
+
+    remote = False
     firstRun = True
     redoStats = False
 
     batchName = 'test'
     impactPoints = 10
-    iterations = 1
+    iterations = 2
     b0 = 1.05
     b1 = 1.5
 
@@ -26,16 +29,21 @@ if __name__ == '__main__':
     timeAx = [0] #np.arange(0,1500)
     printSim = False
 
-    envsName = 'voroMap'
+    envsName = 'voroMap2'
     maxEnvs = 100
+
+    showProfiles = False
     maxPlotLines = 3
+
    
+
+
     ### Level 3 ### BatchSim
     ###############
     
     #envs = sim.envs(envsName).processEnvs()
 
-    if False:
+    if mainProgram:
         if remote:
             if firstRun:       
                 envs = sim.envs(envsName).loadEnvs(maxEnvs)
@@ -44,14 +52,14 @@ if __name__ == '__main__':
                 myBatch = sim.restartBatch(batchName)        
         else:
             myBatch = sim.plotBatch(batchName, redoStats)
-            myBatch.plotProfiles(maxPlotLines)
+            if showProfiles: myBatch.plotProfiles(maxPlotLines)
 
 
     #### Level 1 ### Simulate
     ################
 
 
-    if True:
+    if simOne:
         df = grid.defGrid()
 
         env = sim.envs(envsName).loadEnvs(1)[0]
