@@ -66,7 +66,7 @@ class environment:
     rel_def_xiFile2 = datFolder + 'new_xi2.dat'    
     def_xiFile2 = absPath(rel_def_xiFile2)
 
-    rel_def_bkFile = datFolder + 'plasma_background.dat'    
+    rel_def_bkFile = datFolder + 'gilly_background_cvb07.dat'    
     def_bkFile =absPath(rel_def_bkFile)
     
     #Parameters
@@ -102,7 +102,7 @@ class environment:
     mapCount = 0
 
 
-    streamRand = np.random.RandomState()
+    streamRand = np.random.RandomState() #Gets seeded by streamindex
     primeRand = np.random.RandomState(primeSeed)
 
     def __init__(self, Bfile = None, bkFile = None):
@@ -115,7 +115,7 @@ class environment:
         else: self.Bfile = self.__relPath(Bfile)
 
         self.thisLabel = self.Bfile.rsplit(os.path.sep, 1)[-1]    
-        print('Loading Environment: ' + str(self.thisLabel) +'...', end = '', flush = True)
+        print('Processing Environment: ' + str(self.thisLabel) +'...', end = '', flush = True)
 
         self.__loadBMap()
 
@@ -416,7 +416,7 @@ class environment:
 
         
 #envs Class handles creation, saving, and loading of environments
-class envs:
+class envrs:
 
     #envs Class handles creation, saving, and loading of environments
     
@@ -440,27 +440,53 @@ class envs:
             ind += 1
         return envs
  
-    def __saveEnvs(self, envs, maxN = 1e8, name = 'environment'):
+    def __saveEnvs(self, maxN = 1e8, name = 'environment'):
         ind = 0
-        for env in envs:
+        for env in self.envs:
             if ind < maxN: env.save(absPath(self.dirPath + self.slash + name +'_' + str(ind) + '.env'))
             ind += 1
     
     def loadEnvs(self, maxN = 1e8):
         files = glob.glob(absPath(self.dirPath + self.slash + '*.env'))
-        envs = []
+        self.envs = []
         ind = 0
         for file in files:
-            if ind < maxN: envs.append(self.__loadEnv(file))
+            if ind < maxN: self.envs.append(self.__loadEnv(file))
             ind += 1
-        assert len(envs) > 0
-        return envs
+        assert len(self.envs) > 0
+        return self.envs
         
+    def showEnvs(self, maxN = 1e8):
+        try: self.envs
+        except: self.loadEnvs(maxN)
+        #Print all properties and values
+        ind = 0
+        for env in self.envs:
+            if ind < maxN:
+                myVars = vars(env)
+                print("\nEnv {} Properties".format(ind))
+                for ii in sorted(myVars.keys()):
+                    if isinstance(myVars[ii], str):
+                        print(ii, " : ", myVars[ii].rsplit(os.path.sep, 1)[-1])
+                for ii in sorted(myVars.keys()):
+                    if not isinstance(myVars[ii], (str, np.ndarray)):
+                        print(ii, " : ", myVars[ii])
+                envVars = vars(environment)
+                for ii in sorted(envVars.keys()):
+                    if isinstance(envVars[ii], (int, float)):
+                        print(ii, " : ", envVars[ii])
+                ind += 1 
+                print("")
+        return self.envs
+
+    def Vars(self):
+        return vars(self) 
+
     def processEnvs(self, maxN = 1e8, name = 'environment'):
-        envs = self.__createEnvs(maxN)
-        self.__saveEnvs(envs, maxN, name)
+        self.envs = self.__createEnvs(maxN)
+        self.__saveEnvs(maxN, name)
         plt.show(False)
-        return envs
+        return self.envs
             
        
 ####################################################################                            
@@ -550,7 +576,7 @@ class simpoint:
 
     def findSpeeds(self, t = 0):
         #Find all of the various velocities
-        self.ur = 0 #self.__findUr() #WIND VELOCITY
+        self.ur = self.__findUr() #WIND VELOCITY
         self.vAlf = self.__findAlf()
         self.vPh = self.__findVPh()
         self.vRms = self.__findvRms()
@@ -595,7 +621,7 @@ class simpoint:
     
     def __findvRms(self):
         #RMS Velocity
-        S0 = 7.0e5 * np.sqrt(1/2)
+        S0 = 7.0e5 #* np.sqrt(1/2)
         return np.sqrt(S0*self.vAlf/((self.vPh)**2 * 
             self.rx**2*self.f*self.rho))
 
@@ -704,8 +730,7 @@ class simpoint:
         discreteRx = self.env.rx_raw[rxInd]
         diff = self.rx - discreteRx
         diffstep = diff / step
-        val =  val1+ diffstep*(slope)
-        return val
+        return val1+ diffstep*(slope)
 
     def r2rx(self, r):
         return r/self.env.rstar

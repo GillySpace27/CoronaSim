@@ -11,7 +11,7 @@ import sys
 if __name__ == '__main__':
 
     mainProgram = False
-    simOne = True
+    simOne = False
 
     remote = False
     firstRun = True
@@ -29,20 +29,21 @@ if __name__ == '__main__':
     timeAx = [0] #np.arange(0,1500)
     printSim = False
 
-    envsName = 'voroMap2'
+    envsName = 'envs-11-11-16'
     maxEnvs = 100
 
     showProfiles = False
     maxPlotLines = 3
 
    
-
+    ### Process Envs ###
+    #envrs1 = sim.envrs(envsName)
+    #envs = envrs1.processEnvs(maxEnvs)
+    #envrs1.showEnvs(maxEnvs)
 
     ### Level 3 ### BatchSim
     ###############
     
-    #envs = sim.envs(envsName).processEnvs()
-
     if mainProgram:
         if remote:
             if firstRun:       
