@@ -9,17 +9,18 @@ from mpi4py import MPI
 import sys
 
 if __name__ == '__main__':
-
-    mainProgram = False
+    #Which part of the program should run?
+    mainProgram = True
     simOne = False
 
-    remote = False
+    #Branch Flags
+    remote = True
     firstRun = True
     redoStats = False
 
     batchName = 'test'
     impactPoints = 10
-    iterations = 10
+    iterations = 2
     b0 = 1.05
     b1 = 1.5
 
@@ -27,12 +28,12 @@ if __name__ == '__main__':
     rez = None #[3,3]
     size = [0.002, 0.01]
     timeAx = [0] #np.arange(0,1500)
-    printSim = False
+    printSim = True
 
     envsName = 'envs-11-11-16'
     maxEnvs = 100
 
-    showProfiles = False
+    showProfiles = True
     maxPlotLines = 3
 
    
@@ -47,7 +48,7 @@ if __name__ == '__main__':
     if mainProgram:
         if remote:
             if firstRun:       
-                envs = sim.envs(envsName).loadEnvs(maxEnvs)
+                envs = sim.envrs(envsName).loadEnvs(maxEnvs)
                 myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim)
             else:
                 myBatch = sim.restartBatch(batchName)        
@@ -63,7 +64,7 @@ if __name__ == '__main__':
     if simOne:
         df = grid.defGrid()
 
-        env = sim.envs(envsName).loadEnvs(1)[0]
+        env = sim.envrs(envsName).loadEnvs(1)[0]
 
         #position, target = [10, 3, 1.5], [-10, -3, 1.5]
         #cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])

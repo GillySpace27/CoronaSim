@@ -296,13 +296,19 @@ class environment:
         mean = np.mean(thisMap)
         median = np.median(thisMap)
 
+
+        bmin = 2
+        bmax = 50
+
+        inside = 100*len([x for x in thisMap if bmin<x<bmax])/len(thisMap)
+
         environment.fullMin += min
         environment.fullMax += max
         environment.fullMean += mean
         environment.fullMedian += median
         environment.mapCount += 1
 
-        plt.hist(thisMap, histtype = 'step', bins = 100, label = self.thisLabel)
+        plt.hist(thisMap, histtype = 'step', bins = 100, label = "%s, %0.2f%%" % (self.thisLabel, inside))
 
         if environment.mapCount == NENV:
             environment.fullMin /= NENV
@@ -310,6 +316,8 @@ class environment:
             environment.fullMean /= NENV
             environment.fullMedian /= NENV
 
+            plt.axvline(bmin)
+            plt.axvline(bmax)
             plt.yscale('log')
             plt.xlabel('Field Strength (G)')
             plt.ylabel('Number of Pixels')
@@ -503,7 +511,8 @@ class simpoint:
         self.cPos = cPos
         self.pPos = self.cart2sph(self.cPos)
         self.rx = self.r2rx(self.pPos[0])
-        
+        self.zx = self.rx - 1
+
         if findT is None:
             self.findT = self.grid.findT
         else: self.findT = findT
@@ -563,10 +572,20 @@ class simpoint:
 
     def __findDensFac(self):
         # Find the density factor
-        if np.abs(self.footB) < np.abs(self.env.B_thresh):
-            return 1
-        else:
-            return (np.abs(self.footB) / self.env.B_thresh)**0.5
+        Bmin = 3
+        Bmax = 50
+
+        if self.footB < Bmin: self.B0 = Bmin
+        elif self.footB > Bmax: self.B0 = Bmax
+        else: self.B0 = self.footB
+        dinfty = (self.B0/15)**1.18
+
+        return 0.34 + (dinfty - 0.34)*0.5*(1. + np.tanh((self.zx - 0.37)/0.26))
+
+        #if np.abs(self.footB) < np.abs(self.env.B_thresh):
+        #    return 1
+        #else:
+        #    return (np.abs(self.footB) / self.env.B_thresh)**0.5
 
     def __findRho(self):
         return self.interp_rx_dat(self.env.rho_raw) * self.densfac  
