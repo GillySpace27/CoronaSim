@@ -1,6 +1,8 @@
 
 import numpy as np
 #import progressBar as pb
+import matplotlib
+matplotlib.use('qt4agg')
 import matplotlib.pyplot as plt
 import gridgen as grid
 import coronasim as sim
@@ -8,19 +10,32 @@ import time
 from mpi4py import MPI
 import sys
 
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+root = rank == 0
+size = comm.Get_size()
+
 if __name__ == '__main__':
+
+    #Environment Parameters
+    envsName = 'envs-chianti'
+    maxEnvs = 1
+
     #Which part of the program should run?
     mainProgram = True
+    try: #Main program Parameters
+        remote = True 
+        firstRun = True
+        mainplot = True
+        redoStats = False
+    except: pass
     simOne = False
+    processEnvironments = False
 
-    #Branch Flags
-    remote = True
-    firstRun = True
-    redoStats = False
-
+    #Batch Parameters
     batchName = 'test'
-    impactPoints = 10
-    iterations = 2
+    impactPoints = 5
+    iterations = 3
     b0 = 1.05
     b1 = 1.5
 
@@ -28,62 +43,71 @@ if __name__ == '__main__':
     rez = None #[3,3]
     size = [0.002, 0.01]
     timeAx = [0] #np.arange(0,1500)
-    printSim = True
-
-    envsName = 'envs-11-11-16'
-    maxEnvs = 100
-
+    printSim = False #This makes it show the generating profile progress bar
+    
+    #Examine Batch Line Profiles
     showProfiles = True
     maxPlotLines = 3
 
-   
+##################################################################################
+##################################################################################
+
     ### Process Envs ###
-    #envrs1 = sim.envrs(envsName)
-    #envs = envrs1.processEnvs(maxEnvs)
-    #envrs1.showEnvs(maxEnvs)
+    if processEnvironments:
+        envrs1 = sim.envrs(envsName)
+        envs = envrs1.processEnvs(maxEnvs)
+        #envrs1.showEnvs(maxEnvs)
 
     ### Level 3 ### BatchSim
     ###############
-    
+
     if mainProgram:
         if remote:
             if firstRun:       
                 envs = sim.envrs(envsName).loadEnvs(maxEnvs)
                 myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim)
             else:
-                myBatch = sim.restartBatch(batchName)        
-        else:
-            myBatch = sim.plotBatch(batchName, redoStats)
+                myBatch = sim.batch(batchName).restartBatch()        
+        if root and mainplot:
+            myBatch = sim.batch(batchName).plotBatch(redoStats)
             if showProfiles: myBatch.plotProfiles(maxPlotLines)
 
 
     #### Level 1 ### Simulate
     ################
 
-
     if simOne:
+        print('Beginning...')
         df = grid.defGrid()
-
         env = sim.envrs(envsName).loadEnvs(1)[0]
+        
+        lineSim = sim.simulate(df.impLine, env, N = 1500, findT = True)
+        lineSim.plot2('frac','nion', p1Scaling='log', p2Scaling='log')
+        lineSim.plotProfile()
 
-        #position, target = [10, 3, 1.5], [-10, -3, 1.5]
-        #cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
+        #bpoleSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, printOut = True)
+        ##bpoleSim.getProfile()
+        #bpoleSim.plot('frac', cmap = 'brg')
+
+    #position, target = [10, 3, 1.5], [-10, -3, 1.5]
+    #cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
     
-        #timeAx = [0] #np.arange(0,1500)
-        #cylSim = sim.simulate(cyline, env, [1500, 3000], 1, False, True, timeAx = timeAx)
-        #cylSim.getProfile()
+    #timeAx = [0] #np.arange(0,1500)
+    #cylSim = sim.simulate(cyline, env, [1500, 3000], 1, False, True, timeAx = timeAx)
+    #cylSim.getProfile()
 
-        #cylSim.plot('densfac')
-        #cylSim.plot2('vLOS','vLOSwind')
+    #cylSim.plot('densfac')
+    #cylSim.plot2('vLOS','vLOSwind')
 
 
-        #df = grid.defGrid()
 
-        #env = sim.envs(envsName).loadEnvs(1)[0]
+    #df = grid.defGrid()
 
-        bpoleSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, printOut = True)
-        bpoleSim.setTime()
-        bpoleSim.plot('alfU1', cmap = 'RdBu', center = True)
+    #env = sim.envs(envsName).loadEnvs(1)[0]
+
+    #bpoleSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, printOut = True)
+    #bpoleSim.setTime()
+    #bpoleSim.plot('alfU1', cmap = 'RdBu', center = True)
 
     #bpoleSim.plot('vLOS', scaling = 'none', cmap = 'RdBu' )
 

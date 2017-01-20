@@ -10,9 +10,15 @@ Created on Wed May 25 19:13:05 2016
 import numpy as np
 import os
 import sys
-import matplotlib.pyplot as plt
+import copy
+
 import matplotlib as mpl
+mpl.use('qt4agg')
+from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
+#import chianti.core as ch
+
 from scipy import io
 from scipy import ndimage
 from scipy import interpolate as interp
@@ -28,6 +34,7 @@ import math
 import time
 import pickle
 import glob
+
 #from astropy import units as u
 # import skimage as ski
 # from skimage.feature import peak_local_max
@@ -68,6 +75,16 @@ class environment:
 
     rel_def_bkFile = datFolder + 'gilly_background_cvb07.dat'    
     def_bkFile =absPath(rel_def_bkFile)
+
+    rel_def_ioneq = datFolder + 'formattedIoneq.tsv'  
+    def_ioneq =absPath(rel_def_ioneq)
+
+    rel_def_abund = datFolder + 'abundance.tsv'  
+    def_abund =absPath(rel_def_abund)
+
+    rel_def_ionpath = os.path.normpath('../chianti/chiantiData/')  
+    def_ionpath =absPath(rel_def_ionpath)
+
     
     #Parameters
     rstar = 1
@@ -80,6 +97,7 @@ class environment:
 
     #Constants
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
+    hev = 4.135667662e-15 #eV*s
     KB = 1.380e-16 #ergs/Kelvin
 
     #For randomizing wave angles/init-times
@@ -87,12 +105,19 @@ class environment:
     randOffset = 0  
 
     #Element Being Observed
-    #mi = 1.6726219e-24 #grams per hydrogen
-    mi = 9.2732796e-23 #grams per Iron
+    mH = 1.6726219e-24 #grams per hydrogen
+    mE = 9.10938e-28 #grams per electron
+    mP = 1.6726219e-24 #grams per proton
+    mI = 9.2732796e-23 #grams per Iron
+    ionString = 'fe'
+    element = 26
+    ion = 14
+    lower = 1 #lower energy level
+    upper = 11 #upper energy level
 
     #LamAxis Stuff
     Ln = 100
-    lam0 = 200
+    lam0 = 211.3172
     lamPm = 0.5
 
     fullMin = 0
@@ -105,22 +130,58 @@ class environment:
     streamRand = np.random.RandomState() #Gets seeded by streamindex
     primeRand = np.random.RandomState(primeSeed)
 
-    def __init__(self, Bfile = None, bkFile = None):
-
-
+    def __init__(self, Bfile = None, bkFile = None, analyze = False):
+        #Initializes
+        self._bfileLoad(Bfile)
+        if analyze: self.analyze_BMap2()
+        self._xiLoad()
+        self._plasmaLoad(bkFile)
+        self._chiantiLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
 
+        print("Done")
+        print('')
+
+  ## File IO ##########################################################################
+
+    def _bfileLoad(self, Bfile):
         #Load Bmap
         if Bfile is None: self.Bfile = self.def_Bfile 
         else: self.Bfile = self.__relPath(Bfile)
+        self.thisLabel = self.Bfile.rsplit(os.path.sep, 1)[-1] 
 
-        self.thisLabel = self.Bfile.rsplit(os.path.sep, 1)[-1]    
         print('Processing Environment: ' + str(self.thisLabel) +'...', end = '', flush = True)
 
-        self.__loadBMap()
+        Bobj = io.readsav(self.Bfile)
+        self.BMap_raw = Bobj.get('data_cap')
 
-        self.analyze_BMap2()
+        sigma = 4
+        self.BMap_smoothed = ndimage.filters.gaussian_filter(self.BMap_raw, sigma)
 
+        #plt.imshow((np.abs(self.BMap_smoothed)))
+        #plt.colorbar()
+        #plt.show()
+
+        self.__processBMap()
+
+        self.BMap_x = Bobj.get('x_cap')
+        self.BMap_y = Bobj.get('y_cap')
+        #self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_smoothed)
+        self.BMap = self.voroBMap    
+
+    def _plasmaLoad(self, bkFile = None):
+        #Load Plasma Background
+        if bkFile is None: self.bkFile = self.def_bkFile 
+        else: self.bkFile = self.__relPath(bkFile)
+        x = np.loadtxt(self.bkFile, skiprows=10)
+        self.bk_dat = x
+        self.rx_raw = x[:,0]
+        self.rho_raw = x[:,1]
+        self.ur_raw = x[:,2]
+        self.vAlf_raw = x[:,3]
+        self.T_raw = x[:,4]
+
+    def _xiLoad(self):
         #Load Xi
         self.xiFile1 = self.def_xiFile1 
         self.xiFile2 = self.def_xiFile2 
@@ -138,42 +199,78 @@ class environment:
         self.last_xi2_t = y[-1,0]
         #plt.plot(self.xi2_t, self.xi2_raw)
         #plt.show()
+        pass
 
-        #Load Plasma Background
-        if bkFile is None: self.bkFile = self.def_bkFile 
-        else: self.bkFile = self.__relPath(bkFile)
-        x = np.loadtxt(self.bkFile, skiprows=10)
-        self.bk_dat = x
-        self.rx_raw = x[:,0]
-        self.rho_raw = x[:,1]
-        self.ur_raw = x[:,2]
-        self.vAlf_raw = x[:,3]
-        self.T_raw = x[:,4]
+    def _chiantiLoad(self):
+        ##Load Chianti File Info
 
-        print("Done")
-        print('')
+        #Load in the ionization fraction info
+        chi = np.loadtxt(self.def_ioneq)
 
+            #Find the correct entry
+        for idx in np.arange(len(chi[:,0])):
+            if chi[idx,0] == self.element and chi[idx,1] == self.ion: break
+        else: raise ValueError('Ion Not Found in fraction file')
+
+            #Spline it!
+        self.chTemps = chi[0,2:]
+        self.chFracs = chi[idx,2:]
+        self.splinedChTemps = np.linspace(min(self.chTemps),max(self.chTemps), 1000)
+        self.splinedChFracs = interp.spline(self.chTemps, self.chFracs, self.splinedChTemps)
+
+            #T = []
+            #for tt in self.splinedChTemps:
+            #    T.append(self.interp_frac(10**tt))
+            #T = np.asarray(T)
+            #plt.plot(self.chTemps, self.chFracs)
+            #plt.plot(self.splinedChTemps,T)
+            #plt.show()
+
+        #Load in elemental abundance info
+        abund = np.loadtxt(self.def_abund, usecols=[1])
+        self.abundance = 10**(abund[self.element-1]-abund[0])
+
+        #Load in upsilon(T) info
+        fullstring = self.ionString + '_' + str(self.ion)
+        ionpath = (self.def_ionpath +'/'+ self.ionString + '/' + fullstring)
+        fullpath = os.path.normpath(ionpath + '/'+ fullstring + '.scups')
+
+        getTemps = False
+        getUps = False
+        with open(fullpath) as f:
+            for line in f:
+                data = line.split()
+                if getUps == True:
+                    self.ups = [float(x) for x in data]
+                    break
+
+                if getTemps == True:
+                    self.upsTemps = [float(x) for x in data]
+                    getUps = True
+                    continue
+
+                if data[0] == str(self.lower) and data[1] == str(self.upper):
+                    self.upsInfo = [float(x) for x in data]
+                    getTemps = True
+
+        self.splinedUpsX = np.linspace(0,1,100)
+        self.splinedUps = interp.spline(self.upsTemps, self.ups, self.splinedUpsX)
+
+        #Load in statistical weights
+        fullpath2 = os.path.normpath(ionpath + '/'+ fullstring + '.fblvl')   
+        with open(fullpath2) as f2:     
+            for line in f2:
+                data = line.split()
+                if data[0] == str(self.lower):
+                    self.wi = float(data[6])
+        #print('')
+        #print(self.ryd2ang(info[2]))
+        #print(temps)
+        #print(ups)  
+        pass     
 
   ## Magnets ##########################################################################
         
-    def __loadBMap(self):
-        Bobj = io.readsav(self.Bfile)
-        self.BMap_raw = Bobj.get('data_cap')
-
-        sigma = 4
-        self.BMap_smoothed = ndimage.filters.gaussian_filter(self.BMap_raw, sigma)
-
-        #plt.imshow((np.abs(self.BMap_smoothed)))
-        #plt.colorbar()
-        #plt.show()
-
-        self.__processBMap()
-
-        self.BMap_x = Bobj.get('x_cap')
-        self.BMap_y = Bobj.get('y_cap')
-        #self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_smoothed)
-        self.BMap = self.voroBMap 
-
     def __processBMap(self, thresh = 0.9):
 
         #Find all above the threshold and label
@@ -394,15 +491,44 @@ class environment:
     def interp_rx_dat(self, rx, array):
         #Interpolates an array(rx)
         if rx < 1. : return math.nan
-        rxInd = int(self.__find_nearest(self.rx_raw, rx))
-        val1 = array[rxInd]
-        val2 = array[rxInd+1]
-        slope = val2 - val1
-        step = self.rx_raw[rxInd+1] - self.rx_raw[rxInd]
-        discreteRx = self.rx_raw[rxInd]
-        diff = rx - discreteRx
-        diffstep = diff / step
-        return val1 + diffstep*(slope)
+        locs = self.rx_raw
+        return self.interp(locs, array, rx)
+        #rxInd = int(self.__find_nearest(self.rx_raw, rx))
+        #val1 = array[rxInd]
+        #val2 = array[rxInd+1]
+        #slope = val2 - val1
+        #step = self.rx_raw[rxInd+1] - self.rx_raw[rxInd]
+        #discreteRx = self.rx_raw[rxInd]
+        #diff = rx - discreteRx
+        #diffstep = diff / step
+        #return val1 + diffstep*(slope)
+
+    def interp_frac(self, T):
+        #Figures out the ionization fraction as f(T)
+        locs = 10**self.splinedChTemps
+        func = self.splinedChFracs
+        return self.interp(locs, func, T)
+
+    def interp_upsilon(self, X):
+        #Figures out upsilon as f(X)
+        locs = self.splinedUpsX
+        func = self.splinedUps
+        return self.interp(locs, func, X)
+
+    def interp(self, X, Y, K):
+        #Takes in X and Y and returns interpolated Y at K
+        try:
+            TInd = int(self.__find_nearest(X, K))
+            val1 = Y[TInd]
+            val2 = Y[TInd+1]
+            slope = val2 - val1
+            step = X[TInd+1] - X[TInd]
+            discreteT = X[TInd]
+            diff = K - discreteT
+            diffstep = diff / step
+            return val1 + diffstep*(slope)
+        except: return np.nan
+
 
     def cm2km(self, var):
         return var * 1e-5
@@ -421,6 +547,15 @@ class environment:
 
     def km2ang(self, var):
         return var * 1e13
+
+    def ryd2ev(self,var):
+        return var * 13.605693
+
+    def ryd2erg(self,var):
+        return var * 2.1798723e-11
+
+    def ryd2ang(self,var):
+        return self.cm2ang(self.c * self.hev / self.ryd2ev(var))
 
         
 #envs Class handles creation, saving, and loading of environments
@@ -493,7 +628,7 @@ class envrs:
     def processEnvs(self, maxN = 1e8, name = 'environment'):
         self.envs = self.__createEnvs(maxN)
         self.__saveEnvs(maxN, name)
-        plt.show(False)
+        #plt.show(False)
         return self.envs
             
        
@@ -512,7 +647,7 @@ class simpoint:
         self.pPos = self.cart2sph(self.cPos)
         self.rx = self.r2rx(self.pPos[0])
         self.zx = self.rx - 1
-
+        self.maxInt = 0
         if findT is None:
             self.findT = self.grid.findT
         else: self.findT = findT
@@ -525,6 +660,8 @@ class simpoint:
         self.findTwave()
         self.__streamInit()
         self.findSpeeds()
+        self.findQt()
+        #self.nion = self.nE
         #self.findIntensity(self.env.lam0, self.env.lam0)
         if pbar is not None:
             pbar.increment()
@@ -568,7 +705,11 @@ class simpoint:
     def findDensity(self):
         #Find the densities of the grid point
         self.densfac = self.__findDensFac()
-        self.rho = self.__findRho()
+        self.rho = self.__findRho() #Total density
+        self.nE = 0.9*self.rho/self.env.mP #electron number density
+        self.frac = self.env.interp_frac(self.T) #ion fraction
+        #THIS IS THE LINE THAT MAKES THINGS BAD
+        self.nion = np.abs(0.8 * self.frac * self.env.abundance * self.rho/self.env.mP) #ion number density
 
     def __findDensFac(self):
         # Find the density factor
@@ -589,7 +730,78 @@ class simpoint:
 
     def __findRho(self):
         return self.interp_rx_dat(self.env.rho_raw) * self.densfac  
-   
+
+
+  ## Radiative Transfer ####################################################################
+
+    def findQt(self):
+        #Chianti Stuff
+        Iinf = 2.18056334613e-11 #ergs, equal to 13.61eV
+        kt = self.env.KB*self.T
+        dE = self.env.ryd2erg(self.env.upsInfo[2])
+        upsilon = self.findUpsilon(self.T)
+        self.qt = 2.172e-8*np.sqrt(Iinf/kt)*np.exp(-dE/kt)* upsilon / self.env.wi
+        
+    def findUpsilon(self, T):
+        Eij = self.env.upsInfo[2] #Rydberg Transition energy
+        K = self.env.upsInfo[6] #Transition Type
+        C = self.env.upsInfo[7] #Scale Constant
+
+        E = np.abs(T/(1.57888e5*Eij))
+        if K == 1 or K == 4: X = np.log10((E+C)/C)/np.log10(E+C)
+        if K == 2 or K == 3: X = E/(E+C)
+
+        Y = self.env.interp_upsilon(X)
+        if K == 1: Y = Y*np.log10(E+2.71828)
+        if K == 3: Y = Y/(E+1)
+        if K == 4: Y = Y*np.log10(E+C)
+
+        return Y
+       
+    def findIntensity(self, lam0 = 1000, lam = 1000):
+        self.lam = lam #Angstroms
+        self.lam0 = lam0 #Angstroms
+
+        self.lamLos =  self.vLOS * self.lam0 / self.env.c
+        self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mI)
+        self.lamPhi = 1/(self.deltaLam * np.sqrt(2*np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/(2*self.deltaLam))**2) #Shouldn't there be twos?
+        self.intensity = self.nion * self.nE * self.qt * self.lamPhi
+        if not np.isnan(self.intensity): self.maxInt = max(self.maxInt, self.intensity)
+        
+        return self.intensity
+
+    def chiantiSpectrum(self):
+        a = 1
+        #maxlam = self.env.lam0 + self.env.lamPm
+        #minlam = self.env.lam0 - self.env.lamPm
+        #lamAx = np.linspace(minlam, maxlam)
+        #print(self.env.ionString)
+        #s = ch.spectrum(self.T, self.nE, self.env.lamAx, 
+        #        em = 1e33, doContinuum=0, ionList = self.env.ionString)
+        #plt.plot(self.lamAx, s.Spectrum['intensity'][0])
+        #plt.show()
+        #self.ion.intensity((minlam, maxlam))
+        #return self.ion.Intensity['wvl'], self.ion.Intensity['intensity']
+        #self.ion.setup()
+        #self.ion = copy.copy(self.env.ion)
+        #self.ion.NTempDen = 1
+        #self.ion.Temperature = self.T
+        #self.ion.EDensity = self.nE
+        #self.ion.ndens = self.ion.EDensity.size
+        #self.ion.ntemp = self.ion.Temperature.size
+        #self.ion.setup()
+        #self.ion.ioneqOne()
+        #frac = self.ion.IoneqOne
+
+        #self.ion.upsilonDescale()
+        
+        ##self.ion.intensity()
+        ##dist = np.abs(np.asarray(self.ion.Intensity['wvl']) - self.lam0)
+        ##idx = np.argmin(dist)
+        #self.qt = self.ion.Upsilon['upsilon']
+        #print(len(self.ion.Wgfa['wvl']))
+        pass
+
 
   ## Velocity ##########################################################################
 
@@ -714,21 +926,6 @@ class simpoint:
             xi1 = self.env.xi2_raw[t_int]
             xi2 = self.env.xi2_raw[t_int+1]
             return xi1+( (t%self.env.last_xi2_t) - t_int )*(xi2-xi1)
-
-
-  ## Radiative Transfer ####################################################################
-
-    def findIntensity(self, lam0 = 1000, lam = 1000):
-        self.lam = lam #Angstroms
-        self.lam0 = lam0 #Angstroms
-
-        self.qt = 1
-
-        self.lamLos =  self.vLOS * self.lam0 / self.env.c
-        self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mi)
-        self.lamPhi = 1/(self.deltaLam * np.sqrt(np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/self.deltaLam)**2)
-        self.intensity = self.rho**2 * self.qt * self.lamPhi * 1e33
-        return self.intensity
 
         
   ## Misc Methods ##########################################################################
@@ -1057,6 +1254,8 @@ class simulate:
                         bar.increment()
                         bar.display()
         self.profile = profile
+        #plt.plot(profile)
+        #plt.show()
         if self.print and self.root: bar.display(True)
         return profile
 
@@ -1580,7 +1779,7 @@ class batchjob:
     def __std2V(self, std, T):
 
         A = self.env.ang2km(np.sqrt(2) * std * self.env.cm2ang(self.env.c) / self.env.lam0)
-        B = self.env.cm2km(np.sqrt(2 * self.env.KB * T / self.env.mi))
+        B = self.env.cm2km(np.sqrt(2 * self.env.KB * T / self.env.mI))
         vel =  np.sqrt(  A**2 - B**2 )
         return vel
 
@@ -1703,7 +1902,6 @@ class batchjob:
             print(ii, " : ", myVars[ii])
 
 
-
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
@@ -1762,33 +1960,35 @@ class impactsim(batchjob):
         #plt.show()
         return
         
- 
-def loadBatch(batchName):
-    slash = os.path.sep
-    batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + batchName + '.batch'
- 
-    absPth = absPath(batchPath)
-    fail = False
-    try:
-        with open(absPth, 'rb') as input:
-            return pickle.load(input)
-    except:
-        fail = True
-    if fail:
-        sys.exit('Batch Not found')
+class batch:
+    def __init__(self, batchname):
+        self.batchName = batchname
+        
+    #Handles loading and running of batches
+    def loadBatch(self):
+        slash = os.path.sep
+        batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + self.batchName + '.batch'
+        absPth = absPath(batchPath)
+        try:
+            with open(absPth, 'rb') as input:
+                return pickle.load(input)
+        except:
+            sys.exit('Batch Not found')
 
-def restartBatch(batchName):
-    myBatch = loadBatch(batchName)
-    myBatch.findRank()
-    myBatch.simulate_now()
-    return myBatch
+    def restartBatch(self):
+        myBatch = self.loadBatch()
+        myBatch.findRank()
+        myBatch.simulate_now()
+        return myBatch
 
-def plotBatch(batchName, redo = False):
-    myBatch = loadBatch(batchName)
-    myBatch.findRank()
-    if redo: myBatch.redoStats()
-    else: myBatch.doStats()
-    return myBatch
+    def plotBatch(self, redo = False):
+        myBatch = self.loadBatch()
+        myBatch.findRank()
+        if redo: myBatch.redoStats()
+        else: myBatch.doStats()
+        return myBatch
+
+
         
 
             
@@ -1855,6 +2055,5 @@ def plotBatch(batchName, redo = False):
         
 
 def nothing():
-    a = 1
-    return a
+    pass
 
