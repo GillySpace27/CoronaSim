@@ -18,8 +18,8 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'envs-chianti-noB'
-    maxEnvs = 1
+    envsName = 'envs-chianti'
+    maxEnvs = 6
 
     #Which part of the program should run?
     mainProgram = False
@@ -30,11 +30,11 @@ if __name__ == '__main__':
         redoStats = False
     except: pass
 
-    simOne = False
+    simOne = True
     processEnvironments = True
 
     #Batch Parameters #####################
-    batchName = 'test'
+    batchName = 'newLam'
     impactPoints = 5
     iterations = 3
     b0 = 1.05
@@ -81,14 +81,14 @@ if __name__ == '__main__':
         print('Beginning...')
         df = grid.defGrid()
         env = sim.envrs(envsName).loadEnvs(1)[0]
-        
-        #lineSim = sim.simulate(df.impLine, env, N = 1500, findT = True)
-        #lineSim.plot2('frac','nion', p1Scaling='log', p2Scaling='log')
+
+        #lineSim = sim.simulate(df.impLine, env, N = 1000, findT = True)
+        ##lineSim.plot2('frac','nion', p1Scaling='log', p2Scaling='log')
         #lineSim.plotProfile()
 
         bpoleSim = sim.simulate(df.bpolePlane, env, N = 200, findT = False, printOut = True)
         bpoleSim.getProfile()
-        bpoleSim.plot('totalInt', cmap = 'brg', scaling = 'exp', scale = 1.5)
+        bpoleSim.plot('totalInt', cmap = 'brg', scaling = 'root', scale = 15)
 
     #position, target = [10, 3, 1.5], [-10, -3, 1.5]
     #cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])

@@ -85,7 +85,29 @@ class environment:
     rel_def_ionpath = os.path.normpath('../chianti/chiantiData/')  
     def_ionpath =absPath(rel_def_ionpath)
 
+    #For doing high level statistics
+    fullMin = 0
+    fullMax = 0
+    fullMean = 0
+    fullMedian = 0
+    mapCount = 0
+
+    #For randomizing wave angles/init-times
+    primeSeed = 27
+    randOffset = 0  
+
+    streamRand = np.random.RandomState() #Gets seeded by streamindex
+    primeRand = np.random.RandomState(primeSeed)
     
+    #Constants
+    c = 2.998e10 #cm/second (base velocity unit is cm/s)
+    hev = 4.135667662e-15 #eV*s
+    KB = 1.380e-16 #ergs/Kelvin
+    r_Mm = 695.5 #Rsun in Mega meters
+    mH = 1.6726219e-24 #grams per hydrogen
+    mE = 9.10938e-28 #grams per electron
+    mP = 1.6726219e-24 #grams per proton
+
     #Parameters
     rstar = 1
     B_thresh = 6.0
@@ -93,21 +115,7 @@ class environment:
     theta0 = 28
     S0 = 7.0e5
 
-    r_Mm = 695.5 #Rsun in Mega meters
-
-    #Constants
-    c = 2.998e10 #cm/second (base velocity unit is cm/s)
-    hev = 4.135667662e-15 #eV*s
-    KB = 1.380e-16 #ergs/Kelvin
-
-    #For randomizing wave angles/init-times
-    primeSeed = 27
-    randOffset = 0  
-
     #Element Being Observed
-    mH = 1.6726219e-24 #grams per hydrogen
-    mE = 9.10938e-28 #grams per electron
-    mP = 1.6726219e-24 #grams per proton
     mI = 9.2732796e-23 #grams per Iron
     ionString = 'fe'
     element = 26
@@ -115,64 +123,51 @@ class environment:
     lower = 1 #lower energy level
     upper = 11 #upper energy level
 
-    #LamAxis Stuff
+    #LamAxis Stuff   #######################
     Ln = 100
     lam0 = 211.3172
     lamPm = 0.5
 
-    fullMin = 0
-    fullMax = 0
-    fullMean = 0
-    fullMedian = 0
-    mapCount = 0
 
-
-    streamRand = np.random.RandomState() #Gets seeded by streamindex
-    primeRand = np.random.RandomState(primeSeed)
-
-    def __init__(self, Bfile = None, bkFile = None, analyze = False):
+    def __init__(self, Bfile = None, bkFile = None, analyze = False, name = "Default"):
         #Initializes
-        self._bfileLoad(Bfile)
+        self.name = name
+        self._bfileLoad(Bfile, plot=False)
+        self.__processBMap(thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False)
         if analyze: self.analyze_BMap2()
         self._xiLoad()
         self._plasmaLoad(bkFile)
         self._chiantiLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
 
+
         print("Done")
         print('')
 
   ## File IO ##########################################################################
 
-    def _bfileLoad(self, Bfile):
+    def _bfileLoad(self, Bfile, plot = False):
         #Load Bmap
         if Bfile is None: self.Bfile = self.def_Bfile 
-        else: self.Bfile = self.__relPath(Bfile)
+        else: self.Bfile = self.__absPath(Bfile)
         self.thisLabel = self.Bfile.rsplit(os.path.sep, 1)[-1] 
 
         print('Processing Environment: ' + str(self.thisLabel) +'...', end = '', flush = True)
 
         Bobj = io.readsav(self.Bfile)
-        self.BMap_raw = Bobj.get('data_cap')
-
-        sigma = 4
-        self.BMap_smoothed = ndimage.filters.gaussian_filter(self.BMap_raw, sigma)
-
-        #plt.imshow((np.abs(self.BMap_smoothed)))
-        #plt.colorbar()
-        #plt.show()
-
-        self.__processBMap()
-
         self.BMap_x = Bobj.get('x_cap')
         self.BMap_y = Bobj.get('y_cap')
-        #self.BMap = interp.RectBivariateSpline(self.BMap_x, self.BMap_y, self.BMap_smoothed)
-        self.BMap = self.voroBMap    
+        self.BMap_raw = Bobj.get('data_cap')
+
+        if plot:
+            plt.imshow((np.abs(self.BMap_raw)))
+            plt.colorbar()
+            plt.show()
 
     def _plasmaLoad(self, bkFile = None):
         #Load Plasma Background
         if bkFile is None: self.bkFile = self.def_bkFile 
-        else: self.bkFile = self.__relPath(bkFile)
+        else: self.bkFile = self.__absPath(bkFile)
         x = np.loadtxt(self.bkFile, skiprows=10)
         self.bk_dat = x
         self.rx_raw = x[:,0]
@@ -253,7 +248,7 @@ class environment:
                     self.upsInfo = [float(x) for x in data]
                     getTemps = True
 
-        self.splinedUpsX = np.linspace(0,1,100)
+        self.splinedUpsX = np.linspace(0,1,200)
         self.splinedUps = interp.spline(self.upsTemps, self.ups, self.splinedUpsX)
 
         #Load in statistical weights
@@ -271,7 +266,13 @@ class environment:
 
   ## Magnets ##########################################################################
         
-    def __processBMap(self, thresh = 0.9):
+    def __processBMap(self, thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False):
+
+        #Gaussian smooth the image
+        if sigSmooth == 0:
+            self.BMap_smoothed = self.BMap_raw
+        else:
+            self.BMap_smoothed = ndimage.filters.gaussian_filter(self.BMap_raw, sigSmooth)
 
         #Find all above the threshold and label
         bdata = np.abs(self.BMap_smoothed)
@@ -286,17 +287,19 @@ class environment:
         #Get voronoi transform
         self.label_im, self.nb_labels, self.voroBMap = self.__voronoify_sklearn(label_im, coord, bdata)
         
-                    ##Add in threshold regions
-                    #highLabelIm = label_im + self.nb_labels
-                    #self.label_im *= np.logical_not(bmask)
-                    #self.label_im += highLabelIm * bmask
+        if addThresh:
+            #Add in threshold regions
+            highLabelIm = label_im + self.nb_labels
+            self.label_im *= np.logical_not(bmask)
+            self.label_im += highLabelIm * bmask
         
         #Clean Edges
         validMask = self.BMap_raw != 0
         self.label_im *= validMask
         self.voroBMap *= validMask
-        
-        if False: #Plot Slice of Map
+        self.BMap = self.voroBMap  
+
+        if plot: #Plot Slice of Map
             #(label_im + 40) * validMask 
             plt.imshow(self.voroBMap, cmap = 'jet', interpolation='none')
             plt.colorbar()
@@ -313,6 +316,7 @@ class environment:
             #plt.imshow(self.BMap_smoothed)
             #plt.colorbar()
             #plt.show()
+            pass
         return
 
     def __voronoify_sklearn(self, I, seeds, data):
@@ -429,6 +433,7 @@ class environment:
     def makeLamAxis(self, Ln = 100, lam0 = 200, lamPm = 0.5):
         self.lam0 = lam0
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
+        return self.lamAx
 
 
   ## Velocities #####################################################################
@@ -468,7 +473,10 @@ class environment:
         self.label_im = []
 
     def save(self, name):
-        with open(self.__relPath(name), 'wb') as output:
+        path = self.__absPath(name)
+        if os.path.isfile(path):
+            os.remove(path)
+        with open(path, 'wb') as output:
             pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
         
     def randomize(self):
@@ -477,11 +485,11 @@ class environment:
     def setOffset(self, offset):
         self.randOffset = offset
 
-    def __relPath(self, path):
+    def __absPath(self, path):
         #Converts a relative path to an absolute path
         script_dir = os.path.dirname(os.path.abspath(__file__))   
-        rel = os.path.join(script_dir, path)    
-        return rel
+        abs = os.path.join(script_dir, path)    
+        return abs
 
     def __find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
@@ -570,7 +578,7 @@ class envrs:
         envs = []
         ind = 0
         for file in files:
-            if ind < maxN: envs.append(environment(Bfile = file))
+            if ind < maxN: envs.append(environment(Bfile = file, name = self.name + '_' + str(ind)))
             ind += 1
         return envs
  
@@ -632,6 +640,12 @@ class envrs:
 
 ## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
+    useB = True
+    useIonFrac = False
+    useWaves = True   
+    useWind = True
+    ID = 0
+
     #Level 0: Simulates physical properties at a given coordinate
     def __init__(self, cPos = [0.1,0.1,1.5], grid = None, env = None, findT = True, pbar = None):
         #Inputs
@@ -647,7 +661,7 @@ class simpoint:
             self.findT = self.grid.findT
         else: self.findT = findT
 
-
+        
         #Initialization
         self.findTemp()
         self.findFootB()
@@ -662,22 +676,19 @@ class simpoint:
             pbar.increment()
             pbar.display()
 
-
   ## Temperature ######################################################################
-
     def findTemp(self):
         self.T = self.interp_rx_dat(self.env.T_raw)
 
-
   ## Magnets ##########################################################################
-        
     def findFootB(self):
         #Find B
         self.__findfoot_Pos()
         #self.footB = self.env.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
-        self.footB = self.env.BMap[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
+        if self.useB:
+            self.footB = self.env.BMap[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
                                             self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
-        a = 1
+        else: self.footB = 0
 
     def __findfoot_Pos(self):
         #Find the footpoint of the field line
@@ -694,17 +705,18 @@ class simpoint:
         self.streamIndex = self.env.randOffset + self.env.label_im[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
                                             self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
 
-
   ## Density ##########################################################################
- 
     def findDensity(self):
         #Find the densities of the grid point
         self.densfac = self.__findDensFac()
         self.rho = self.__findRho() #Total density
         self.nE = 0.9*self.rho/self.env.mP #electron number density
         self.frac = self.env.interp_frac(self.T) #ion fraction
-        #THIS IS THE LINE THAT MAKES THINGS BAD
-        self.nion = np.abs(0.8 * self.frac * self.env.abundance * self.rho/self.env.mP) #ion number density
+
+        if self.useIonFrac:
+            #THIS IS THE LINE THAT MAKES THINGS BAD
+            self.nion = np.abs(0.8 * self.frac * self.env.abundance * self.rho/self.env.mP) #ion number density
+        else: self.nion = self.nE
 
     def __findDensFac(self):
         # Find the density factor
@@ -721,9 +733,7 @@ class simpoint:
     def __findRho(self):
         return self.interp_rx_dat(self.env.rho_raw) * self.densfac  
 
-
   ## Radiative Transfer ####################################################################
-
     def findQt(self):
         #Chianti Stuff
         Iinf = 2.18056334613e-11 #ergs, equal to 13.61eV
@@ -754,12 +764,28 @@ class simpoint:
 
         self.lamLos =  self.vLOS * self.lam0 / self.env.c
         self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mI)
-        self.lamPhi = 1/(self.deltaLam * np.sqrt(2*np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/(2*self.deltaLam))**2) #Shouldn't there be twos?
+        self.lamPhi = 1/(self.deltaLam * np.sqrt(np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/(self.deltaLam))**2) #Shouldn't there be twos?
         self.intensity = self.nion * self.nE * self.qt * self.lamPhi
         if not np.isnan(self.intensity): 
             self.maxInt = max(self.maxInt, self.intensity)
             self.totalInt += self.intensity
         return self.intensity
+
+    def getProfile(self):
+
+        lamAx = self.env.lamAx
+        profile = np.zeros_like(lamAx)
+        index = 0
+        for lam in lamAx:
+            profile[index] = self.findIntensity(self.env.lam0, lam)
+            index += 1
+        if not np.mod(simpoint.ID,10) and 650 >= simpoint.ID >= 350:
+            pass
+            #plt.plot(lamAx, profile)
+            #plt.title(simpoint.ID)
+            #plt.show()
+        simpoint.ID +=1
+        return profile
 
     def chiantiSpectrum(self):
         a = 1
@@ -793,9 +819,7 @@ class simpoint:
         #print(len(self.ion.Wgfa['wvl']))
         pass
 
-
   ## Velocity ##########################################################################
-
     def findSpeeds(self, t = 0):
         #Find all of the various velocities
         self.ur = self.__findUr() #WIND VELOCITY
@@ -813,6 +837,11 @@ class simpoint:
         self.alfU2 = self.vRms*self.xi2(self.t2) #*np.sin(self.omega * self.t2) #SIN WAVE UNDER ENV
         self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
         self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
+
+        if not self.useWaves:
+            self.uTheta = 0
+            self.uPhi = 0
+
         self.pU = [self.ur, self.uTheta, self.uPhi]
         self.cU = self.__findCU(self.pU) 
         [self.ux, self.uy, self.uz] = self.cU
@@ -830,7 +859,11 @@ class simpoint:
     def __findUr(self):
         #Wind Velocity
         #return (1.7798e13) * self.fmax / (self.num_den * self.rx * self.rx * self.f)
-        return self.interp_rx_dat(self.env.ur_raw) / self.densfac
+        if self.useWind:
+            ur = self.interp_rx_dat(self.env.ur_raw) / self.densfac
+        else:
+            ur = 0
+        return ur
 
     def __findAlf(self):
         #Alfven Velocity
@@ -869,9 +902,7 @@ class simpoint:
         uz = ur*np.cos(self.pPos[1]) - uTheta*np.sin(self.pPos[1])
         return [ux, uy, uz]
     
-
   ## Time Dependence #######################################################################    
-
     def findTwave(self):
         #Finds the wave travel time to this point
         #Approximate Version
@@ -918,9 +949,7 @@ class simpoint:
             xi2 = self.env.xi2_raw[t_int+1]
             return xi1+( (t%self.env.last_xi2_t) - t_int )*(xi2-xi1)
 
-        
   ## Misc Methods ##########################################################################
-
     def __find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
         idx = (np.abs(array-value)).argmin()
@@ -961,11 +990,11 @@ class simpoint:
 
         return [rho, theta, phi]
         
-    def __relPath(self, path):
-        #Converts a relative path to an absolute path
+    def __absPath(self, path):
+        #Converts a absative path to an absolute path
         script_dir = os.path.dirname(os.path.abspath(__file__))   
-        rel = os.path.join(script_dir, path)    
-        return rel
+        abs = os.path.join(script_dir, path)    
+        return abs
             
     def show(self):
         #Print all properties and values
@@ -1079,7 +1108,7 @@ class simulate:
         if scaling.lower() == 'none':
             scaleProp = prop
         elif scaling.lower() == 'log':
-            scaleProp = np.log10(prop)/log10(scale)
+            scaleProp = np.log10(prop)/np.log10(scale)
         elif scaling.lower() == 'root':
             scaleProp = prop**(1/scale)
         elif scaling.lower() == 'exp':
@@ -1223,7 +1252,11 @@ class simulate:
 
     def plotProfile(self):
         if self.profile is None: self.lineProfile()
-        plt.plot(self.env.lamAx, self.profile)
+        plt.plot(self.env.lamAx, (self.profile))
+        plt.title("Line Profile")
+        plt.ylabel("Intensity")
+        plt.xlabel("Wavelenght (A)")
+        plt.yscale('log')
         plt.show()
 
     def setIntLam(self, lam):
@@ -1235,17 +1268,14 @@ class simulate:
         profile = np.zeros_like(self.env.lamAx)
         if self.print and self.root: 
             print('\nGenerating Profile...')
-            bar = pb.ProgressBar(len(self.sPoints) * len(self.timeAx) * len(self.env.lamAx))
+            bar = pb.ProgressBar(len(self.sPoints) * len(self.timeAx))
         for point, step in zip(self.sPoints, self.steps):
             for tt in self.timeAx:
                 point.setTime(tt)
-                index = 0
-                for lam in self.env.lamAx:
-                    profile[index] += point.findIntensity(self.env.lam0, lam) * step
-                    index += 1
-                    if self.print and self.root:
-                        bar.increment()
-                        bar.display()
+                profile += point.getProfile() * step
+                if self.print and self.root:
+                    bar.increment()
+                    bar.display()
         self.profile = profile
         #plt.plot(profile)
         #plt.show()
