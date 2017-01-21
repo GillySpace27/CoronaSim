@@ -493,15 +493,6 @@ class environment:
         if rx < 1. : return math.nan
         locs = self.rx_raw
         return self.interp(locs, array, rx)
-        #rxInd = int(self.__find_nearest(self.rx_raw, rx))
-        #val1 = array[rxInd]
-        #val2 = array[rxInd+1]
-        #slope = val2 - val1
-        #step = self.rx_raw[rxInd+1] - self.rx_raw[rxInd]
-        #discreteRx = self.rx_raw[rxInd]
-        #diff = rx - discreteRx
-        #diffstep = diff / step
-        #return val1 + diffstep*(slope)
 
     def interp_frac(self, T):
         #Figures out the ionization fraction as f(T)
@@ -516,7 +507,7 @@ class environment:
         return self.interp(locs, func, X)
 
     def interp(self, X, Y, K):
-        #Takes in X and Y and returns interpolated Y at K
+        #Takes in X and Y and returns linearly interpolated Y at K
         try:
             TInd = int(self.__find_nearest(X, K))
             val1 = Y[TInd]
@@ -528,7 +519,6 @@ class environment:
             diffstep = diff / step
             return val1 + diffstep*(slope)
         except: return np.nan
-
 
     def cm2km(self, var):
         return var * 1e-5
@@ -563,10 +553,11 @@ class envrs:
 
     #envs Class handles creation, saving, and loading of environments
     
-    def __init__(self, envFolder = ''):
-    
+    def __init__(self, name = ''):
+        self.name = name
         self.slash = os.path.sep            
-        self.dirPath = '..' + self.slash + 'dat' + self.slash + envFolder
+        self.savPath = os.path.normpath('../dat/' + self.name)
+        self.envPath = os.path.normpath('../dat/magnetograms')
         
         return
     
@@ -575,7 +566,7 @@ class envrs:
             return pickle.load(input)
 
     def __createEnvs(self, maxN = 1e8):
-        files = glob.glob(absPath(self.dirPath + self.slash + '*.sav'))
+        files = glob.glob(absPath(self.envPath + self.slash + '*.sav'))
         envs = []
         ind = 0
         for file in files:
@@ -583,14 +574,15 @@ class envrs:
             ind += 1
         return envs
  
-    def __saveEnvs(self, maxN = 1e8, name = 'environment'):
+    def __saveEnvs(self, maxN = 1e8):
         ind = 0
+        os.makedirs(absPath(self.savPath), exist_ok=True)
         for env in self.envs:
-            if ind < maxN: env.save(absPath(self.dirPath + self.slash + name +'_' + str(ind) + '.env'))
+            if ind < maxN: env.save(absPath(self.savPath + self.slash + self.name + '_' + str(ind) + '.env'))
             ind += 1
     
     def loadEnvs(self, maxN = 1e8):
-        files = glob.glob(absPath(self.dirPath + self.slash + '*.env'))
+        files = glob.glob(absPath(self.savPath +os.path.normpath('/*.env')))
         self.envs = []
         ind = 0
         for file in files:
@@ -625,13 +617,15 @@ class envrs:
     def Vars(self):
         return vars(self) 
 
-    def processEnvs(self, maxN = 1e8, name = 'environment'):
+    def processEnvs(self, maxN = 1e8, show = False):
         self.envs = self.__createEnvs(maxN)
-        self.__saveEnvs(maxN, name)
-        #plt.show(False)
+        self.__saveEnvs(maxN)
+        if show: plt.show(False)
         return self.envs
             
        
+
+
 ####################################################################                            
 ##                           Simulation                           ##
 ####################################################################
@@ -648,6 +642,7 @@ class simpoint:
         self.rx = self.r2rx(self.pPos[0])
         self.zx = self.rx - 1
         self.maxInt = 0
+        self.totalInt = 0
         if findT is None:
             self.findT = self.grid.findT
         else: self.findT = findT
@@ -723,11 +718,6 @@ class simpoint:
 
         return 0.34 + (dinfty - 0.34)*0.5*(1. + np.tanh((self.zx - 0.37)/0.26))
 
-        #if np.abs(self.footB) < np.abs(self.env.B_thresh):
-        #    return 1
-        #else:
-        #    return (np.abs(self.footB) / self.env.B_thresh)**0.5
-
     def __findRho(self):
         return self.interp_rx_dat(self.env.rho_raw) * self.densfac  
 
@@ -766,8 +756,9 @@ class simpoint:
         self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mI)
         self.lamPhi = 1/(self.deltaLam * np.sqrt(2*np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/(2*self.deltaLam))**2) #Shouldn't there be twos?
         self.intensity = self.nion * self.nE * self.qt * self.lamPhi
-        if not np.isnan(self.intensity): self.maxInt = max(self.maxInt, self.intensity)
-        
+        if not np.isnan(self.intensity): 
+            self.maxInt = max(self.maxInt, self.intensity)
+            self.totalInt += self.intensity
         return self.intensity
 
     def chiantiSpectrum(self):
@@ -1080,7 +1071,7 @@ class simulate:
             self.shape = self.grid.shape
         self.shape2 = [self.shape[0], self.shape[1], -1]
 
-    def get(self, myProperty, dim = None, scaling = 'None'):
+    def get(self, myProperty, dim = None, scaling = 'None', scale = 2):
         propp = np.array([x[myProperty] for x in self.pData])
         prop = propp.reshape(self.shape2)
         if not dim is None: prop = prop[:,:,dim]
@@ -1088,17 +1079,19 @@ class simulate:
         if scaling.lower() == 'none':
             scaleProp = prop
         elif scaling.lower() == 'log':
-            scaleProp = np.log10(prop)
-        elif scaling.lower() == 'sqrt':
-            scaleProp = np.sqrt(prop)
+            scaleProp = np.log10(prop)/log10(scale)
+        elif scaling.lower() == 'root':
+            scaleProp = prop**(1/scale)
+        elif scaling.lower() == 'exp':
+            scaleProp = prop**scale
         else: 
             print('Bad Scaling - None Used')
             scaleProp = prop
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
-    def plot(self, property, dim = None, scaling = 'None', cmap = 'jet', axes = True, center = False):
-        scaleProp, datSum = self.get(property, dim, scaling)
+    def plot(self, property, dim = None, scaling = 'None', scale = 2, cmap = 'jet', axes = True, center = False):
+        scaleProp, datSum = self.get(property, dim, scaling, scale)
         self.fig, ax = self.grid.plot(iL = self.iL)
         if type(self.grid) is grid.sightline:
             #Line Plot
@@ -1598,9 +1591,7 @@ class multisim:
         self.profiles = profiles
         print(vars(self))
         return self
-
 #Inputs: (self, batch, envs, N = 1000, findT = None, printOut = False)
-#Public Methods: 
 #Attributes: lines, lineStats
 # For doing the same line from many angles, to get statistics
 
@@ -1900,7 +1891,6 @@ class batchjob:
         print("\nBatch Properties\n")
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
-
 
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):

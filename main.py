@@ -18,21 +18,22 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'envs-chianti'
+    envsName = 'envs-chianti-noB'
     maxEnvs = 1
 
     #Which part of the program should run?
-    mainProgram = True
+    mainProgram = False
     try: #Main program Parameters
-        remote = True 
+        compute = True 
         firstRun = True
         mainplot = True
         redoStats = False
     except: pass
-    simOne = False
-    processEnvironments = False
 
-    #Batch Parameters
+    simOne = False
+    processEnvironments = True
+
+    #Batch Parameters #####################
     batchName = 'test'
     impactPoints = 5
     iterations = 3
@@ -62,7 +63,7 @@ if __name__ == '__main__':
     ###############
 
     if mainProgram:
-        if remote:
+        if compute:
             if firstRun:       
                 envs = sim.envrs(envsName).loadEnvs(maxEnvs)
                 myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim)
@@ -81,13 +82,13 @@ if __name__ == '__main__':
         df = grid.defGrid()
         env = sim.envrs(envsName).loadEnvs(1)[0]
         
-        lineSim = sim.simulate(df.impLine, env, N = 1500, findT = True)
-        lineSim.plot2('frac','nion', p1Scaling='log', p2Scaling='log')
-        lineSim.plotProfile()
+        #lineSim = sim.simulate(df.impLine, env, N = 1500, findT = True)
+        #lineSim.plot2('frac','nion', p1Scaling='log', p2Scaling='log')
+        #lineSim.plotProfile()
 
-        #bpoleSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, printOut = True)
-        ##bpoleSim.getProfile()
-        #bpoleSim.plot('frac', cmap = 'brg')
+        bpoleSim = sim.simulate(df.bpolePlane, env, N = 200, findT = False, printOut = True)
+        bpoleSim.getProfile()
+        bpoleSim.plot('totalInt', cmap = 'brg', scaling = 'exp', scale = 1.5)
 
     #position, target = [10, 3, 1.5], [-10, -3, 1.5]
     #cyline = grid.sightline(position, target, coords = 'Cart', rez = None, size = [0.002,0.01])
