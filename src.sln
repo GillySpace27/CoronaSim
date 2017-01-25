@@ -10,6 +10,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{94273702-1B91-4FAB-B3EA-4BDFDF779A2E}"
 	ProjectSection(SolutionItems) = preProject
 		progressBar.py = progressBar.py
+		run.py = run.py
 	EndProjectSection
 EndProject
 Global

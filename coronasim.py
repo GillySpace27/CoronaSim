@@ -25,8 +25,10 @@ from scipy import interpolate as interp
 from scipy.stats import norm
 import scipy.stats as stats
 from scipy.optimize import curve_fit
+import astropy.convolution as con
 
 from collections import defaultdict
+
 
 import gridgen as grid
 import progressBar as pb
@@ -119,14 +121,16 @@ class environment:
     mI = 9.2732796e-23 #grams per Iron
     ionString = 'fe'
     element = 26
-    ion = 14
+    ion = 11
     lower = 1 #lower energy level
-    upper = 11 #upper energy level
+    upper = 38 #upper energy level
 
     #LamAxis Stuff   #######################
-    Ln = 100
-    lam0 = 211.3172
-    lamPm = 0.5
+    Ln = 200
+    lam0 = 188.217
+    lamPm = 1
+
+    psfSig = None #0.047 #Angstroms
 
 
     def __init__(self, Bfile = None, bkFile = None, analyze = False, name = "Default"):
@@ -139,6 +143,7 @@ class environment:
         self._plasmaLoad(bkFile)
         self._chiantiLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
+        self.makePSF(self.psfSig)
 
 
         print("Done")
@@ -207,19 +212,27 @@ class environment:
             if chi[idx,0] == self.element and chi[idx,1] == self.ion: break
         else: raise ValueError('Ion Not Found in fraction file')
 
-            #Spline it!
         self.chTemps = chi[0,2:]
-        self.chFracs = chi[idx,2:]
-        self.splinedChTemps = np.linspace(min(self.chTemps),max(self.chTemps), 1000)
-        self.splinedChFracs = interp.spline(self.chTemps, self.chFracs, self.splinedChTemps)
+        self.chFracs = chi[idx,2:] + 1e-100
 
-            #T = []
-            #for tt in self.splinedChTemps:
-            #    T.append(self.interp_frac(10**tt))
-            #T = np.asarray(T)
-            #plt.plot(self.chTemps, self.chFracs)
-            #plt.plot(self.splinedChTemps,T)
-            #plt.show()
+                    #Spline it!
+        #self.splinedChTemps = np.linspace(min(self.chTemps),max(self.chTemps), 1000)
+        #self.splinedChFracs = interp.spline(self.chTemps, self.chFracs, self.splinedChTemps)
+
+        #T = []
+        #for tt in self.chTemps:
+        #    T.append(self.interp_frac(10**tt))
+        #T = np.asarray(T)
+        #print(self.chTemps)
+
+        #plt.plot(self.chTemps, self.chFracs, 'o')
+        #plt.title("Ion Fraction f(T) for " + str(self.ionString) + str(self.ion))
+        #plt.xlabel("Temperature")
+        #plt.ylabel("Fraction")
+        #plt.yscale('log')
+        ##plt.xscale('log')
+        #plt.plot(self.chTemps,T)
+        #plt.show()
 
         #Load in elemental abundance info
         abund = np.loadtxt(self.def_abund, usecols=[1])
@@ -435,6 +448,13 @@ class environment:
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
         return self.lamAx
 
+    def makePSF(self, angSig):
+        if angSig is not None:
+            diff = np.abs(self.lamAx[1] - self.lamAx[0])
+            pix = int(np.ceil(angSig/diff))
+            self.psf = con.Gaussian1DKernel(pix)
+        else: self.psf = None
+
 
   ## Velocities #####################################################################
 
@@ -504,9 +524,13 @@ class environment:
 
     def interp_frac(self, T):
         #Figures out the ionization fraction as f(T)
-        locs = 10**self.splinedChTemps
-        func = self.splinedChFracs
-        return self.interp(locs, func, T)
+        locs = self.chTemps
+        func = np.log10(self.chFracs)
+        temp = np.log10(T)
+        #print(temp)
+        #plt.plot(locs, func)
+        #plt.show()
+        return 10**self.interp(locs, func, temp)
 
     def interp_upsilon(self, X):
         #Figures out upsilon as f(X)
@@ -641,7 +665,7 @@ class envrs:
 ## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
     useB = True
-    useIonFrac = False
+    useIonFrac = True
     useWaves = True   
     useWind = True
     ID = 0
@@ -1100,7 +1124,7 @@ class simulate:
             self.shape = self.grid.shape
         self.shape2 = [self.shape[0], self.shape[1], -1]
 
-    def get(self, myProperty, dim = None, scaling = 'None', scale = 2):
+    def get(self, myProperty, dim = None, scaling = 'None', scale = 10):
         propp = np.array([x[myProperty] for x in self.pData])
         prop = propp.reshape(self.shape2)
         if not dim is None: prop = prop[:,:,dim]
@@ -1119,7 +1143,7 @@ class simulate:
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
-    def plot(self, property, dim = None, scaling = 'None', scale = 2, cmap = 'jet', axes = True, center = False):
+    def plot(self, property, dim = None, scaling = 'None', scale = 10, cmap = 'jet', axes = True, center = False):
         scaleProp, datSum = self.get(property, dim, scaling, scale)
         self.fig, ax = self.grid.plot(iL = self.iL)
         if type(self.grid) is grid.sightline:
@@ -1277,10 +1301,15 @@ class simulate:
                     bar.increment()
                     bar.display()
         self.profile = profile
+        self.applyPSF()
         #plt.plot(profile)
         #plt.show()
         if self.print and self.root: bar.display(True)
-        return profile
+        return self.profile
+
+    def applyPSF(self):
+        if self.env.psf is not None:
+            self.profile = con.convolve(self.profile, self.env.psf, boundary='extend')
 
 ## Time Dependence ######################################################
     def setTime(self, tt = 0):
@@ -1801,7 +1830,7 @@ class batchjob:
 
         A = self.env.ang2km(np.sqrt(2) * std * self.env.cm2ang(self.env.c) / self.env.lam0)
         B = self.env.cm2km(np.sqrt(2 * self.env.KB * T / self.env.mI))
-        vel =  np.sqrt(  A**2 - B**2 )
+        vel =  A #np.sqrt(  A**2 - B**2 )
         return vel
 
         #return self.env.cm2km(np.sqrt((np.sqrt(2) * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.env.lam0)))**2 - \
@@ -1819,6 +1848,30 @@ class batchjob:
                         plt.plot(self.env.lamAx, profile)
                         count += 1
                 plt.show()
+
+    def plotProfTogether(self, average = False, norm = False, log = False):
+        plt.figure()
+        plt.title('Profiles vs Impact')
+        plt.xlabel('Wavelength')
+        plt.ylabel('Intensity')
+
+        for profiles, impact in zip(self.profiles, self.doneLabels):
+            profsum = np.zeros_like(profiles[0])
+            count = 0
+            for profile in profiles:
+                if norm: profile /= np.amax(profile)
+                if average:
+                    profsum += profile
+                    count += 1
+                else:
+                    plt.plot(self.env.lamAx, profile, label = impact)
+                    break
+            if average:
+                profsum /= count
+                plt.plot(self.env.lamAx, profile, label = impact)
+        if log: plt.yscale('log')
+        plt.legend()
+        plt.show()
                   
     def plotStats(self):
         f, axArray = plt.subplots(3, 1, sharex=True)

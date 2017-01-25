@@ -7,4 +7,4 @@ if len(argv) > 0:
 else: num = 7
 
     
-os.system("mpiexec -n " + str(num) +" python main.py")
+os.system("mpiexec -n " + str(num) +" python main.py 0")
