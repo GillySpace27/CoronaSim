@@ -19,9 +19,9 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'test'
-    maxEnvs = 1
-    processEnvironments = True
+    envsName = 'chianti-nopsf'
+    maxEnvs = 6
+    processEnvironments = False
 
     #Which part of the program should run?
     compute = False 
