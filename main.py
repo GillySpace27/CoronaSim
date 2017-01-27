@@ -19,29 +19,27 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'envs-chianti'
-    maxEnvs = 100
-    processEnvironments = False
+    envsName = 'test'
+    maxEnvs = 1
+    processEnvironments = True
 
     #Which part of the program should run?
-    mainProgram = True
+    compute = False 
+    mainplot = False
+    firstRun = True
+    redoStats = True
+
     parallel = True
     cores = 7
-    try: #Main program Parameters
-        compute = False 
-        mainplot = True
-        firstRun = True
-        redoStats = True
-    except: pass
 
     simOne = False
 
     #Examine Batch Line Profiles
-    showProfiles = True
+    showProfiles = False
     maxPlotLines = 3
     average = True
     norm = False 
-    log = True
+    log = False
 
     #Batch Parameters #####################
     batchName = 'fe11-wind' #s'fe11-windNoFrac'
@@ -70,27 +68,31 @@ if __name__ == '__main__':
 
 
         ### Process Envs ###
+        ####################
         if processEnvironments:
             if root:
                 envrs1 = sim.envrs(envsName)
                 envs = envrs1.processEnvs(maxEnvs)
                 #envrs1.showEnvs(maxEnvs)
             comm.barrier()
-        ### Level 3 ### BatchSim
-        ###############
 
-        if mainProgram:
-            if compute:
-                if firstRun:       
-                    envs = sim.envrs(envsName).loadEnvs(maxEnvs)
-                    myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim)
-                else:
-                    myBatch = sim.batch(batchName).restartBatch()        
-            if root and mainplot:
+        ### Level 3 ### BatchSim
+        ########################
+
+        if compute:
+            if firstRun:       
+                envs = sim.envrs(envsName).loadEnvs(maxEnvs)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim)
+            else:
+                myBatch = sim.batch(batchName).restartBatch()  
+        if root:      
+            if mainplot:
                 myBatch = sim.batch(batchName).plotBatch(redoStats)
-                if showProfiles: 
-                    #myBatch.plotProfiles(maxPlotLines)
-                    myBatch.plotProfTogether(average, norm, log)
+            if showProfiles: 
+                try: myBatch
+                except: myBatch = sim.batch(batchName).loadBatch()
+                #myBatch.plotProfiles(maxPlotLines)
+                myBatch.plotProfTogether(average, norm, log)
 
 
         #### Level 1 ### Simulate

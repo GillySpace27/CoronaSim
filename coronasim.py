@@ -61,31 +61,19 @@ def absPath(path):
 
 #Environment Class contains simulation parameters
 class environment:
-
     #Environment Class contains simulation parameters
+
+    #Locations of files to be used
     slash = os.path.sep
-    datFolder = '..' + slash + 'dat' + slash
+    datFolder = os.path.abspath("../dat/data/")
 
-    rel_def_Bfile = datFolder + 'mgram_iseed0033.sav'    
-    def_Bfile = absPath(rel_def_Bfile)
-
-    rel_def_xiFile1 = datFolder + 'new_xi1.dat'    
-    def_xiFile1 = absPath(rel_def_xiFile1)
-
-    rel_def_xiFile2 = datFolder + 'new_xi2.dat'    
-    def_xiFile2 = absPath(rel_def_xiFile2)
-
-    rel_def_bkFile = datFolder + 'gilly_background_cvb07.dat'    
-    def_bkFile =absPath(rel_def_bkFile)
-
-    rel_def_ioneq = datFolder + 'formattedIoneq.tsv'  
-    def_ioneq =absPath(rel_def_ioneq)
-
-    rel_def_abund = datFolder + 'abundance.tsv'  
-    def_abund =absPath(rel_def_abund)
-
-    rel_def_ionpath = os.path.normpath('../chianti/chiantiData/')  
-    def_ionpath =absPath(rel_def_ionpath)
+    def_Bfile = os.path.join(datFolder, 'mgram_iseed0033.sav')
+    def_xiFile1 = os.path.join(datFolder, 'new_xi1.dat')
+    def_xiFile2 = os.path.join(datFolder, 'new_xi2.dat')
+    def_bkFile = os.path.join(datFolder, 'gilly_background_cvb07.dat')
+    def_ioneq = os.path.join(datFolder, 'formattedIoneq.tsv')
+    def_abund = os.path.join(datFolder, 'abundance.tsv'  )
+    def_ionpath = os.path.abspath('../chianti/chiantiData/')
 
     #For doing high level statistics
     fullMin = 0
@@ -106,9 +94,9 @@ class environment:
     hev = 4.135667662e-15 #eV*s
     KB = 1.380e-16 #ergs/Kelvin
     r_Mm = 695.5 #Rsun in Mega meters
-    mH = 1.6726219e-24 #grams per hydrogen
+    mH = 1.67372e-24 #grams per hydrogen
     mE = 9.10938e-28 #grams per electron
-    mP = 1.6726219e-24 #grams per proton
+    mP = 1.6726218e-24 #grams per proton
 
     #Parameters
     rstar = 1
@@ -588,7 +576,7 @@ class envrs:
     def __init__(self, name = ''):
         self.name = name
         self.slash = os.path.sep            
-        self.savPath = os.path.normpath('../dat/' + self.name)
+        self.savPath = os.path.normpath('../dat/envs/' + self.name)
         self.envPath = os.path.normpath('../dat/magnetograms')
         
         return
@@ -608,11 +596,23 @@ class envrs:
  
     def __saveEnvs(self, maxN = 1e8):
         ind = 0
-        os.makedirs(absPath(self.savPath), exist_ok=True)
+        os.makedirs(os.path.abspath(self.savPath), exist_ok=True)
+        pathname = self.savPath + self.slash + self.name
         for env in self.envs:
-            if ind < maxN: env.save(absPath(self.savPath + self.slash + self.name + '_' + str(ind) + '.env'))
+            if ind < maxN: env.save(os.path.abspath(pathname + '_' + str(ind) + '.env'))
             ind += 1
-    
+
+        infoEnv = self.envs[0]
+        with open(pathname + '.txt', 'w') as output:
+            output.write(time.asctime() + '\n\n')
+            myVars = (infoEnv.__class__.__dict__, vars(infoEnv))
+            for pile in myVars:
+                for ii in sorted(pile.keys()):
+                    if not callable(pile[ii]):
+                        string = str(ii) + " : " + str(pile[ii]) + '\n'
+                        output.write(string)
+                output.write('\n\n')
+
     def loadEnvs(self, maxN = 1e8):
         files = glob.glob(absPath(self.savPath +os.path.normpath('/*.env')))
         self.envs = []
