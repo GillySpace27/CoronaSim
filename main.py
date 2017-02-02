@@ -20,12 +20,12 @@ if __name__ == '__main__':
 
     #Environment Parameters
     envsName = 'chianti-nopsf'
-    maxEnvs = 6
+    maxEnvs = 5
     processEnvironments = False
 
     #Which part of the program should run?
     compute = False 
-    mainplot = False
+    mainplot = True
     firstRun = True
     redoStats = True
 
@@ -42,9 +42,9 @@ if __name__ == '__main__':
     log = False
 
     #Batch Parameters #####################
-    batchName = 'fe11-wind' #s'fe11-windNoFrac'
+    batchName = 'fe11-Test' #s'fe11-windNoFrac'
     impactPoints = 5
-    iterations = 3
+    iterations = 2
     b0 = 1.05
     b1 = 1.5
 
@@ -98,13 +98,32 @@ if __name__ == '__main__':
         #### Level 1 ### Simulate
         ################
 
+        def calcF1():
+            env = sim.envrs(envsName).loadEnvs(1)[0]
+            grdlst, blist = grid.impactLines(N = 100, b0 = 1, b1 = 3, len = 50)
+            f1 = []
+            with open('f1.txt', 'w') as output:
+                for grd, b in zip(grdlst,blist):
+                    lineSim = sim.simulate(grd, env, N = 4000, findT = False)
+                    lineSim.getProfile()
+                    point = sim.simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
+                    urProj = lineSim.urProj/point.ur
+                    print(str(b) + ' : ' + str(urProj))
+                    f1.append(urProj)
+                    output.write('{}   {}\n'.format(b,urProj))
+                    output.flush()
+                    #lineSim.plot('sinTheta')
+
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(1)[0]
+            calcF1()
 
-            lineSim = sim.simulate(df.impLine, env, N = 1000, findT = True)
-            lineSim.plot2('qt', 'T')
+
+
+
+
             ##lineSim.plot2('frac','nion', p1Scaling='log', p2Scaling='log')
             #lineSim.plotProfile()
 

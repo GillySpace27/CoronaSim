@@ -381,12 +381,14 @@ class defGrid:
         self.impLine = sightline([5,1e-8,b],[-5,1e-8,b], findT = True)
 
 
-def impactLines(N=5, b0 = 1.05, b1= 1.5):
+def impactLines(N=5, b0 = 1.05, b1= 1.5, len = 50):
     #Generate lines with a fixed angle but varying impact parameter
     lines = []
-    x = 5
+    x = len
     y = 1e-8
+    #bax = np.logspace(np.log10(b0),np.log10(b1),N)
     bax = np.linspace(b0,b1,N)
+    print(bax)
     for zz in bax:
         lines.append(sightline([x,y,zz], [-x,y,zz], findT = True))
     #List of grids, list of labels

@@ -72,7 +72,8 @@ class environment:
     def_xiFile2 = os.path.join(datFolder, 'new_xi2.dat')
     def_bkFile = os.path.join(datFolder, 'gilly_background_cvb07.dat')
     def_ioneq = os.path.join(datFolder, 'formattedIoneq.tsv')
-    def_abund = os.path.join(datFolder, 'abundance.tsv'  )
+    def_abund = os.path.join(datFolder, 'abundance.tsv')
+    def_fFile = os.path.join(datFolder, 'f1.txt')
     def_ionpath = os.path.abspath('../chianti/chiantiData/')
 
     #For doing high level statistics
@@ -130,9 +131,9 @@ class environment:
         self._xiLoad()
         self._plasmaLoad(bkFile)
         self._chiantiLoad()
+        self.fLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
         self.makePSF(self.psfSig)
-
 
         print("Done")
         print('')
@@ -168,6 +169,13 @@ class environment:
         self.ur_raw = x[:,2]
         self.vAlf_raw = x[:,3]
         self.T_raw = x[:,4]
+
+    def fLoad(self):
+        x = np.loadtxt(self.def_fFile)
+        self.fr = x[:,0]
+        self.f1_raw = x[:,1]
+        plt.plot(self.fr, self.f1_raw, 'o')
+        plt.show()
 
     def _xiLoad(self):
         #Load Xi
@@ -443,38 +451,6 @@ class environment:
             self.psf = con.Gaussian1DKernel(pix)
         else: self.psf = None
 
-
-  ## Velocities #####################################################################
-
-    def findVrms(self, rx, B):
-        #RMS Velocity
-        densfac = self.__findDensFac(B)
-        ur = self.__findUr(rx, densfac)
-        vAlf = self.__findAlf(rx,densfac)
-        vPh = ur + vAlf
-        rho = self.__findRho(rx, densfac)
-        Hfit  = 2.2*(self.fmax/10.)**0.62
-        f = self.fmax + (1.-self.fmax)*np.exp(-((rx-1.)/Hfit)**1.1)
-        return np.sqrt(self.S0*vAlf/((vPh)**2*rx**2*f*rho))
-
-    def __findDensFac(self, B):
-        # Find the density factor
-        if np.abs(B) < np.abs(self.B_thresh):
-            return 1
-        else:
-            return (np.abs(B) / self.B_thresh)**0.5
-
-    def __findUr(self, rx, densfac):
-        #Wind Velocity
-        return self.interp_rx_dat(rx, self.ur_raw) / densfac
-
-    def __findAlf(self, rx, densfac):
-        #Alfen Velocity
-        return self.interp_rx_dat(rx, self.vAlf_raw) / np.sqrt(densfac)
-
-    def __findRho(self, rx, densfac):
-        return self.interp_rx_dat(rx, self.rho_raw) * densfac 
-
   ## Misc Methods #################################################################
 
     def smallify(self):
@@ -519,6 +495,12 @@ class environment:
         #plt.plot(locs, func)
         #plt.show()
         return 10**self.interp(locs, func, temp)
+
+    def interp_f1(self, b):
+        #Figures out f1 as f(b)
+        locs = self.fr
+        func = self.f1_raw
+        return self.interp(locs, func, b)
 
     def interp_upsilon(self, X):
         #Figures out upsilon as f(X)
@@ -664,9 +646,9 @@ class envrs:
 
 ## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
-    useB = True
+    useB = False
     useIonFrac = True
-    useWaves = True   
+    useWaves = False   
     useWind = True
     ID = 0
 
@@ -694,11 +676,16 @@ class simpoint:
         self.__streamInit()
         self.findSpeeds()
         self.findQt()
+        self.findUrProj()
         #self.nion = self.nE
         #self.findIntensity(self.env.lam0, self.env.lam0)
         if pbar is not None:
             pbar.increment()
             pbar.display()
+
+    def findUrProj(self):
+        self.sinTheta = np.abs(self.cPos[0]/np.sqrt(self.cPos[0]**2 + self.cPos[2]))
+        self.urProj = self.sinTheta * self.ur * self.rho**2
 
   ## Temperature ######################################################################
     def findTemp(self):
@@ -849,7 +836,10 @@ class simpoint:
         self.ur = self.__findUr() #WIND VELOCITY
         self.vAlf = self.__findAlf()
         self.vPh = self.__findVPh()
-        self.vRms = self.__findvRms()
+        if self.useWaves:
+            self.vRms = self.__findvRms()
+        else:
+            self.vRms = 0
         self.vLOSwind = self.__findVLOS2(self.__findCU([self.ur,0,0]))
         #self.findWaveSpeeds(t)
 
@@ -861,10 +851,6 @@ class simpoint:
         self.alfU2 = self.vRms*self.xi2(self.t2) #*np.sin(self.omega * self.t2) #SIN WAVE UNDER ENV
         self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
         self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
-
-        if not self.useWaves:
-            self.uTheta = 0
-            self.uPhi = 0
 
         self.pU = [self.ur, self.uTheta, self.uPhi]
         self.cU = self.__findCU(self.pU) 
@@ -1290,6 +1276,8 @@ class simulate:
     def lineProfile(self):
         #Get a line profile integrated over time
         profile = np.zeros_like(self.env.lamAx)
+        proj = 0
+        rho2 = 0
         if self.print and self.root: 
             print('\nGenerating Profile...')
             bar = pb.ProgressBar(len(self.sPoints) * len(self.timeAx))
@@ -1297,10 +1285,13 @@ class simulate:
             for tt in self.timeAx:
                 point.setTime(tt)
                 profile += point.getProfile() * step
+                proj += point.urProj
+                rho2 += point.rho**2
                 if self.print and self.root:
                     bar.increment()
                     bar.display()
         self.profile = profile
+        self.urProj = proj/rho2
         self.applyPSF()
         #plt.plot(profile)
         #plt.show()
@@ -1900,8 +1891,8 @@ class batchjob:
         mm = 0
         titles = ['Intensity', 'Mean Redshift', 'Line Width', 'Skew', 'Excess Kurtosis']
         ylabels = ['', 'km/s', 'km/s', '', '']
-        import copy
-        thisBlist = copy.deepcopy(self.Blist)
+        #import copy
+        #thisBlist = copy.deepcopy(self.Blist)
         try:
             self.completeTime
         except: self.completeTime = 'Incomplete Job'
@@ -1912,9 +1903,8 @@ class batchjob:
             if mm == 0: ax.set_yscale('log') #Set first plot to log axis
             ax.errorbar(labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
             if mm == 2 and doRms: #Plot Vrms
-                for vRms in self.vRmsList:
-                    ax.plot(labels, vRms, label = str(thisBlist.pop(0)) + 'G')
-                ax.legend(loc = 4)
+                ax.plot(labels, self.thisV) 
+
                 #Put numbers on plot of widths
                 for xy in zip(labels, self.statV[mm][0]): 
                     ax.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
@@ -2018,20 +2008,22 @@ class impactsim(batchjob):
         return
         
     def makeVrms(self):
-        self.vRmsList = []
-        self.Blist = np.linspace(0,30,5).tolist()
 
-        for B in self.Blist:
-            thisV = []
-            for impact in self.doneLabels:
-                thisV.append(self.env.cm2km(self.env.findVrms(impact, B)))
-            self.vRmsList.append(thisV)
+        self.thisV = []
+        for impact in self.doneLabels:
+            point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
 
-        #for vRms in self.vRmsList:
-        #    plt.plot(self.labels, vRms)
+            thermal = 2 * self.env.KB * point.T / self.env.mI
+            wind = (self.env.interp_f1(impact) * 2 *point.ur)**2 #WHY IS THERE A FACTOR OF TWO HERE??
+            rms =  (self.f2(impact) * point.vRms)**2
+            V = np.sqrt(thermal + wind + rms)
 
-        #plt.show()
-        return
+            self.thisV.append(self.env.cm2km(V))
+
+
+    def f2(self, r):
+        return 1
+
         
 class batch:
     def __init__(self, batchname):
