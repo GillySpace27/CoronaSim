@@ -371,8 +371,12 @@ class defGrid:
         self.bpolePlane = plane(iL = 8)
 
         #This line goes over the pole without touching it
-        position, target = [2, np.pi/4, 0.01], [2, -np.pi/4, -0.01]
+        position, target = [2, np.pi/4, 0.001], [2, -np.pi/4, -0.001]
         self.primeLine = sightline(position, target, coords = 'sphere')
+
+        #This line goes over the pole without touching it
+        position, target = [10, np.pi/4, 0.001], [10, -np.pi/4, -0.001]
+        self.primeLineLong = sightline(position, target, coords = 'sphere')
 
         #This line starts from north pole and goes out radially
         self.poleLine = sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')
@@ -388,7 +392,6 @@ def impactLines(N=5, b0 = 1.05, b1= 1.5, len = 50):
     y = 1e-8
     #bax = np.logspace(np.log10(b0),np.log10(b1),N)
     bax = np.linspace(b0,b1,N)
-    print(bax)
     for zz in bax:
         lines.append(sightline([x,y,zz], [-x,y,zz], findT = True))
     #List of grids, list of labels

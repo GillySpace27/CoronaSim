@@ -25,7 +25,12 @@ from scipy import interpolate as interp
 from scipy.stats import norm
 import scipy.stats as stats
 from scipy.optimize import curve_fit
-import astropy.convolution as con
+
+
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    import astropy.convolution as con
 
 from collections import defaultdict
 
@@ -73,7 +78,8 @@ class environment:
     def_bkFile = os.path.join(datFolder, 'gilly_background_cvb07.dat')
     def_ioneq = os.path.join(datFolder, 'formattedIoneq.tsv')
     def_abund = os.path.join(datFolder, 'abundance.tsv')
-    def_fFile = os.path.join(datFolder, 'f1.txt')
+    def_f1File = os.path.join(datFolder, 'f1_fix.txt')
+    def_f2File = os.path.join(datFolder, 'f2_fix.txt')
     def_ionpath = os.path.abspath('../chianti/chiantiData/')
 
     #For doing high level statistics
@@ -131,7 +137,7 @@ class environment:
         self._xiLoad()
         self._plasmaLoad(bkFile)
         self._chiantiLoad()
-        self.fLoad()
+        self._fLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
         self.makePSF(self.psfSig)
 
@@ -170,12 +176,17 @@ class environment:
         self.vAlf_raw = x[:,3]
         self.T_raw = x[:,4]
 
-    def fLoad(self):
-        x = np.loadtxt(self.def_fFile)
+    def _fLoad(self):
+        x = np.loadtxt(self.def_f1File)
+        y = np.loadtxt(self.def_f2File)
         self.fr = x[:,0]
         self.f1_raw = x[:,1]
-        plt.plot(self.fr, self.f1_raw, 'o')
-        plt.show()
+        self.f2_raw = y[:,1]
+        #plt.plot(self.fr, self.f1_raw, label = "f1")
+        #plt.plot(self.fr, self.f2_raw, label = "f2")
+        #plt.hlines(1, self.fr.min(), self.fr.max())
+        #plt.legend()
+        #plt.show()
 
     def _xiLoad(self):
         #Load Xi
@@ -502,6 +513,18 @@ class environment:
         func = self.f1_raw
         return self.interp(locs, func, b)
 
+    def interp_f2(self, b):
+        #Figures out f1 as f(b)
+        locs = self.fr
+        func = self.f2_raw
+        return self.interp(locs, func, b)
+
+    def interp_ur(self, b):
+        #Figures out ur as f(b)
+        locs = self.rx_raw
+        func = self.ur_raw
+        return self.interp(locs, func, b)
+
     def interp_upsilon(self, X):
         #Figures out upsilon as f(X)
         locs = self.splinedUpsX
@@ -637,8 +660,6 @@ class envrs:
         if show: plt.show(False)
         return self.envs
             
-       
-
 
 ####################################################################                            
 ##                           Simulation                           ##
@@ -646,9 +667,9 @@ class envrs:
 
 ## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
-    useB = False
+    useB = True
     useIonFrac = True
-    useWaves = False   
+    useWaves = True   
     useWind = True
     ID = 0
 
@@ -671,6 +692,7 @@ class simpoint:
         #Initialization
         self.findTemp()
         self.findFootB()
+        self.__findFluxAngle()
         self.findDensity()
         self.findTwave()
         self.__streamInit()
@@ -684,8 +706,14 @@ class simpoint:
             pbar.display()
 
     def findUrProj(self):
-        self.sinTheta = np.abs(self.cPos[0]/np.sqrt(self.cPos[0]**2 + self.cPos[2]))
-        self.urProj = self.sinTheta * self.ur * self.rho**2
+        x = self.cPos[0]
+        z = self.cPos[2]
+        self.sinTheta = np.abs(x/np.sqrt(x**2 + z**2))
+        self.cosTheta = np.abs(z/np.sqrt(x**2 + z**2))
+        self.urProj =  self.sinTheta * self.ur  *  self.rho**2
+        self.rmsProj = self.cosTheta * self.vRms * self.rho**2
+        #self.urProj = np.abs(self.__findVPerp2(self.ur)[0] * self.rho**2  )
+        #self.rmsProj = np.abs(self.__findVLOS2(self.vRms)[0] * self.rho**2  )
 
   ## Temperature ######################################################################
     def findTemp(self):
@@ -703,15 +731,31 @@ class simpoint:
 
     def __findfoot_Pos(self):
         #Find the footpoint of the field line
-        Hfit  = 2.2*(self.env.fmax/10.)**0.62
-        self.f     = self.env.fmax + (1.-self.env.fmax)*np.exp(-((self.rx-1.)/Hfit)**1.1)
+        self.f = self.getAreaF(self.rx)
         theta0_edge = self.env.theta0 * np.pi/180.
         theta_edge  = np.arccos(1. - self.f + self.f*np.cos(theta0_edge))
         edge_frac   = theta_edge/theta0_edge 
         coLat = self.pPos[1] /edge_frac
         self.foot_pPos = [self.env.rstar+1e-2, coLat, self.pPos[2]]
         self.foot_cPos = self.sph2cart(self.foot_pPos)
-        
+
+    def getAreaF(self, r):
+        Hfit  = 2.2*(self.env.fmax/10.)**0.62
+        return self.env.fmax + (1.-self.env.fmax)*np.exp(-((r-1.)/Hfit)**1.1)
+
+    def __findFluxAngle(self):
+        dr = 1e-4
+        r1 = self.rx
+        r2 = r1 + dr
+
+        thetar1 = np.arccos(1 - self.getAreaF(r1)*(1-np.cos(self.foot_pPos[1])))
+        thetar2 = np.arccos(1 - self.getAreaF(r2)*(1-np.cos(self.foot_pPos[1])))
+        dtheta = thetar1 - thetar2
+
+        self.delta = np.arctan2(r1 * dtheta , dr)
+        #self.dx = np.cos(self.delta)
+        #self.dy = np.sin(self.delta)
+
     def __findStreamIndex(self):
         self.streamIndex = self.env.randOffset + self.env.label_im[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
                                             self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
@@ -738,8 +782,9 @@ class simpoint:
         elif self.footB > Bmax: self.B0 = Bmax
         else: self.B0 = self.footB
         dinfty = (self.B0/15)**1.18
-
-        return 0.34 + (dinfty - 0.34)*0.5*(1. + np.tanh((self.zx - 0.37)/0.26))
+        if self.useB:
+            return 0.34 + (dinfty - 0.34)*0.5*(1. + np.tanh((self.zx - 0.37)/0.26))
+        else: return 1
 
     def __findRho(self):
         return self.interp_rx_dat(self.env.rho_raw) * self.densfac  
@@ -841,7 +886,7 @@ class simpoint:
         else:
             self.vRms = 0
         self.vLOSwind = self.__findVLOS2(self.__findCU([self.ur,0,0]))
-        #self.findWaveSpeeds(t)
+        self.findWaveSpeeds(t)
 
     def findWaveSpeeds(self, t = 0):
         #Find all of the wave velocities
@@ -853,9 +898,20 @@ class simpoint:
         self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
 
         self.pU = [self.ur, self.uTheta, self.uPhi]
+        #self.pU = self.angleOffset(self.pU, self.delta)
         self.cU = self.__findCU(self.pU) 
         [self.ux, self.uy, self.uz] = self.cU
         self.vLOS = self.__findVLOS()      
+
+    def angleOffset(self, V, delta):
+        ur = V[0]
+        utheta = V[1]
+
+        newUr = - utheta * np.sin(delta) + ur * np.cos(delta)
+        newTheta = utheta * np.cos(delta) + ur * np.sin(delta)
+
+        newV = [newUr, newTheta, V[2]]
+        return newV
        
     def __streamInit(self):
         self.__findStreamIndex()
@@ -903,6 +959,13 @@ class simpoint:
         vLOS2 = np.dot(self.nGrad, vel)
         #print(self.vLOS2)
         return vLOS2
+
+    def __findVPerp2(self, vel, nGrad = None):
+        if nGrad is not None: self.nGrad = nGrad
+        else: self.nGrad = self.grid.ngrad
+        vPerp2 = np.cross(self.nGrad, vel)
+        #print(self.vLOS2)
+        return vPerp2
 
     def __findCU(self, pU):
         #Finds the cartesian velocity components
@@ -1021,7 +1084,7 @@ class simpoint:
 ## Level 1: Initializes many Simpoints into a Simulation
 class simulate: 
     #Level 1: Initializes many Simpoints into a Simulation
-    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, timeAx = [0]):
+    def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, timeAx = [0], getProf = False):
         self.print = printOut
         #if self.print: print("Initializing Simulation...")
         self.grid  = gridObj
@@ -1054,6 +1117,7 @@ class simulate:
         else: self.grid.setN(self.N)
 
         self.simulate_now()
+        if getProf: self.lineProfile()
 
     def simulate_now(self):
   
@@ -1167,6 +1231,18 @@ class simulate:
         grid.maximizePlot()
         plt.show()
 
+
+    def quiverPlot(self):
+        dx, datSum = self.get('dx')
+        dy, datSum = self.get('dy')
+        delta, datSum = self.get('delta')
+        plt.quiver(dx, dy, scale = 50, color = 'w')
+        rho, datsum = self.get('rho', scaling = 'log')
+        plt.imshow(delta, interpolation = "None")
+        plt.show()
+
+
+
     def plot2(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None, axes = True):
         scaleProp1, datSum1 = self.get(p1, p1Dim, p1Scaling)
         scaleProp2, datSum2 = self.get(p2, p2Dim, p2Scaling)
@@ -1204,25 +1280,29 @@ class simulate:
         grid.maximizePlot()
         plt.show()
 
-    def compare(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None):
+    def compare(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None, center = False):
         scaleprop = []
         scaleprop.append(self.get(p1, p1Dim, p1Scaling)[0])
         scaleprop.append(self.get(p2, p2Dim, p2Scaling)[0])
         fig, ax = self.grid.plot(iL = self.iL)
         fig.subplots_adjust(right=0.89)
         cbar_ax = fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
-      
+        if center:
+            vmax = np.nanmax(np.abs(scaleprop[0]))
+            vmin = - vmax
+        else: vmax = vmin = None
+
         global cur_plot
         cur_plot = 0
 
         def plot1():
-            im = ax.imshow(scaleprop[0], interpolation = 'none')
+            im = ax.imshow(scaleprop[0], interpolation = 'none', vmin = vmin, vmax = vmax)
             ax.set_title(p1)
             fig.colorbar(im, cax=cbar_ax)
             fig.canvas.draw()
 
         def plot2():
-            im = ax.imshow(scaleprop[1], interpolation = 'none')
+            im = ax.imshow(scaleprop[1], interpolation = 'none', vmin = vmin, vmax = vmax)
             ax.set_title(p2)
             fig.colorbar(im, cax=cbar_ax)
             fig.canvas.draw()
@@ -1257,8 +1337,7 @@ class simulate:
     ####################################################################
 
     def getProfile(self):
-        self.profile = self.lineProfile()
-        return self.profile
+        return self.lineProfile()
 
     def plotProfile(self):
         if self.profile is None: self.lineProfile()
@@ -1276,7 +1355,8 @@ class simulate:
     def lineProfile(self):
         #Get a line profile integrated over time
         profile = np.zeros_like(self.env.lamAx)
-        proj = 0
+        urProj = 0
+        rmsProj = 0
         rho2 = 0
         if self.print and self.root: 
             print('\nGenerating Profile...')
@@ -1285,13 +1365,19 @@ class simulate:
             for tt in self.timeAx:
                 point.setTime(tt)
                 profile += point.getProfile() * step
-                proj += point.urProj
-                rho2 += point.rho**2
+
+                urProj += point.urProj * step
+                rmsProj += point.rmsProj * step
+                rho2 += point.rho**2 * step
+
                 if self.print and self.root:
                     bar.increment()
                     bar.display()
         self.profile = profile
-        self.urProj = proj/rho2
+
+        self.urProj = urProj/rho2
+        self.rmsProj = rmsProj/rho2
+
         self.applyPSF()
         #plt.plot(profile)
         #plt.show()
@@ -1969,16 +2055,15 @@ class batchjob:
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
             rez = None, size = None, timeAx = [0], printSim = False, printOut = True, printMulti = True):
+        comm = MPI.COMM_WORLD
+        self.size = comm.Get_size()
+        self.root = comm.Get_rank() == 0
+
         self.Nb = Nb
         self.batchName = batchName
         self.timeAx = timeAx
 
-        #Figure out appropriate number of rotlines per env
-        comm = MPI.COMM_WORLD
-        self.size = comm.Get_size()
-        self.root = comm.Get_rank() == 0
-        try:
-            self.Nenv = len(envs)
+        try: self.Nenv = len(envs)
         except: self.Nenv = 1
 
         #Lines per environment
@@ -2014,16 +2099,14 @@ class impactsim(batchjob):
             point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
 
             thermal = 2 * self.env.KB * point.T / self.env.mI
-            wind = (self.env.interp_f1(impact) * 2 *point.ur)**2 #WHY IS THERE A FACTOR OF TWO HERE??
-            rms =  (self.f2(impact) * point.vRms)**2
+            wind = (self.env.interp_f1(impact) * 2 * point.ur)**2 #WHY IS THERE A FACTOR OF TWO HERE??
+            rms =  (self.env.interp_f2(impact) * 1.5 * point.vRms)**2
             V = np.sqrt(thermal + wind + rms)
 
             self.thisV.append(self.env.cm2km(V))
 
-
-    def f2(self, r):
-        return 1
-
+            if impact == 1.5:
+                print(np.sqrt(  (self.env.interp_f1(impact) * point.ur)**2 + 2 * self.env.KB * point.T / self.env.mI) )
         
 class batch:
     def __init__(self, batchname):
@@ -2052,9 +2135,47 @@ class batch:
         if redo: myBatch.redoStats()
         else: myBatch.doStats()
         return myBatch
+ 
+
+#Calculate the f1 parameter for the solar wind
+def calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 50, rez = 1000):
+    #Determine the factor applied to the plane-of-sky wind speed as f(b)
+    #Make sure to have the B field and waves off if you want this to be general.
+    env = envrs(envsName).loadEnvs(1)[0]
+    grdlst, blist = grid.impactLines(N, b0, b1, len)
+
+    with open('f1.txt', 'w') as f1out:
+        with open('f2.txt', 'w') as f2out:
+            f1 = []
+            f2 = []
+            absic = []
+            for grd, b in zip(grdlst,blist):
+                #Simulate one line across the top of the sun
+                lineSim = simulate(grd, env, N = rez, findT = False, getProf = True)
+                #lineSim.plot('urProj')
+                #Simulate one point directly over the pole
+                point = simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
+
+                urProj = lineSim.urProj/point.ur
+                rmsProj = lineSim.rmsProj/point.vRms
+
+                #Store the info
+                print(str(b) + ' ur: ' + str(urProj)+ ', rms: ' + str(rmsProj))
+                f1.append(urProj)
+                f2.append(rmsProj)
+                absic.append(b)
+                f1out.write('{}   {}\n'.format(b,urProj))
+                f1out.flush()
+                f2out.write('{}   {}\n'.format(b,rmsProj))
+                f2out.flush()
+                #lineSim.plot('rmsProj')
+            plt.plot(np.asarray(absic), np.asarray(f1))
+            plt.plot(np.asarray(absic), np.asarray(f2))
+            plt.show()
 
 
-        
+
+     
 
             
         

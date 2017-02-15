@@ -19,20 +19,15 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'chianti-nopsf'
-    maxEnvs = 5
+    envsName = 'chianti-nopsf3'
+    maxEnvs = 10
     processEnvironments = False
 
     #Which part of the program should run?
     compute = False 
-    mainplot = True
-    firstRun = True
-    redoStats = True
+    mainplot = False
 
-    parallel = True
-    cores = 7
-
-    simOne = False
+    simOne = True
 
     #Examine Batch Line Profiles
     showProfiles = False
@@ -42,9 +37,9 @@ if __name__ == '__main__':
     log = False
 
     #Batch Parameters #####################
-    batchName = 'fe11-Test' #s'fe11-windNoFrac'
+    batchName = 'fe11-nb-wind' #s'fe11-windNoFrac'
     impactPoints = 5
-    iterations = 2
+    iterations = 3
     b0 = 1.05
     b1 = 1.5
 
@@ -53,7 +48,13 @@ if __name__ == '__main__':
     size = [0.002, 0.01]
     timeAx = [0] #np.arange(0,1500)
     printSim = False #This makes it show the generating profile progress bar
-    
+
+    firstRun = True
+    redoStats = True
+
+    #Run in parallel?
+    parallel = True
+    cores = 7
 
 ##################################################################################
 ##################################################################################
@@ -61,7 +62,7 @@ if __name__ == '__main__':
     #This header handles calling the program in parallel
     try: go = int(sys.argv[1])
     except: go = 1
-    if parallel is True and go == True and compute is True:
+    if parallel and go == True and compute:
         print("Starting MPI...")
         os.system("mpiexec -n " + str(cores) +" python main.py 0")
     else:
@@ -98,28 +99,19 @@ if __name__ == '__main__':
         #### Level 1 ### Simulate
         ################
 
-        def calcF1():
-            env = sim.envrs(envsName).loadEnvs(1)[0]
-            grdlst, blist = grid.impactLines(N = 100, b0 = 1, b1 = 3, len = 50)
-            f1 = []
-            with open('f1.txt', 'w') as output:
-                for grd, b in zip(grdlst,blist):
-                    lineSim = sim.simulate(grd, env, N = 4000, findT = False)
-                    lineSim.getProfile()
-                    point = sim.simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
-                    urProj = lineSim.urProj/point.ur
-                    print(str(b) + ' : ' + str(urProj))
-                    f1.append(urProj)
-                    output.write('{}   {}\n'.format(b,urProj))
-                    output.flush()
-                    #lineSim.plot('sinTheta')
+
 
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(1)[0]
-            calcF1()
 
+            #sim.calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 10, rez = 1000)
+            lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
+            #lineSim.plot('uTheta')
+            #lineSim.plot('pPos', 1)
+            lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
+            #lineSim.quiverPlot()
 
 
 
