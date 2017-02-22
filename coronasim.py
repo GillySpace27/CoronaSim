@@ -78,8 +78,8 @@ class environment:
     def_bkFile = os.path.join(datFolder, 'gilly_background_cvb07.dat')
     def_ioneq = os.path.join(datFolder, 'formattedIoneq.tsv')
     def_abund = os.path.join(datFolder, 'abundance.tsv')
-    def_f1File = os.path.join(datFolder, 'f1_fix.txt')
-    def_f2File = os.path.join(datFolder, 'f2_fix.txt')
+    def_f1File = os.path.join(datFolder, 'f1_fluxAngle.txt')
+    def_f2File = os.path.join(datFolder, 'f2_fluxAngle.txt')
     def_ionpath = os.path.abspath('../chianti/chiantiData/')
 
     #For doing high level statistics
@@ -125,7 +125,7 @@ class environment:
     lam0 = 188.217
     lamPm = 1
 
-    psfSig = None #0.047 #Angstroms
+    psfSig = 0.047 #Angstroms
 
 
     def __init__(self, Bfile = None, bkFile = None, analyze = False, name = "Default"):
@@ -572,6 +572,27 @@ class environment:
     def ryd2ang(self,var):
         return self.cm2ang(self.c * self.hev / self.ryd2ev(var))
 
+    def get(self, myProperty, scaling = 'None', scale = 10):
+        prop = vars(self)[myProperty]
+        if scaling.lower() == 'none':
+            scaleProp = prop
+        elif scaling.lower() == 'log':
+            scaleProp = np.log10(prop)/np.log10(scale)
+        elif scaling.lower() == 'root':
+            scaleProp = prop**(1/scale)
+        elif scaling.lower() == 'exp':
+            scaleProp = prop**scale
+        else: 
+            print('Bad Scaling - None Used')
+            scaleProp = prop
+        return scaleProp
+
+    def plot(self, property, scaling = 'None', scale = 10, cmap = 'jet'):
+        scaleProp = self.get(property, scaling, scale)
+        plt.plot(scaleProp, cmap = cmap)
+        grid.maximizePlot()
+        plt.show()
+
         
 #envs Class handles creation, saving, and loading of environments
 class envrs:
@@ -667,10 +688,11 @@ class envrs:
 
 ## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
-    useB = True
+    useB = False
     useIonFrac = True
     useWaves = True   
     useWind = True
+    useFluxAngle = True
     ID = 0
 
     #Level 0: Simulates physical properties at a given coordinate
@@ -699,21 +721,13 @@ class simpoint:
         self.findSpeeds()
         self.findQt()
         self.findUrProj()
-        #self.nion = self.nE
-        #self.findIntensity(self.env.lam0, self.env.lam0)
+
         if pbar is not None:
             pbar.increment()
             pbar.display()
 
-    def findUrProj(self):
-        x = self.cPos[0]
-        z = self.cPos[2]
-        self.sinTheta = np.abs(x/np.sqrt(x**2 + z**2))
-        self.cosTheta = np.abs(z/np.sqrt(x**2 + z**2))
-        self.urProj =  self.sinTheta * self.ur  *  self.rho**2
-        self.rmsProj = self.cosTheta * self.vRms * self.rho**2
-        #self.urProj = np.abs(self.__findVPerp2(self.ur)[0] * self.rho**2  )
-        #self.rmsProj = np.abs(self.__findVLOS2(self.vRms)[0] * self.rho**2  )
+
+
 
   ## Temperature ######################################################################
     def findTemp(self):
@@ -752,7 +766,7 @@ class simpoint:
         thetar2 = np.arccos(1 - self.getAreaF(r2)*(1-np.cos(self.foot_pPos[1])))
         dtheta = thetar1 - thetar2
 
-        self.delta = np.arctan2(r1 * dtheta , dr)
+        self.delta = -np.arctan2(r1 * dtheta , dr)
         #self.dx = np.cos(self.delta)
         #self.dy = np.sin(self.delta)
 
@@ -769,7 +783,6 @@ class simpoint:
         self.frac = self.env.interp_frac(self.T) #ion fraction
 
         if self.useIonFrac:
-            #THIS IS THE LINE THAT MAKES THINGS BAD
             self.nion = np.abs(0.8 * self.frac * self.env.abundance * self.rho/self.env.mP) #ion number density
         else: self.nion = self.nE
 
@@ -877,42 +890,60 @@ class simpoint:
 
   ## Velocity ##########################################################################
     def findSpeeds(self, t = 0):
-        #Find all of the various velocities
-        self.ur = self.__findUr() #WIND VELOCITY
+        #Find all of the static velocities
+        self.uw = self.__findUw()
         self.vAlf = self.__findAlf()
         self.vPh = self.__findVPh()
-        if self.useWaves:
-            self.vRms = self.__findvRms()
-        else:
-            self.vRms = 0
-        self.vLOSwind = self.__findVLOS2(self.__findCU([self.ur,0,0]))
+        if self.useWaves: self.vRms = self.__findvRms()
+        else: self.vRms = 0
+
         self.findWaveSpeeds(t)
 
     def findWaveSpeeds(self, t = 0):
         #Find all of the wave velocities
         self.t1 = t - self.twave + self.alfT1
         self.t2 = t - self.twave + self.alfT2
-        self.alfU1 = self.vRms*self.xi1(self.t1) #*np.sin(self.omega * self.t1) #SIN WAVE UNDER ENV
-        self.alfU2 = self.vRms*self.xi2(self.t2) #*np.sin(self.omega * self.t2) #SIN WAVE UNDER ENV
-        self.uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
-        self.uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
+        self.alfU1 = self.vRms*self.xi1(self.t1) 
+        self.alfU2 = self.vRms*self.xi2(self.t2)
+        uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
+        uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
+        pU = [self.uw, uTheta, uPhi]
 
-        self.pU = [self.ur, self.uTheta, self.uPhi]
-        #self.pU = self.angleOffset(self.pU, self.delta)
-        self.cU = self.__findCU(self.pU) 
-        [self.ux, self.uy, self.uz] = self.cU
-        self.vLOS = self.__findVLOS()      
+        if self.useFluxAngle:
+            pU = self.fluxAngleOffset(pU, self.delta)
 
-    def angleOffset(self, V, delta):
-        ur = V[0]
-        utheta = V[1]
+        self.updateVelocities(pU)
 
-        newUr = - utheta * np.sin(delta) + ur * np.cos(delta)
+    def updateVelocities(self, pU):
+        self.ur, self.uTheta, self.uPhi = pU
+        self.pU = pU
+        self.cU = self.__findCU(pU) 
+        self.ux, self.uy, self.uz = self.cU
+        self.vLOS = self.__findVLOS()  
+
+    def fluxAngleOffset(self, pU, delta):
+        ur = pU[0]
+        utheta = pU[1]
+
+        newUr =        ur * np.cos(delta) - utheta * np.sin(delta) 
         newTheta = utheta * np.cos(delta) + ur * np.sin(delta)
 
-        newV = [newUr, newTheta, V[2]]
-        return newV
-       
+        newPU = [newUr, newTheta, pU[2]]
+        return newPU
+
+    def findUrProj(self):
+        x = self.cPos[0]
+        z = self.cPos[2]
+        r = np.sqrt(x**2 + z**2)
+        self.sinTheta = np.abs(x/r)
+        self.cosTheta = np.abs(z/r)
+
+        pU = [self.uw, self.vRms, 0]
+        if self.useFluxAngle:
+            pU = [x*np.cos(self.delta) for x in pU]
+        self.urProj =  self.sinTheta * pU[0] * self.rho**2
+        self.rmsProj = self.cosTheta * pU[1] * self.rho**2
+
     def __streamInit(self):
         self.__findStreamIndex()
         self.env.streamRand.seed(int(self.streamIndex))
@@ -922,14 +953,14 @@ class simpoint:
         self.alfAngle = thisRand[2] * 2 * np.pi
         self.omega = 0.01
 
-    def __findUr(self):
+    def __findUw(self):
         #Wind Velocity
         #return (1.7798e13) * self.fmax / (self.num_den * self.rx * self.rx * self.f)
         if self.useWind:
-            ur = self.interp_rx_dat(self.env.ur_raw) / self.densfac
+            uw = self.interp_rx_dat(self.env.ur_raw) / self.densfac
         else:
-            ur = 0
-        return ur
+            uw = 0
+        return uw
 
     def __findAlf(self):
         #Alfven Velocity
@@ -938,7 +969,7 @@ class simpoint:
 
     def __findVPh(self):
         #Phase Velocity
-        return self.vAlf + self.ur 
+        return self.vAlf + self.uw 
     
     def __findvRms(self):
         #RMS Velocity
@@ -1231,7 +1262,6 @@ class simulate:
         grid.maximizePlot()
         plt.show()
 
-
     def quiverPlot(self):
         dx, datSum = self.get('dx')
         dy, datSum = self.get('dy')
@@ -1240,8 +1270,6 @@ class simulate:
         rho, datsum = self.get('rho', scaling = 'log')
         plt.imshow(delta, interpolation = "None")
         plt.show()
-
-
 
     def plot2(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None, axes = True):
         scaleProp1, datSum1 = self.get(p1, p1Dim, p1Scaling)
@@ -1378,15 +1406,12 @@ class simulate:
         self.urProj = urProj/rho2
         self.rmsProj = rmsProj/rho2
 
-        self.applyPSF()
         #plt.plot(profile)
         #plt.show()
         if self.print and self.root: bar.display(True)
         return self.profile
 
-    def applyPSF(self):
-        if self.env.psf is not None:
-            self.profile = con.convolve(self.profile, self.env.psf, boundary='extend')
+
 
 ## Time Dependence ######################################################
     def setTime(self, tt = 0):
@@ -1732,8 +1757,12 @@ class multisim:
 # For doing the same line from many angles, to get statistics
 
 
-## Level 3: Initializes many Multisims, varying a parameter
+## Level 3: Initializes many Multisims, varying a parameter. Does statistics.
 class batchjob:
+
+    statType = 'gauss' #'Gaussian'
+    usePsf = True
+
     #Requires labels, xlabel, batch, N
     def __init__(self, envs):
     
@@ -1814,44 +1843,83 @@ class batchjob:
         self.rank = comm.Get_rank()
         self.root = self.rank == 0
 
-    def doStats(self):
+    def doStats(self, width):
         if self.complete:
-            self.plotStatsV()
+            self.plot(width)
         else:
-            self.redoStats()
+            self.redoStats(width)
 
-    def redoStats(self):
+    def redoStats(self, width):
         self.__findBatchStats()
-        self.__findSampleStats()
         self.makeVrms()
-        self.plotStatsV()
+        self.plot(width)
+
+    def plot(self, width):
+        if width:
+            self.plotWidth()
+        else:
+            self.plotStatsV()
 
     def __findBatchStats(self):
+        #Finds the statistics of all of the profiles in all of the multisims
         self.lineStats = []
         for profiles in self.profiles:
             self.lineStats.append(self.__findSimStats(profiles))
+        self.__findSampleStats()
 
     def __findSimStats(self, profiles):
+        #Finds the statistics of all profiles in a given list
         simStats = []
         for profile in profiles:
             simStats.append(self.__findProfileStats(profile))
         return simStats
 
     def __findProfileStats(self, profile):
-        maxMoment = 5
-        moment = np.zeros(maxMoment)
-        for mm in np.arange(maxMoment):
-                moment[mm] = np.dot(profile, self.env.lamAx**mm)
+        if self.usePsf:
+            try:
+                profile = con.convolve(profile, self.env.psf, boundary='extend')
+            except: print("No point spread function available")
 
-        power = moment[0] 
-        mu = moment[1] / moment[0]
-        sigma = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
-        skew = (moment[3]/moment[0] - 3*mu*sigma**2 - mu**3) / sigma**3
-        kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigma**2 + 3*mu**4) / sigma**4 - 3
+        if self.statType.lower() == 'moment':
+            #Finds the moment statistics of a single line profile
+            maxMoment = 5
+            moment = np.zeros(maxMoment)
+            for mm in np.arange(maxMoment):
+                    moment[mm] = np.dot(profile, self.env.lamAx**mm)
+
+            power = moment[0] 
+            mu = moment[1] / moment[0]
+            sigma = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
+            skew = (moment[3]/moment[0] - 3*mu*sigma**2 - mu**3) / sigma**3
+            kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigma**2 + 3*mu**4) / sigma**4 - 3
+        else:
+            #Fits a gaussian to a single line profile
+            def gauss_function(x, a, x0, sigma):
+                return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+            psfSig = (self.env.psfSig if self.usePsf else 0)
+
+            sig0 = np.sum((self.env.lamAx - self.env.lam0)**2)/len(profile)
+            amp0 = np.max(profile)
+            profNorm = profile - np.min(profile)
+            popt, pcov = curve_fit(gauss_function, self.env.lamAx, profNorm, p0 = [amp0, self.env.lam0, sig0])
+
+            power = popt[0] * np.sqrt(np.pi * 2 * popt[2]**2)
+            mu = popt[1]
+            sigma = np.abs(popt[2]) - psfSig
+            skew = 0
+            kurt = 0
+            fit = gauss_function(self.env.lamAx, popt[0], mu, sigma)
+            #plt.plot(self.env.lamAx, profile)
+            #plt.plot(self.env.lamAx, fit)
+            #plt.show()
+
+
         return [power, mu, sigma, skew, kurt]
 
+
     def __findSampleStats(self):
-        #Does statistics on the statistics
+        #Finds the mean and varience of each of the statistics for each multisim
         self.stat =  [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         self.statV = [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         for vars, impact in zip(self.lineStats, self.labels):
@@ -1863,55 +1931,45 @@ class batchjob:
             allKurt = [x[4] for x in vars]
             
             #Wavelength Units
-            self.stat[0][0].append(np.mean(allAmp))
-            self.stat[0][1].append(np.std(allAmp))
-
-            self.stat[1][0].append(np.mean(allMeanC))
-            self.stat[1][1].append(np.std(allMeanC))
+            self.assignStat(0, allAmp)
+            self.assignStat(1, allMeanC)
+            self.assignStat(2, allStd)
+            self.assignStat(3, allSkew)
+            self.assignStat(4, allKurt)
             
-            self.stat[2][0].append(np.mean(allStd))
-            self.stat[2][1].append(np.std(allStd))
-
-            self.stat[3][0].append(np.mean(allSkew))
-            self.stat[3][1].append(np.std(allSkew))
-
-            self.stat[4][0].append(np.mean(allKurt))
-            self.stat[4][1].append(np.std(allKurt))
-
             #Velocity Units
-            self.statV[0][0].append(np.mean(allAmp))
-            self.statV[0][1].append(np.std(allAmp))
+            self.assignStatV(0, allAmp)
+            self.assignStatV(3, allSkew)
+            self.assignStatV(4, allKurt)
 
-            self.statV[1][0].append(self.__mean2V(np.mean(allMean)))
-            self.statV[1][1].append(np.std([self.__mean2V(x) for x in allMean]))
-                
-            T = self.env.interp_rx_dat(impact, self.env.T_raw)
-            self.statV[2][0].append(self.__std2V(np.mean(allStd), T))
-            self.statV[2][1].append(self.__std2V(np.std(allStd), T))
+            mean1= self.__mean2V(np.mean(allMean))
+            std1 = np.std([self.__mean2V(x) for x in allMean])
+            self.assignStatV2(1, mean1, std1)
 
-            #TODO make these in velocity units
-            self.statV[3][0].append(np.mean(allSkew))
-            self.statV[3][1].append(np.std(allSkew))
+            mean2= self.__std2V(np.mean(allStd))
+            std2 = self.__std2V(np.std(allStd))
+            self.assignStatV2(2, mean2, std2)
 
-            self.statV[4][0].append(np.mean(allKurt))
-            self.statV[4][1].append(np.std(allKurt))
-        #print(self.statV[2][0])
-        #print('')
-        #print(self.statV[2][1])
+    def assignStat(self, n, var):
+        self.stat[n][0].append(np.mean(var))
+        self.stat[n][1].append(np.std(var))
+
+    def assignStatV(self, n, var):
+        self.statV[n][0].append(np.mean(var))
+        self.statV[n][1].append(np.std(var))
+
+    def assignStatV2(self, n, mean, std):
+        self.statV[n][0].append(mean)
+        self.statV[n][1].append(std)
 
     def __mean2V(self, mean):
+        #Finds the redshift velocity of a wavelength shifted from lam0
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
                 (self.env.ang2cm(self.env.lam0)))
 
-    def __std2V(self, std, T):
+    def __std2V(self, std):
+        return np.sqrt(2) * self.env.cm2km(self.env.c) * (std / self.env.lam0)
 
-        A = self.env.ang2km(np.sqrt(2) * std * self.env.cm2ang(self.env.c) / self.env.lam0)
-        B = self.env.cm2km(np.sqrt(2 * self.env.KB * T / self.env.mI))
-        vel =  A #np.sqrt(  A**2 - B**2 )
-        return vel
-
-        #return self.env.cm2km(np.sqrt((np.sqrt(2) * self.env.ang2cm(std) * self.env.c / (self.env.ang2cm(self.env.lam0)))**2 - \
-        #    (2 * self.env.KB * T / self.env.mi)**2))
          
     def plotProfiles(self, max):
         if max is not None:
@@ -1984,7 +2042,7 @@ class batchjob:
         except: self.completeTime = 'Incomplete Job'
         f.suptitle(str(self.batchName) + ': ' + str(self.completeTime) + '\n Wavelength: ' + str(self.env.lam0) + 
             ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + 
-            '; Lines per Env: ' + str(self.Nrot))
+            '; Lines per Env: ' + str(self.Nrot) + '\n                                                                      statType = ' + str(self.statType))
         for ax in axArray:
             if mm == 0: ax.set_yscale('log') #Set first plot to log axis
             ax.errorbar(labels, self.statV[mm][0], yerr = self.statV[mm][1], fmt = 'o')
@@ -2004,6 +2062,43 @@ class batchjob:
         ax.set_xlabel(self.xlabel)
         grid.maximizePlot()
         plt.show()
+
+    def plotWidth(self):
+        f = plt.figure()
+        f.canvas.set_window_title('Coronasim')
+        doRms = True
+        try:
+            labels = np.asarray(self.doneLabels)
+        except: 
+            labels = np.arange(len(self.profiles))
+            doRms = False
+        try:
+            self.completeTime
+        except: self.completeTime = 'Incomplete Job'
+        f.suptitle(str(self.batchName) + ': ' + str(self.completeTime) + '\n Wavelength: ' + str(self.env.lam0) + 
+            ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + 
+            '; Lines per Env: ' + str(self.Nrot) + '\n                                                                      statType = ' + str(self.statType))
+        plt.errorbar(labels, self.statV[2][0], yerr = self.statV[2][1], fmt = 'o', label = 'Simulation')
+
+
+        if doRms: #Plot Vrms
+            plt.plot(labels, self.thisV, label = 'Expected') 
+            plt.plot(labels, self.hahnV, label = "HahnV")
+            #Put numbers on plot of widths
+            for xy in zip(labels, self.statV[2][0]): 
+                plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
+
+            plt.title('Line Width')
+            plt.legend()
+            plt.ylabel('Km/s')
+            spread = 0.05
+            plt.xlim([labels[0]-spread, labels[-1]+spread]) #Get away from the edges
+            plt.xlabel(self.xlabel)
+        grid.maximizePlot()
+        plt.show()
+
+
+
 
     def save(self, batchName = None, keep = False, printout = True):
 
@@ -2095,19 +2190,24 @@ class impactsim(batchjob):
     def makeVrms(self):
 
         self.thisV = []
+        self.hahnV = []
         for impact in self.doneLabels:
             point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
 
             thermal = 2 * self.env.KB * point.T / self.env.mI
-            wind = (self.env.interp_f1(impact) * 2 * point.ur)**2 #WHY IS THERE A FACTOR OF TWO HERE??
-            rms =  (self.env.interp_f2(impact) * 1.5 * point.vRms)**2
+            wind = (self.env.interp_f1(impact) * 1 * point.ur)**2 
+            rms =  (self.env.interp_f2(impact) * 1 * point.vRms)**2
             V = np.sqrt(thermal + wind + rms)
 
             self.thisV.append(self.env.cm2km(V))
+            self.hahnV.append(self.hahnFit(impact))
+            #if impact == 1.5:
+            #    print(np.sqrt(  (self.env.interp_f1(impact) * point.ur)**2 + 2 * self.env.KB * point.T / self.env.mI) )
 
-            if impact == 1.5:
-                print(np.sqrt(  (self.env.interp_f1(impact) * point.ur)**2 + 2 * self.env.KB * point.T / self.env.mI) )
-        
+    def hahnFit(self, r, r0 = 1.05, vth = 25.8, vnt = 32.2, H = 0.0657):
+        veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))
+        return veff
+
 class batch:
     def __init__(self, batchname):
         self.batchName = batchname
@@ -2129,23 +2229,26 @@ class batch:
         myBatch.simulate_now()
         return myBatch
 
-    def plotBatch(self, redo = False):
+    def plotBatch(self, redo = False, width = False):
         myBatch = self.loadBatch()
         myBatch.findRank()
-        if redo: myBatch.redoStats()
-        else: myBatch.doStats()
+        if redo: myBatch.redoStats(width)
+        else: myBatch.doStats(width)
         return myBatch
  
 
 #Calculate the f1 parameter for the solar wind
-def calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 50, rez = 1000):
+def calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 50, rez = 1000, name = 'default'):
     #Determine the factor applied to the plane-of-sky wind speed as f(b)
     #Make sure to have the B field and waves off if you want this to be general.
     env = envrs(envsName).loadEnvs(1)[0]
     grdlst, blist = grid.impactLines(N, b0, b1, len)
+    folder = "../dat/data/"
+    file1 = os.path.normpath(folder + 'f1_' + name + '.txt')
+    file2 = os.path.normpath(folder + 'f2_' + name + '.txt')
 
-    with open('f1.txt', 'w') as f1out:
-        with open('f2.txt', 'w') as f2out:
+    with open(file1, 'w') as f1out:
+        with open(file2, 'w') as f2out:
             f1 = []
             f2 = []
             absic = []

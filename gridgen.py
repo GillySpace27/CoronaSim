@@ -195,7 +195,7 @@ class sightline(generator):
 #        Initialize the sight line between two points
         self.currS = 0
         self.step = self.maxStep
-        if coords == 'Cart':
+        if coords.lower() == 'cart':
             self.cPos = position
             self.cTarg = target
             self.pPos = self.cart2sph(position)
@@ -375,8 +375,8 @@ class defGrid:
         self.primeLine = sightline(position, target, coords = 'sphere')
 
         #This line goes over the pole without touching it
-        position, target = [10, np.pi/4, 0.001], [10, -np.pi/4, -0.001]
-        self.primeLineLong = sightline(position, target, coords = 'sphere')
+        position, target = [5, 0.001, 1.5], [-5, 0.001, 1.5]
+        self.primeLineLong = sightline(position, target, coords = 'cart')
 
         #This line starts from north pole and goes out radially
         self.poleLine = sightline([1.1,0,0],[3.0,0,0], coords = 'Sphere')

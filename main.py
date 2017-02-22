@@ -19,15 +19,16 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'chianti-nopsf3'
+    envsName = 'chianti-fluxAngle'
     maxEnvs = 10
     processEnvironments = False
 
     #Which part of the program should run?
-    compute = False 
-    mainplot = False
+    compute = False
+    mainplot = True
+    widthPlot = True
 
-    simOne = True
+    simOne = False
 
     #Examine Batch Line Profiles
     showProfiles = False
@@ -37,9 +38,9 @@ if __name__ == '__main__':
     log = False
 
     #Batch Parameters #####################
-    batchName = 'fe11-nb-wind' #s'fe11-windNoFrac'
-    impactPoints = 5
-    iterations = 3
+    batchName = 'noB-FA' #s'fe11-windNoFrac'
+    impactPoints = 10
+    iterations = 10
     b0 = 1.05
     b1 = 1.5
 
@@ -88,7 +89,7 @@ if __name__ == '__main__':
                 myBatch = sim.batch(batchName).restartBatch()  
         if root:      
             if mainplot:
-                myBatch = sim.batch(batchName).plotBatch(redoStats)
+                myBatch = sim.batch(batchName).plotBatch(redoStats, widthPlot)
             if showProfiles: 
                 try: myBatch
                 except: myBatch = sim.batch(batchName).loadBatch()
@@ -106,11 +107,14 @@ if __name__ == '__main__':
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(1)[0]
 
-            #sim.calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 10, rez = 1000)
-            lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
+            env.plot('rx_raw')
+            #sim.calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 10, rez = 1000, name = 'fluxAngle')
+            #lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
+            #lineSim2 = sim.simulate(df.primeLineLong, env, N = (1000,10000), findT = True)
+            #lineSim2.plot('vLOS')
             #lineSim.plot('uTheta')
             #lineSim.plot('pPos', 1)
-            lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
+            #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()
 
 
