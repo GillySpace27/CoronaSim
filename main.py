@@ -32,9 +32,9 @@ if __name__ == '__main__':
     simOne = False
 
     #Batch Parameters #####################
-    batchName = 'FA2' #'noB-FA' #'fe11-windNoFrac'
-    impactPoints = 10
-    iterations = 2
+    batchName = 'newMPI' #'noB-FA' #'fe11-windNoFrac'
+    impactPoints = 5
+    iterations = 3
     b0 = 1.01
     b1 = 1.46
 

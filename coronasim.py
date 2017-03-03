@@ -1633,10 +1633,9 @@ class multisim:
             self.batch = self.oneBatch
             self.envInd = [0] * len(self.oneBatch)
         
-
         self.N = N
         self.findT = findT
-        self.MPI_init()
+        self.newMPI_init()
         #self.findProfiles()
 
     def MPI_init(self):
@@ -1675,7 +1674,6 @@ class multisim:
 
         for grd, envInd in zip(self.gridList, self.envIndList):
             self.envs[envInd].randomize()
-            #t = time.time()
             simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim)
             #self.simList.append(simulation)
             profiles.append(simulation.getProfile())
@@ -1688,12 +1686,50 @@ class multisim:
         if self.root and self.print: bar.display(force = True)
 
         profilebin = self.comm.gather(profiles, root = 0)
+
         if self.root:
             self.profiles = []
             for core in profilebin:
                 for line in core:
                     self.profiles.append(line)
             print("Total Lines: " + str(len(self.profiles)))
+
+    def newMPI_init(self):
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.root = self.rank == 0
+        self.size = self.comm.Get_size()
+
+        if self.root and self.print: 
+            print('Running MultiSim: ' + time.asctime())
+            t = time.time() #Print Stuff
+            print('Nenv = ' + str(self.Nenv), end = '; ')
+            print('Lines\Env = ' + str(len(self.oneBatch)), end = '; ')
+            print('JobSize = ' + str(len(self.batch)))
+
+            print('PoolSize = ' + str(self.size), end = '; ')
+            #print('ChunkSize = ' + str(len(self.gridList)), end = '; ') 
+            #print('Short Cores: ' + str(self.size * len(self.gridList) - len(self.batch)))#Print Stuff
+
+            bar = pb.ProgressBar(len(self.batch))
+            bar.display()
+        else: bar = None
+
+        work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
+        self.profiles = self.poolMPI(work, self.mpi_sim, bar)
+
+        if self.root and self.print: 
+            bar.display(force = True)
+            print("Total Lines: " + str(len(self.profiles)))
+
+    def mpi_sim(self, data):
+        grd, envInd = data
+
+        self.envs[envInd].randomize()
+        simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim)
+        profile = simulation.getProfile()
+        return profile
+
 
     def getLineArray(self):
         return np.asarray(self.profiles)
@@ -1768,12 +1804,83 @@ class multisim:
         self.profiles = profiles
         print(vars(self))
         return self
+
+
+
+
+ 
+    def master(self, wi, bar):
+        WORKTAG = 0
+        DIETAG = 1
+        all_data = []
+        size = MPI.COMM_WORLD.Get_size()
+        current_work = Work(wi) 
+        comm = MPI.COMM_WORLD
+        status = MPI.Status()
+        for i in range(1, size): 
+            anext = current_work.get_next_item() 
+            if not anext: break
+            comm.send(anext, dest=i, tag=WORKTAG)
+ 
+        while 1:
+            anext = current_work.get_next_item()
+            if not anext: break
+            data = comm.recv(None, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+            all_data.append(data)
+            bar.increment() 
+            bar.display()
+            comm.send(anext, dest=status.Get_source(), tag=WORKTAG)
+
+ 
+        for i in range(1,size):
+            data = comm.recv(None, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG)
+            all_data.append(data)
+            bar.increment() 
+            bar.display()
+    
+        for i in range(1,size):
+            comm.send(None, dest=i, tag=DIETAG)
+     
+        return all_data    
+    
+    def slave(self, do_work):
+        comm = MPI.COMM_WORLD
+        status = MPI.Status()
+        while 1:
+            data = comm.recv(None, source=0, tag=MPI.ANY_TAG, status=status)
+            if status.Get_tag(): break
+            comm.send(do_work(data), dest=0)
+
+
+    
+    def poolMPI(self, work_list, do_work, bar):
+        rank = MPI.COMM_WORLD.Get_rank()
+        name = MPI.Get_processor_name()
+        size = MPI.COMM_WORLD.Get_size() 
+    
+        if rank == 0:
+            all_dat = self.master(work_list, bar)
+            return all_dat
+        else:
+            self.slave(do_work)
+            return None
+        
+ 
+class Work():
+    def __init__(self, work_items):
+        self.work_items = work_items[:] 
+ 
+    def get_next_item(self):
+        if len(self.work_items) == 0:
+            return None
+        return self.work_items.pop()
+
 #Inputs: (self, batch, envs, N = 1000, findT = None, printOut = False)
 #Attributes: lines, lineStats
 # For doing the same line from many angles, to get statistics
 
 
-
+ 
 
 
 
