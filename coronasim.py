@@ -78,9 +78,10 @@ class environment:
     def_bkFile = os.path.join(datFolder, 'gilly_background_cvb07.dat')
     def_ioneq = os.path.join(datFolder, 'formattedIoneq.tsv')
     def_abund = os.path.join(datFolder, 'abundance.tsv')
-    def_f1File = os.path.join(datFolder, 'f1_fluxAngle.txt')
-    def_f2File = os.path.join(datFolder, 'f2_fluxAngle.txt')
+    def_f1File = os.path.join(datFolder, 'f1_fix.txt')
+    def_f2File = os.path.join(datFolder, 'f2_fix.txt')
     def_ionpath = os.path.abspath('../chianti/chiantiData/')
+    def_hahnFile = os.path.join(datFolder, 'hahnData.txt')
 
     #For doing high level statistics
     fullMin = 0
@@ -128,7 +129,7 @@ class environment:
     psfSig = 0.047 #Angstroms
 
 
-    def __init__(self, Bfile = None, bkFile = None, analyze = False, name = "Default"):
+    def __init__(self, Bfile = None, bkFile = None, analyze = False, name = "Default", fFile = None):
         #Initializes
         self.name = name
         self._bfileLoad(Bfile, plot=False)
@@ -137,7 +138,8 @@ class environment:
         self._xiLoad()
         self._plasmaLoad(bkFile)
         self._chiantiLoad()
-        self._fLoad()
+        self._fLoad(fFile)
+        self._hahnLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
         self.makePSF(self.psfSig)
 
@@ -176,15 +178,22 @@ class environment:
         self.vAlf_raw = x[:,3]
         self.T_raw = x[:,4]
 
-    def _fLoad(self):
-        x = np.loadtxt(self.def_f1File)
-        y = np.loadtxt(self.def_f2File)
+    def _fLoad(self, fFile = None):
+        if fFile is None: 
+            f1File = self.def_f1File
+            f2File = self.def_f2File
+        else: 
+            f1File = os.path.join(self.datFolder, 'f1_{}.txt'.format(fFile))
+            f2File = os.path.join(self.datFolder, 'f2_{}.txt'.format(fFile))
+        x = np.loadtxt(f1File)
+        y = np.loadtxt(f2File)
         self.fr = x[:,0]
         self.f1_raw = x[:,1]
         self.f2_raw = y[:,1]
+        #print(f1File)
         #plt.plot(self.fr, self.f1_raw, label = "f1")
         #plt.plot(self.fr, self.f2_raw, label = "f2")
-        #plt.hlines(1, self.fr.min(), self.fr.max())
+        #plt.axhline(1, color = 'k')
         #plt.legend()
         #plt.show()
 
@@ -283,6 +292,15 @@ class environment:
         #print(temps)
         #print(ups)  
         pass     
+
+    def _hahnLoad(self):
+        x = np.loadtxt(self.def_hahnFile)
+        self.hahnAbs = x[:,0]
+        line1 = x[:,1]
+        line2 = x[:,2]
+
+        self.hahnPoints = line1
+        self.hahnError = line2-line1
 
   ## Magnets ##########################################################################
         
@@ -587,9 +605,15 @@ class environment:
             scaleProp = prop
         return scaleProp
 
-    def plot(self, property, scaling = 'None', scale = 10, cmap = 'jet'):
+    def plot(self, property, abssisca = None, scaling = 'None', scale = 10):
         scaleProp = self.get(property, scaling, scale)
-        plt.plot(scaleProp, cmap = cmap)
+
+        if abssisca is not None:
+            abss = self.get(abssisca)
+        else: abss = np.arange(len(scaleProp))
+
+        plt.plot(abss, scaleProp)
+        plt.title(property)
         grid.maximizePlot()
         plt.show()
 
@@ -599,8 +623,9 @@ class envrs:
 
     #envs Class handles creation, saving, and loading of environments
     
-    def __init__(self, name = ''):
+    def __init__(self, name = '', fFile = None):
         self.name = name
+        self.fFile = fFile
         self.slash = os.path.sep            
         self.savPath = os.path.normpath('../dat/envs/' + self.name)
         self.envPath = os.path.normpath('../dat/magnetograms')
@@ -616,7 +641,7 @@ class envrs:
         envs = []
         ind = 0
         for file in files:
-            if ind < maxN: envs.append(environment(Bfile = file, name = self.name + '_' + str(ind)))
+            if ind < maxN: envs.append(environment(Bfile = file, name = self.name + '_' + str(ind), fFile = self.fFile))
             ind += 1
         return envs
  
@@ -692,9 +717,9 @@ class simpoint:
     useIonFrac = True
     useWaves = True   
     useWind = True
-    useFluxAngle = True
+    useFluxAngle = False
     ID = 0
-
+    
     #Level 0: Simulates physical properties at a given coordinate
     def __init__(self, cPos = [0.1,0.1,1.5], grid = None, env = None, findT = True, pbar = None):
         #Inputs
@@ -727,8 +752,6 @@ class simpoint:
             pbar.display()
 
 
-
-
   ## Temperature ######################################################################
     def findTemp(self):
         self.T = self.interp_rx_dat(self.env.T_raw)
@@ -757,18 +780,7 @@ class simpoint:
         Hfit  = 2.2*(self.env.fmax/10.)**0.62
         return self.env.fmax + (1.-self.env.fmax)*np.exp(-((r-1.)/Hfit)**1.1)
 
-    def __findFluxAngle(self):
-        dr = 1e-4
-        r1 = self.rx
-        r2 = r1 + dr
 
-        thetar1 = np.arccos(1 - self.getAreaF(r1)*(1-np.cos(self.foot_pPos[1])))
-        thetar2 = np.arccos(1 - self.getAreaF(r2)*(1-np.cos(self.foot_pPos[1])))
-        dtheta = thetar1 - thetar2
-
-        self.delta = -np.arctan2(r1 * dtheta , dr)
-        #self.dx = np.cos(self.delta)
-        #self.dy = np.sin(self.delta)
 
     def __findStreamIndex(self):
         self.streamIndex = self.env.randOffset + self.env.label_im[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
@@ -921,6 +933,20 @@ class simpoint:
         self.ux, self.uy, self.uz = self.cU
         self.vLOS = self.__findVLOS()  
 
+    def __findFluxAngle(self):
+        dr = 1e-4
+        r1 = self.rx
+        r2 = r1 + dr
+
+        thetar1 = np.arccos(1 - self.getAreaF(r1)*(1-np.cos(self.foot_pPos[1])))
+        thetar2 = np.arccos(1 - self.getAreaF(r2)*(1-np.cos(self.foot_pPos[1])))
+        dtheta = thetar1 - thetar2
+
+        self.delta = -np.arctan2(r1 * dtheta , dr)
+        self.dangle = self.pPos[1] + self.delta
+        #self.dx = np.cos(self.delta)
+        #self.dy = np.sin(self.delta)
+
     def fluxAngleOffset(self, pU, delta):
         ur = pU[0]
         utheta = pU[1]
@@ -932,17 +958,14 @@ class simpoint:
         return newPU
 
     def findUrProj(self):
-        x = self.cPos[0]
-        z = self.cPos[2]
-        r = np.sqrt(x**2 + z**2)
-        self.sinTheta = np.abs(x/r)
-        self.cosTheta = np.abs(z/r)
+        theta = self.pPos[1]
 
-        pU = [self.uw, self.vRms, 0]
         if self.useFluxAngle:
-            pU = [x*np.cos(self.delta) for x in pU]
-        self.urProj =  self.sinTheta * pU[0] * self.rho**2
-        self.rmsProj = self.cosTheta * pU[1] * self.rho**2
+            delta = self.delta
+        else: delta = 0
+
+        self.urProj =  (np.sin(theta + delta) * self.uw)**2 * self.rho**2
+        self.rmsProj = (np.cos(theta + delta) * self.vRms)**2 * self.rho**2
 
     def __streamInit(self):
         self.__findStreamIndex()
@@ -1231,14 +1254,11 @@ class simulate:
             #Line Plot
             im = ax.plot(self.cumSteps, scaleProp)
             if axes:
-                ax.plot(self.cumSteps, np.zeros_like(self.cumSteps), 'k')
-                tall = np.amax(scaleProp)
-                short = np.amin(scaleProp)
-                tallline = np.linspace(short, tall, 10)
-                tallAbsic = np.ones_like(tallline) * 0.5
-                ax.plot(tallAbsic, tallline, 'k')
+                ax.axhline(0, color = 'k')
+                ax.axvline(0.5, color = 'k')
+                ax.set_xlim([0,1])
             datSum = datSum / self.N
-            datSum = datSum / self.N
+
         elif type(self.grid) is grid.plane:
             #Image Plot
             if center:
@@ -1271,22 +1291,20 @@ class simulate:
         plt.imshow(delta, interpolation = "None")
         plt.show()
 
-    def plot2(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None, axes = True):
-        scaleProp1, datSum1 = self.get(p1, p1Dim, p1Scaling)
-        scaleProp2, datSum2 = self.get(p2, p2Dim, p2Scaling)
+    def plot2(self, p1, p2, scaling1 = 'None', scaling2 = 'None', dim1 = None, dim2 = None, axes = True):
+        scaleProp1, datSum1 = self.get(p1, dim1, scaling1)
+        scaleProp2, datSum2 = self.get(p2, dim2, scaling2)
         datSum = datSum1
         self.fig, ax = self.grid.plot(iL = self.iL)
         if type(self.grid) is grid.sightline:
             #Line Plot
-            im = ax.plot(self.cumSteps, scaleProp1)
-            im = ax.plot(self.cumSteps, scaleProp2)
+            im = ax.plot(self.cumSteps, scaleProp1, label = p1)
+            im = ax.plot(self.cumSteps, scaleProp2, label = p2)
             if axes:
-                ax.plot(self.cumSteps, np.zeros_like(self.cumSteps), 'k')
-                tall = np.amax( [np.amax(scaleProp1), np.amax(scaleProp2)])
-                short = np.amin( [np.amin(scaleProp1), np.amin(scaleProp2)])
-                tallline = np.linspace(short, tall, 10)
-                tallAbsic = np.ones_like(tallline) * 0.5
-                ax.plot(tallAbsic, tallline, 'k')
+                ax.axhline(0, color = 'k')
+                ax.axvline(0.5, color = 'k')
+                ax.set_xlim([0,1])
+                ax.legend()
             datSum = datSum / self.N
         elif type(self.grid) is grid.plane:
             #Image Plot
@@ -1299,19 +1317,19 @@ class simulate:
             print("Invalid Grid")
             return
 
-        if p1Dim is None:
-            ax.set_title(p1 + ", scaling = " + p1Scaling + ', sum = {}'.format(datSum1) + '\n' +
-                            p2 + ", scaling = " + p2Scaling + ', sum = {}'.format(datSum2))
+        if dim1 is None:
+            ax.set_title(p1 + ", scaling = " + scaling1 + ', sum = {}'.format(datSum1) + '\n' +
+                            p2 + ", scaling = " + scaling2 + ', sum = {}'.format(datSum2))
         else:
-            ax.set_title(p1 + ", dim = " + p1Dim.__str__() + ", scaling = " + scaling + ', sum = {}'.format(datSum))
+            ax.set_title(p1 + ", dim = " + dim1.__str__() + ", scaling = " + scaling + ', sum = {}'.format(datSum))
 
         grid.maximizePlot()
         plt.show()
 
-    def compare(self, p1, p2, p1Scaling = 'None', p2Scaling = 'None', p1Dim = None, p2Dim = None, center = False):
+    def compare(self, p1, p2, scaling1 = 'None', scaling2 = 'None', dim1 = None, dim2 = None, center = False):
         scaleprop = []
-        scaleprop.append(self.get(p1, p1Dim, p1Scaling)[0])
-        scaleprop.append(self.get(p2, p2Dim, p2Scaling)[0])
+        scaleprop.append(self.get(p1, dim1, scaling1)[0])
+        scaleprop.append(self.get(p2, dim2, scaling2)[0])
         fig, ax = self.grid.plot(iL = self.iL)
         fig.subplots_adjust(right=0.89)
         cbar_ax = fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
@@ -1403,8 +1421,8 @@ class simulate:
                     bar.display()
         self.profile = profile
 
-        self.urProj = urProj/rho2
-        self.rmsProj = rmsProj/rho2
+        self.urProj = np.sqrt(urProj/rho2)
+        self.rmsProj = np.sqrt(rmsProj/rho2)
 
         #plt.plot(profile)
         #plt.show()
@@ -1627,7 +1645,6 @@ class multisim:
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
-        #print(self.rank)
 
         if self.root and self.print: 
             print('Running MultiSim: ' + time.asctime())
@@ -1660,7 +1677,6 @@ class multisim:
             self.envs[envInd].randomize()
             #t = time.time()
             simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim)
-            #if self.root: simulation.plot('vLOS')
             #self.simList.append(simulation)
             profiles.append(simulation.getProfile())
             #elapsed = time.time() - t
@@ -1757,7 +1773,12 @@ class multisim:
 # For doing the same line from many angles, to get statistics
 
 
-## Level 3: Initializes many Multisims, varying a parameter. Does statistics.
+
+
+
+
+
+## Level 3: Initializes many Multisims, varying a parameter. Does statistics. Saves and loads Batches.
 class batchjob:
 
     statType = 'gauss' #'Gaussian'
@@ -1853,12 +1874,6 @@ class batchjob:
         self.__findBatchStats()
         self.makeVrms()
         self.plot(width)
-
-    def plot(self, width):
-        if width:
-            self.plotWidth()
-        else:
-            self.plotStatsV()
 
     def __findBatchStats(self):
         #Finds the statistics of all of the profiles in all of the multisims
@@ -2023,6 +2038,8 @@ class batchjob:
         ax.set_xlabel(self.xlabel)
         plt.show(False)
 
+
+    #Main Plots
     def plotStatsV(self):
         f, axArray = plt.subplots(5, 1, sharex=True)
         f.canvas.set_window_title('Coronasim')
@@ -2077,25 +2094,34 @@ class batchjob:
         except: self.completeTime = 'Incomplete Job'
         f.suptitle(str(self.batchName) + ': ' + str(self.completeTime) + '\n Wavelength: ' + str(self.env.lam0) + 
             ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + 
-            '; Lines per Env: ' + str(self.Nrot) + '\n                                                                      statType = ' + str(self.statType))
-        plt.errorbar(labels, self.statV[2][0], yerr = self.statV[2][1], fmt = 'o', label = 'Simulation')
+            '; Lines per Env: ' + str(self.Nrot) + '\n  usePsf = '+ str(self.usePsf) + '                                        statType = ' + str(self.statType))
+        #Plot the simulation Results
+        plt.errorbar(labels, self.statV[2][0], yerr = self.statV[2][1], fmt = 'bo', label = 'Simulation')
+        #Plot the hahn model
+        try:
+            plt.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr = self.env.hahnError, fmt = 'gs', label = 'Hahn Observations')
+        except: pass
+        
+        plt.plot(labels, self.thisV, label = 'Expected', color = 'b') 
+        plt.plot(labels, self.hahnV, label = "HahnV", color = 'g')
+        #Put numbers on plot of widths
+        for xy in zip(labels, self.statV[2][0]): 
+            plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
 
-
-        if doRms: #Plot Vrms
-            plt.plot(labels, self.thisV, label = 'Expected') 
-            plt.plot(labels, self.hahnV, label = "HahnV")
-            #Put numbers on plot of widths
-            for xy in zip(labels, self.statV[2][0]): 
-                plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
-
-            plt.title('Line Width')
-            plt.legend()
-            plt.ylabel('Km/s')
-            spread = 0.05
-            plt.xlim([labels[0]-spread, labels[-1]+spread]) #Get away from the edges
-            plt.xlabel(self.xlabel)
+        plt.title('Line Width')
+        plt.legend()
+        plt.ylabel('Km/s')
+        spread = 0.05
+        plt.xlim([labels[0]-spread, labels[-1]+spread]) #Get away from the edges
+        plt.xlabel(self.xlabel)
         grid.maximizePlot()
         plt.show()
+
+    def plot(self, width):
+        if width:
+            self.plotWidth()
+        else:
+            self.plotStatsV()
 
 
 
@@ -2146,6 +2172,34 @@ class batchjob:
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
 
+class batch:
+    def __init__(self, batchname):
+        self.batchName = batchname
+        
+    #Handles loading and running of batches
+    def loadBatch(self):
+        slash = os.path.sep
+        batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + self.batchName + '.batch'
+        absPth = absPath(batchPath)
+        try:
+            with open(absPth, 'rb') as input:
+                return pickle.load(input)
+        except:
+            sys.exit('Batch Not found')
+
+    def restartBatch(self):
+        myBatch = self.loadBatch()
+        myBatch.findRank()
+        myBatch.simulate_now()
+        return myBatch
+
+    def plotBatch(self, redo = False, width = False):
+        myBatch = self.loadBatch()
+        myBatch.findRank()
+        if redo: myBatch.redoStats(width)
+        else: myBatch.doStats(width)
+        return myBatch
+ 
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
@@ -2191,12 +2245,13 @@ class impactsim(batchjob):
 
         self.thisV = []
         self.hahnV = []
+        
         for impact in self.doneLabels:
             point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
 
             thermal = 2 * self.env.KB * point.T / self.env.mI
-            wind = (self.env.interp_f1(impact) * 1 * point.ur)**2 
-            rms =  (self.env.interp_f2(impact) * 1 * point.vRms)**2
+            wind = (self.env.interp_f1(impact) * point.ur)**2 
+            rms =  (self.env.interp_f2(impact) * point.vRms)**2
             V = np.sqrt(thermal + wind + rms)
 
             self.thisV.append(self.env.cm2km(V))
@@ -2208,34 +2263,6 @@ class impactsim(batchjob):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))
         return veff
 
-class batch:
-    def __init__(self, batchname):
-        self.batchName = batchname
-        
-    #Handles loading and running of batches
-    def loadBatch(self):
-        slash = os.path.sep
-        batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + self.batchName + '.batch'
-        absPth = absPath(batchPath)
-        try:
-            with open(absPth, 'rb') as input:
-                return pickle.load(input)
-        except:
-            sys.exit('Batch Not found')
-
-    def restartBatch(self):
-        myBatch = self.loadBatch()
-        myBatch.findRank()
-        myBatch.simulate_now()
-        return myBatch
-
-    def plotBatch(self, redo = False, width = False):
-        myBatch = self.loadBatch()
-        myBatch.findRank()
-        if redo: myBatch.redoStats(width)
-        else: myBatch.doStats(width)
-        return myBatch
- 
 
 #Calculate the f1 parameter for the solar wind
 def calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 50, rez = 1000, name = 'default'):
@@ -2272,8 +2299,10 @@ def calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 50, rez = 1000, name = 'defa
                 f2out.write('{}   {}\n'.format(b,rmsProj))
                 f2out.flush()
                 #lineSim.plot('rmsProj')
-            plt.plot(np.asarray(absic), np.asarray(f1))
-            plt.plot(np.asarray(absic), np.asarray(f2))
+            plt.plot(np.asarray(absic), np.asarray(f1), label = 'f1')
+            plt.plot(np.asarray(absic), np.asarray(f2), label = 'f2')
+            plt.legend()
+            plt.axhline(1, color = 'k')
             plt.show()
 
 

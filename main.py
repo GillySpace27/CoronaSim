@@ -19,30 +19,24 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'chianti-fluxAngle'
+    envsName = 'chianti2' #'chianti-fluxAngle'
+    fFileName = 'fluxAngle2'
     maxEnvs = 10
+    calcFFiles = False
     processEnvironments = False
 
     #Which part of the program should run?
-    compute = False
-    mainplot = True
+    compute = True
+    analyze = True
     widthPlot = True
-
     simOne = False
 
-    #Examine Batch Line Profiles
-    showProfiles = False
-    maxPlotLines = 3
-    average = True
-    norm = False 
-    log = False
-
     #Batch Parameters #####################
-    batchName = 'noB-FA' #s'fe11-windNoFrac'
+    batchName = 'FA2' #'noB-FA' #'fe11-windNoFrac'
     impactPoints = 10
-    iterations = 10
-    b0 = 1.05
-    b1 = 1.5
+    iterations = 2
+    b0 = 1.01
+    b1 = 1.46
 
     N_line = (1000, 3000)
     rez = None #[3,3]
@@ -53,6 +47,12 @@ if __name__ == '__main__':
     firstRun = True
     redoStats = True
 
+    #Examine Batch Line Profiles
+    showProfiles = False
+    maxPlotLines = 3
+    average = True
+    norm = False 
+    log = False
     #Run in parallel?
     parallel = True
     cores = 7
@@ -71,9 +71,17 @@ if __name__ == '__main__':
 
         ### Process Envs ###
         ####################
+        if calcFFiles:
+            if root:
+                print('Beginning...')
+                df = grid.defGrid()
+                env = sim.envrs(envsName).loadEnvs(1)[0]
+                sim.calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 10, rez = 1000, name = fFileName)
+                comm.barrier()
+
         if processEnvironments:
             if root:
-                envrs1 = sim.envrs(envsName)
+                envrs1 = sim.envrs(envsName, fFileName)
                 envs = envrs1.processEnvs(maxEnvs)
                 #envrs1.showEnvs(maxEnvs)
             comm.barrier()
@@ -88,7 +96,7 @@ if __name__ == '__main__':
             else:
                 myBatch = sim.batch(batchName).restartBatch()  
         if root:      
-            if mainplot:
+            if analyze:
                 myBatch = sim.batch(batchName).plotBatch(redoStats, widthPlot)
             if showProfiles: 
                 try: myBatch
@@ -100,18 +108,17 @@ if __name__ == '__main__':
         #### Level 1 ### Simulate
         ################
 
-
-
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(1)[0]
 
-            env.plot('rx_raw')
-            #sim.calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 10, rez = 1000, name = 'fluxAngle')
+            #env.plot('ur_raw', 'rx_raw')
+
             #lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
-            #lineSim2 = sim.simulate(df.primeLineLong, env, N = (1000,10000), findT = True)
-            #lineSim2.plot('vLOS')
+            #lineSim = sim.simulate(df.primeLineVLong, env, N = (1000,10000), findT = True)
+            #lineSim.plot2('dangle', 'pPos', dim2 = 1)
+            #lineSim.plot('delta')
             #lineSim.plot('uTheta')
             #lineSim.plot('pPos', 1)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
