@@ -713,13 +713,9 @@ class envrs:
 
 ## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
-    useB = False
-    useIonFrac = True
-    useWaves = True   
-    useWind = True
-    useFluxAngle = False
+
     ID = 0
-    
+    useIonFrac = True    
     #Level 0: Simulates physical properties at a given coordinate
     def __init__(self, cPos = [0.1,0.1,1.5], grid = None, env = None, findT = True, pbar = None):
         #Inputs
@@ -1635,10 +1631,10 @@ class multisim:
         
         self.N = N
         self.findT = findT
-        self.newMPI_init()
+        self.MPI_init_masterslave()
         #self.findProfiles()
 
-    def MPI_init(self):
+    def MPI_init_fixed(self):
 
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
@@ -1694,7 +1690,7 @@ class multisim:
                     self.profiles.append(line)
             print("Total Lines: " + str(len(self.profiles)))
 
-    def newMPI_init(self):
+    def MPI_init_masterslave(self):
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0

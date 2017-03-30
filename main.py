@@ -31,6 +31,13 @@ if __name__ == '__main__':
     widthPlot = True
     simOne = False
 
+    #Simulation Properties
+    sim.simpoint.useB = False
+    sim.simpoint.useWaves = True   
+    sim.simpoint.useWind = True
+    sim.simpoint.useFluxAngle = False
+
+
     #Batch Parameters #####################
     batchName = 'newMPI' #'noB-FA' #'fe11-windNoFrac'
     impactPoints = 5
@@ -53,6 +60,7 @@ if __name__ == '__main__':
     average = True
     norm = False 
     log = False
+
     #Run in parallel?
     parallel = True
     cores = 7
