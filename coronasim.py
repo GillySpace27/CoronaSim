@@ -97,6 +97,7 @@ class environment:
     streamRand = np.random.RandomState() #Gets seeded by streamindex
     primeRand = np.random.RandomState(primeSeed)
     
+
     #Constants
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
     hev = 4.135667662e-15 #eV*s
@@ -742,6 +743,7 @@ class simpoint:
         self.findSpeeds()
         self.findQt()
         self.findUrProj()
+        self.dPB()
 
         if pbar is not None:
             pbar.increment()
@@ -776,8 +778,6 @@ class simpoint:
         Hfit  = 2.2*(self.env.fmax/10.)**0.62
         return self.env.fmax + (1.-self.env.fmax)*np.exp(-((r-1.)/Hfit)**1.1)
 
-
-
     def __findStreamIndex(self):
         self.streamIndex = self.env.randOffset + self.env.label_im[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
                                             self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
@@ -786,7 +786,7 @@ class simpoint:
     def findDensity(self):
         #Find the densities of the grid point
         self.densfac = self.__findDensFac()
-        self.rho = self.__findRho() #Total density
+        self.rho = self.__findRho(self.densfac) #Total density
         self.nE = 0.9*self.rho/self.env.mP #electron number density
         self.frac = self.env.interp_frac(self.T) #ion fraction
 
@@ -796,21 +796,51 @@ class simpoint:
 
     def __findDensFac(self):
         # Find the density factor
-        Bmin = 3
+        Bmin = 4.18529 #This number was calculated by hand to make the pB match with/without B.
         Bmax = 50
 
         if self.footB < Bmin: self.B0 = Bmin
         elif self.footB > Bmax: self.B0 = Bmax
         else: self.B0 = self.footB
         dinfty = (self.B0/15)**1.18
+
+        if False: #Plot the density factor lines
+            xx = np.linspace(0,3,100)
+            dd = np.linspace(0,1,5)
+            for d in dd:
+                plt.plot(xx, self.__densFunc(d, xx))
+            plt.show()
+
         if self.useB:
-            return 0.34 + (dinfty - 0.34)*0.5*(1. + np.tanh((self.zx - 0.37)/0.26))
+            return self.__densFunc(dinfty, self.zx)
         else: return 1
 
-    def __findRho(self):
-        return self.interp_rx_dat(self.env.rho_raw) * self.densfac  
+    def __densFunc(self,d,x):
+        return (0.3334 + (d - 0.3334)*0.5*(1. + np.tanh((x - 0.37)/0.26)))*3
 
-  ## Radiative Transfer ####################################################################
+    def __findRho(self, densfac): 
+        return self.interp_rx_dat(self.env.rho_raw) * densfac  
+
+  ## pB stuff ############################################################################
+
+    def dPB(self):
+        imp = self.cPos[2]
+        r = self.pPos[0]
+        u = 0.63
+        R_sun = 1
+
+        eta = np.arcsin(R_sun/r)
+        mu = np.cos(eta)
+
+        f = mu**2 / np.sqrt(1-mu**2) * np.log(mu/(1+np.sqrt(1-mu**2)))
+        A = mu - mu**3
+        B = 1/4 - (3/8)*mu**2 + f/2 *( (3/4)*mu**2 - 1 )
+        self.dPB = self.nE * (imp / r)**2 * ( (1-u)*A + u*B )
+        return self.dPB
+
+
+
+  ## Radiative Transfer ##################################################################
     def findQt(self):
         #Chianti Stuff
         Iinf = 2.18056334613e-11 #ergs, equal to 13.61eV
@@ -1378,8 +1408,8 @@ class simulate:
 
     ####################################################################
 
-    def getProfile(self):
-        return self.lineProfile()
+    #def getProfile(self):
+    #    return self.lineProfile()
 
     def plotProfile(self):
         if self.profile is None: self.lineProfile()
@@ -1400,14 +1430,16 @@ class simulate:
         urProj = 0
         rmsProj = 0
         rho2 = 0
+        pB = 0
         if self.print and self.root: 
             print('\nGenerating Profile...')
             bar = pb.ProgressBar(len(self.sPoints) * len(self.timeAx))
         for point, step in zip(self.sPoints, self.steps):
             for tt in self.timeAx:
                 point.setTime(tt)
-                profile += point.getProfile() * step
 
+                profile += point.getProfile() * step
+                pB += point.dPB * step
                 urProj += point.urProj * step
                 rmsProj += point.rmsProj * step
                 rho2 += point.rho**2 * step
@@ -1416,7 +1448,7 @@ class simulate:
                     bar.increment()
                     bar.display()
         self.profile = profile
-
+        self.pB = pB
         self.urProj = np.sqrt(urProj/rho2)
         self.rmsProj = np.sqrt(rmsProj/rho2)
 
@@ -1712,7 +1744,14 @@ class multisim:
         else: bar = None
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
-        self.profiles = self.poolMPI(work, self.mpi_sim, bar)
+        all_work = self.poolMPI(work, self.mpi_sim, bar)
+        #if self.root: 
+        #    import pdb 
+        #    pdb.set_trace()
+        #self.comm.barrier()
+        if self.root:
+            self.profiles, self.pBs = zip(*all_work)
+        else: self.profiles, self.pBs = 0,0
 
         if self.root and self.print: 
             bar.display(force = True)
@@ -1723,8 +1762,9 @@ class multisim:
 
         self.envs[envInd].randomize()
         simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim)
-        profile = simulation.getProfile()
-        return profile
+        profile = simulation.lineProfile()
+        pB = simulation.pB
+        return profile, pB
 
 
     def getLineArray(self):
@@ -1801,9 +1841,6 @@ class multisim:
         print(vars(self))
         return self
 
-
-
-
  
     def master(self, wi, bar):
         WORKTAG = 0
@@ -1846,8 +1883,6 @@ class multisim:
             data = comm.recv(None, source=0, tag=MPI.ANY_TAG, status=status)
             if status.Get_tag(): break
             comm.send(do_work(data), dest=0)
-
-
     
     def poolMPI(self, work_list, do_work, bar):
         rank = MPI.COMM_WORLD.Get_rank()
@@ -1876,16 +1911,8 @@ class Work():
 # For doing the same line from many angles, to get statistics
 
 
- 
-
-
-
-
 ## Level 3: Initializes many Multisims, varying a parameter. Does statistics. Saves and loads Batches.
 class batchjob:
-
-    statType = 'gauss' #'Gaussian'
-    usePsf = True
 
     #Requires labels, xlabel, batch, N
     def __init__(self, envs):
@@ -1916,6 +1943,7 @@ class batchjob:
 
             self.sims = []
             self.profiles = []
+            self.pBs = []
             self.doLabels = self.labels.tolist()
             self.doneLabels = []
 
@@ -1941,6 +1969,7 @@ class batchjob:
             if self.root:
                 self.sims.append(thisSim)
                 self.profiles.append(thisSim.profiles)
+                self.pBs.append(thisSim.pBs)
                 if self.print:
                     if self.printMulti: print('\nBatch Progress: '+ str(self.batchName))
                     self.bar.increment()
@@ -1950,8 +1979,8 @@ class batchjob:
 
         if self.root: 
             self.__findBatchStats()
-            self.__findSampleStats()
             self.makeVrms()
+            self.doPB(self.pBname)
             if self.complete is False:
                 self.completeTime = time.asctime()
             self.complete = True
@@ -1977,6 +2006,7 @@ class batchjob:
         self.__findBatchStats()
         self.makeVrms()
         self.plot(width)
+        self.doPB(self.pBname)
 
     def __findBatchStats(self):
         #Finds the statistics of all of the profiles in all of the multisims
@@ -2035,7 +2065,6 @@ class batchjob:
 
         return [power, mu, sigma, skew, kurt]
 
-
     def __findSampleStats(self):
         #Finds the mean and varience of each of the statistics for each multisim
         self.stat =  [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
@@ -2088,7 +2117,6 @@ class batchjob:
     def __std2V(self, std):
         return np.sqrt(2) * self.env.cm2km(self.env.c) * (std / self.env.lam0)
 
-         
     def plotProfiles(self, max):
         if max is not None:
             for profiles, impact in zip(self.profiles, self.doneLabels):
@@ -2141,17 +2169,12 @@ class batchjob:
         ax.set_xlabel(self.xlabel)
         plt.show(False)
 
-
     #Main Plots
     def plotStatsV(self):
         f, axArray = plt.subplots(5, 1, sharex=True)
         f.canvas.set_window_title('Coronasim')
         doRms = True
-        try:
-            labels = np.asarray(self.doneLabels)
-        except: 
-            labels = np.arange(len(self.profiles))
-            doRms = False
+        labels = self.getLabels()
         mm = 0
         titles = ['Intensity', 'Mean Redshift', 'Line Width', 'Skew', 'Excess Kurtosis']
         ylabels = ['', 'km/s', 'km/s', '', '']
@@ -2182,6 +2205,14 @@ class batchjob:
         ax.set_xlabel(self.xlabel)
         grid.maximizePlot()
         plt.show()
+
+    def getLabels(self):
+        try:
+            labels = np.asarray(self.doneLabels)
+        except: 
+            labels = np.arange(len(self.profiles))
+            doRms = False
+        return labels
 
     def plotWidth(self):
         f = plt.figure()
@@ -2225,9 +2256,6 @@ class batchjob:
             self.plotWidth()
         else:
             self.plotStatsV()
-
-
-
 
     def save(self, batchName = None, keep = False, printout = True):
 
@@ -2275,6 +2303,31 @@ class batchjob:
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
 
+    def doPB(self, filename):
+        print("Wat")
+        print(filename)
+        if filename is not None:
+            print("doimng Pb thing")
+            pBavg = []
+            pBstd = []
+            path = os.path.normpath("../dat/pB/" + filename + ".txt")
+            with open(path, 'w') as f:
+                for label, pBs in zip(self.getLabels(),self.pBs):
+                    data = np.asarray(pBs)
+                    avg = np.average(data)
+                    std = np.std(data)
+
+                    pBavg.append(avg)
+                    pBstd.append(std)
+
+                    f.write("{}    {}    {}\n".format(label, avg, std))
+                    f.flush()
+
+                #plt.errorbar(self.getLabels(), pBavg, yerr = pBstd, fmt = 'o')
+                #plt.yscale('log')
+                ##plt.semilogy(self.getLabels(), pB)
+                #plt.show()
+
 class batch:
     def __init__(self, batchname):
         self.batchName = batchname
@@ -2306,7 +2359,7 @@ class batch:
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
-            rez = None, size = None, timeAx = [0], printSim = False, printOut = True, printMulti = True):
+            rez = None, size = None, timeAx = [0], printSim = False, printOut = True, printMulti = True, pBname = None):
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
         self.root = comm.Get_rank() == 0
@@ -2314,6 +2367,7 @@ class impactsim(batchjob):
         self.Nb = Nb
         self.batchName = batchName
         self.timeAx = timeAx
+        self.pBname = pBname
 
         try: self.Nenv = len(envs)
         except: self.Nenv = 1
@@ -2407,6 +2461,27 @@ def calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 50, rez = 1000, name = 'defa
             plt.legend()
             plt.axhline(1, color = 'k')
             plt.show()
+
+def plotpB(maxN = 100):
+        path = os.path.normpath("../dat/pB/*.txt")
+        files = glob.glob(path)
+
+        ind = 0
+        for file in files:
+            if ind < maxN: 
+                x = np.loadtxt(file)
+                absiss = x[:,0]
+                pBavg = x[:,1]
+                pBstd = x[:,2]
+                label = file.rsplit(os.path.sep, 1)[-1]
+                plt.errorbar(absiss, pBavg, yerr = pBstd, label = label) 
+            ind += 1
+
+        plt.legend()
+        plt.yscale('log')
+        plt.ylabel('pB')
+        plt.xlabel('Impact Parameter')
+        plt.show()
 
 
 

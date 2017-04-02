@@ -19,28 +19,28 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'chianti2' #'chianti-fluxAngle'
+    envsName = 'chianti2-fluxAngle'
     fFileName = 'fluxAngle2'
     maxEnvs = 10
     calcFFiles = False
     processEnvironments = False
 
+    #Simulation Properties
+    sim.simpoint.useB = True
+    sim.simpoint.useWaves = True   
+    sim.simpoint.useWind = True
+    sim.simpoint.useFluxAngle = True
+    sim.batchjob.statType = 'gauss' #'Gaussian'
+    sim.batchjob.usePsf = True
+
     #Which part of the program should run?
     compute = True
     analyze = True
-    widthPlot = True
     simOne = False
 
-    #Simulation Properties
-    sim.simpoint.useB = False
-    sim.simpoint.useWaves = True   
-    sim.simpoint.useWind = True
-    sim.simpoint.useFluxAngle = False
-
-
     #Batch Parameters #####################
-    batchName = 'newMPI' #'noB-FA' #'fe11-windNoFrac'
-    impactPoints = 5
+    batchName = 'test1'
+    impactPoints = 10
     iterations = 3
     b0 = 1.01
     b1 = 1.46
@@ -49,13 +49,15 @@ if __name__ == '__main__':
     rez = None #[3,3]
     size = [0.002, 0.01]
     timeAx = [0] #np.arange(0,1500)
-    printSim = False #This makes it show the generating profile progress bar
 
-    firstRun = True
-    redoStats = True
+    printSim = False #This makes it show the generating profile progress bar
+    widthPlot = True #Plot just line width instead of all 5 moments
+    firstRun = True #Overwrite any existing batch with this name
+    redoStats = True #Perform statistics at analyze time
+    pBname = "pB_4.18529"
 
     #Examine Batch Line Profiles
-    showProfiles = False
+    showProfiles = False #Plot some number of line profiles at each impact parameter
     maxPlotLines = 3
     average = True
     norm = False 
@@ -100,7 +102,7 @@ if __name__ == '__main__':
         if compute:
             if firstRun:       
                 envs = sim.envrs(envsName).loadEnvs(maxEnvs)
-                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim, pBname = pBname)
             else:
                 myBatch = sim.batch(batchName).restartBatch()  
         if root:      
@@ -120,6 +122,13 @@ if __name__ == '__main__':
             print('Beginning...')
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(1)[0]
+            sim.plotpB()
+
+
+#if self.root: 
+#    import pdb 
+#    pdb.set_trace()
+#self.comm.barrier()
 
             #env.plot('ur_raw', 'rx_raw')
 
