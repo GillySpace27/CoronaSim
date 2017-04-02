@@ -26,9 +26,9 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Simulation Properties
-    sim.simpoint.useB = True
-    sim.simpoint.useWaves = True   
-    sim.simpoint.useWind = True
+    sim.simpoint.useB = False
+    sim.simpoint.useWaves = False   
+    sim.simpoint.useWind = False
     sim.simpoint.useFluxAngle = True
     sim.batchjob.statType = 'gauss' #'Gaussian'
     sim.batchjob.usePsf = True
@@ -41,11 +41,11 @@ if __name__ == '__main__':
     #Batch Parameters #####################
     batchName = 'test1'
     impactPoints = 10
-    iterations = 3
+    iterations = 2
     b0 = 1.01
     b1 = 1.46
 
-    N_line = (1000, 3000)
+    N_line = (200,600)
     rez = None #[3,3]
     size = [0.002, 0.01]
     timeAx = [0] #np.arange(0,1500)
@@ -121,21 +121,21 @@ if __name__ == '__main__':
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
-            env = sim.envrs(envsName).loadEnvs(1)[0]
-            sim.plotpB()
+            env = sim.envrs(envsName).loadEnvs(100)[2]
+            #sim.plotpB()
 
 
-#if self.root: 
-#    import pdb 
-#    pdb.set_trace()
-#self.comm.barrier()
+            #if self.root: 
+            #    import pdb 
+            #    pdb.set_trace()
+            #self.comm.barrier()
 
             #env.plot('ur_raw', 'rx_raw')
 
             #lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
-            #lineSim = sim.simulate(df.primeLineVLong, env, N = (1000,10000), findT = True)
+            lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True)
             #lineSim.plot2('dangle', 'pPos', dim2 = 1)
-            #lineSim.plot('delta')
+            lineSim.plot('densfac', linestyle = 'o')
             #lineSim.plot('uTheta')
             #lineSim.plot('pPos', 1)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)

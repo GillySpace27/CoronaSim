@@ -1216,7 +1216,7 @@ class simulate:
         t = time.time()
         stepInd = 0
         rhoSum = 0
-        tol = 1
+        tol = 0.67
         for cPos, step in self.grid: 
 
             thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
@@ -1273,12 +1273,12 @@ class simulate:
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
-    def plot(self, property, dim = None, scaling = 'None', scale = 10, cmap = 'jet', axes = True, center = False):
+    def plot(self, property, dim = None, scaling = 'None', scale = 10, cmap = 'jet', axes = True, center = False, linestyle = 'b'):
         scaleProp, datSum = self.get(property, dim, scaling, scale)
         self.fig, ax = self.grid.plot(iL = self.iL)
         if type(self.grid) is grid.sightline:
             #Line Plot
-            im = ax.plot(self.cumSteps, scaleProp)
+            im = ax.plot(self.cumSteps, scaleProp, linestyle)
             if axes:
                 ax.axhline(0, color = 'k')
                 ax.axvline(0.5, color = 'k')
@@ -2304,10 +2304,10 @@ class batchjob:
             print(ii, " : ", myVars[ii])
 
     def doPB(self, filename):
-        print("Wat")
-        print(filename)
+        #print("Wat")
+        #print(filename)
         if filename is not None:
-            print("doimng Pb thing")
+            #print("doimng Pb thing")
             pBavg = []
             pBstd = []
             path = os.path.normpath("../dat/pB/" + filename + ".txt")
@@ -2327,6 +2327,7 @@ class batchjob:
                 #plt.yscale('log')
                 ##plt.semilogy(self.getLabels(), pB)
                 #plt.show()
+                    pass
 
 class batch:
     def __init__(self, batchname):
@@ -2406,7 +2407,7 @@ class impactsim(batchjob):
         for impact in self.doneLabels:
             point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
 
-            thermal = 2 * self.env.KB * point.T / self.env.mI
+            thermal = self.env.KB * point.T / self.env.mI
             wind = (self.env.interp_f1(impact) * point.ur)**2 
             rms =  (self.env.interp_f2(impact) * point.vRms)**2
             V = np.sqrt(thermal + wind + rms)
