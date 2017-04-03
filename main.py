@@ -19,29 +19,30 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'chianti2-fluxAngle'
-    fFileName = 'fluxAngle2'
+    envsName = 'newF3'
+    fFileName = 'newF3'
     maxEnvs = 10
     calcFFiles = False
     processEnvironments = False
 
     #Simulation Properties
-    sim.simpoint.useB = False
-    sim.simpoint.useWaves = False   
-    sim.simpoint.useWind = False
+    sim.simpoint.useB = True
+    sim.simpoint.useWaves = True   
+    sim.simpoint.useWind = True
     sim.simpoint.useFluxAngle = True
+    sim.simpoint.Bmin = 5.9218
     sim.batchjob.statType = 'gauss' #'Gaussian'
     sim.batchjob.usePsf = True
 
     #Which part of the program should run?
-    compute = True
-    analyze = True
+    compute = False
+    analyze = False
     simOne = False
 
     #Batch Parameters #####################
     batchName = 'test1'
     impactPoints = 10
-    iterations = 2
+    iterations = 1
     b0 = 1.01
     b1 = 1.46
 
@@ -54,7 +55,8 @@ if __name__ == '__main__':
     widthPlot = True #Plot just line width instead of all 5 moments
     firstRun = True #Overwrite any existing batch with this name
     redoStats = True #Perform statistics at analyze time
-    pBname = "pB_4.18529"
+    refineBmin = True
+    pBname = "pB_{}".format(sim.simpoint.Bmin)
 
     #Examine Batch Line Profiles
     showProfiles = False #Plot some number of line profiles at each impact parameter
@@ -81,13 +83,18 @@ if __name__ == '__main__':
 
         ### Process Envs ###
         ####################
-        if calcFFiles:
-            if root:
-                print('Beginning...')
-                df = grid.defGrid()
-                env = sim.envrs(envsName).loadEnvs(1)[0]
-                sim.calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 10, rez = 1000, name = fFileName)
-                comm.barrier()
+        if calcFFiles and root:
+            print('Beginning...')
+            df = grid.defGrid()
+            env = sim.envrs(envsName).loadEnvs(1)[0]
+            sim.calcF1(envsName, N = 50, b0 = 1.001, b1 = 2, len = 10, rez = 600, name = fFileName)
+            comm.barrier()
+
+        if refineBmin:
+            tol = 0.001
+            MIN = 2
+            MAX = 10
+            sim.simpoint.Bmin = sim.pbRefinement(envsName, MIN, MAX, tol)
 
         if processEnvironments:
             if root:
@@ -115,6 +122,14 @@ if __name__ == '__main__':
                 myBatch.plotProfTogether(average, norm, log)
 
 
+
+
+        
+
+
+
+
+
         #### Level 1 ### Simulate
         ################
 
@@ -122,7 +137,7 @@ if __name__ == '__main__':
             print('Beginning...')
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(100)[2]
-            #sim.plotpB()
+            sim.plotpB()
 
 
             #if self.root: 
@@ -133,9 +148,9 @@ if __name__ == '__main__':
             #env.plot('ur_raw', 'rx_raw')
 
             #lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
-            lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True)
-            #lineSim.plot2('dangle', 'pPos', dim2 = 1)
-            lineSim.plot('densfac', linestyle = 'o')
+            #lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True)
+            ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
+            #lineSim.plot('densfac', linestyle = 'o')
             #lineSim.plot('uTheta')
             #lineSim.plot('pPos', 1)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
@@ -160,8 +175,12 @@ if __name__ == '__main__':
 
         #cylSim.plot('densfac')
         #cylSim.plot2('vLOS','vLOSwind')
-
-
+            #myBatch = sim.impactsim(*params, pBname = pBname)
+            #if rank == 0:
+            #    pBgoal = np.asarray(myBatch.pBavg, dtype = 'float')
+            #else:
+            #    pBgoal = np.empty(1, dtype = 'float')
+            #comm.Bcast(pBgoal, root=0)
 
         #df = grid.defGrid()
 

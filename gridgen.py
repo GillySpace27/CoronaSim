@@ -255,6 +255,10 @@ class sightline(generator):
     def setN(self, N):
         self.step = 1/N
 
+    def reset(self):
+        self.currS = 0
+        self.step = self.maxStep
+
     def __next__(self):
         if self.currS > 1:
             try: 

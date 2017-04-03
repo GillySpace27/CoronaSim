@@ -183,14 +183,18 @@ class environment:
         if fFile is None: 
             f1File = self.def_f1File
             f2File = self.def_f2File
+            f3File = self.def_f3File
         else: 
             f1File = os.path.join(self.datFolder, 'f1_{}.txt'.format(fFile))
             f2File = os.path.join(self.datFolder, 'f2_{}.txt'.format(fFile))
+            f3File = os.path.join(self.datFolder, 'f3_{}.txt'.format(fFile))
         x = np.loadtxt(f1File)
         y = np.loadtxt(f2File)
+        z = np.loadtxt(f3File)
         self.fr = x[:,0]
         self.f1_raw = x[:,1]
         self.f2_raw = y[:,1]
+        self.f3_raw = z[:,1]
         #print(f1File)
         #plt.plot(self.fr, self.f1_raw, label = "f1")
         #plt.plot(self.fr, self.f2_raw, label = "f2")
@@ -538,6 +542,12 @@ class environment:
         func = self.f2_raw
         return self.interp(locs, func, b)
 
+    def interp_f3(self, b):
+        #Figures out f1 as f(b)
+        locs = self.fr
+        func = self.f3_raw
+        return self.interp(locs, func, b)
+
     def interp_ur(self, b):
         #Figures out ur as f(b)
         locs = self.rx_raw
@@ -796,7 +806,8 @@ class simpoint:
 
     def __findDensFac(self):
         # Find the density factor
-        Bmin = 4.18529 #This number was calculated by hand to make the pB match with/without B.
+        Bmin = self.Bmin
+        #Bmin = 4.17 #This number was calculated by hand to make the pB match with/without B.
         Bmax = 50
 
         if self.footB < Bmin: self.B0 = Bmin
@@ -992,6 +1003,7 @@ class simpoint:
 
         self.urProj =  (np.sin(theta + delta) * self.uw)**2 * self.rho**2
         self.rmsProj = (np.cos(theta + delta) * self.vRms)**2 * self.rho**2
+        self.temProj = self.T * self.rho**2
 
     def __streamInit(self):
         self.__findStreamIndex()
@@ -1429,6 +1441,7 @@ class simulate:
         profile = np.zeros_like(self.env.lamAx)
         urProj = 0
         rmsProj = 0
+        temProj = 0
         rho2 = 0
         pB = 0
         if self.print and self.root: 
@@ -1442,6 +1455,7 @@ class simulate:
                 pB += point.dPB * step
                 urProj += point.urProj * step
                 rmsProj += point.rmsProj * step
+                temProj += point.temProj * step
                 rho2 += point.rho**2 * step
 
                 if self.print and self.root:
@@ -1451,6 +1465,7 @@ class simulate:
         self.pB = pB
         self.urProj = np.sqrt(urProj/rho2)
         self.rmsProj = np.sqrt(rmsProj/rho2)
+        self.temProj = (temProj/rho2)
 
         #plt.plot(profile)
         #plt.show()
@@ -1766,7 +1781,6 @@ class multisim:
         pB = simulation.pB
         return profile, pB
 
-
     def getLineArray(self):
         return np.asarray(self.profiles)
             
@@ -1977,10 +1991,21 @@ class batchjob:
 
                 self.save()
 
+        #if self.root:
+        #    self.pBs = np.asarray(self.pBs)
+        #    print(self.pBs)
+        #    sys.stdout.flush()
+        #else:
+        #    self.pBs = np.empty(len(self.doneLabels))
+        #comm.Bcast(self.pBs, root=0)
+        #self.pBs = self.pBs.tolist()
+        #self.doOnePB()
+
+
         if self.root: 
             self.__findBatchStats()
             self.makeVrms()
-            self.doPB(self.pBname)
+            
             if self.complete is False:
                 self.completeTime = time.asctime()
             self.complete = True
@@ -2006,7 +2031,7 @@ class batchjob:
         self.__findBatchStats()
         self.makeVrms()
         self.plot(width)
-        self.doPB(self.pBname)
+        #self.doPB(self.pBname)
 
     def __findBatchStats(self):
         #Finds the statistics of all of the profiles in all of the multisims
@@ -2304,12 +2329,9 @@ class batchjob:
             print(ii, " : ", myVars[ii])
 
     def doPB(self, filename):
-        #print("Wat")
-        #print(filename)
         if filename is not None:
-            #print("doimng Pb thing")
-            pBavg = []
-            pBstd = []
+            self.pBavg = []
+            self.pBstd = []
             path = os.path.normpath("../dat/pB/" + filename + ".txt")
             with open(path, 'w') as f:
                 for label, pBs in zip(self.getLabels(),self.pBs):
@@ -2317,8 +2339,8 @@ class batchjob:
                     avg = np.average(data)
                     std = np.std(data)
 
-                    pBavg.append(avg)
-                    pBstd.append(std)
+                    self.pBavg.append(avg)
+                    self.pBstd.append(std)
 
                     f.write("{}    {}    {}\n".format(label, avg, std))
                     f.flush()
@@ -2328,6 +2350,14 @@ class batchjob:
                 ##plt.semilogy(self.getLabels(), pB)
                 #plt.show()
                     pass
+    def doOnePB(self):
+        
+        data = np.asarray(self.pBs[0])
+        avg = np.average(data)
+        std = np.std(data)
+
+        self.pBavg = avg
+        self.pBstd = std
 
 class batch:
     def __init__(self, batchname):
@@ -2388,13 +2418,17 @@ class impactsim(batchjob):
         self.printSim = printSim
 
         self.N = N
-        self.labels = np.round(np.linspace(b0,b1,Nb), 4)
+        if b1 is not None: self.labels = np.round(np.linspace(b0,b1,Nb), 4)
+        else: self.labels = np.round([b0], 4)
         self.impacts = self.labels
         self.xlabel = 'Impact Parameter'    
         self.fullBatch = []
         for ind in self.impacts:
             self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size)) 
-
+        #if self.root: 
+        #    import pdb 
+        #    pdb.set_trace()
+        #self.comm.barrier()
         super().__init__(envs)
         
         return
@@ -2407,9 +2441,9 @@ class impactsim(batchjob):
         for impact in self.doneLabels:
             point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
 
-            thermal = self.env.KB * point.T / self.env.mI
-            wind = (self.env.interp_f1(impact) * point.ur)**2 
-            rms =  (self.env.interp_f2(impact) * point.vRms)**2
+            thermal = self.env.interp_f3(impact) * self.env.KB * point.T / self.env.mI
+            wind =   (self.env.interp_f1(impact) * point.ur)**2 
+            rms =    (self.env.interp_f2(impact) * point.vRms)**2
             V = np.sqrt(thermal + wind + rms)
 
             self.thisV.append(self.env.cm2km(V))
@@ -2423,7 +2457,7 @@ class impactsim(batchjob):
 
 
 #Calculate the f1 parameter for the solar wind
-def calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 50, rez = 1000, name = 'default'):
+def calcF1(envsName, N = 50, b0 = 1, b1 = 3, len = 50, rez = 600, name = 'default'):
     #Determine the factor applied to the plane-of-sky wind speed as f(b)
     #Make sure to have the B field and waves off if you want this to be general.
     env = envrs(envsName).loadEnvs(1)[0]
@@ -2431,37 +2465,45 @@ def calcF1(envsName, N = 100, b0 = 1, b1 = 3, len = 50, rez = 1000, name = 'defa
     folder = "../dat/data/"
     file1 = os.path.normpath(folder + 'f1_' + name + '.txt')
     file2 = os.path.normpath(folder + 'f2_' + name + '.txt')
+    file3 = os.path.normpath(folder + 'f3_' + name + '.txt')
 
     with open(file1, 'w') as f1out:
         with open(file2, 'w') as f2out:
-            f1 = []
-            f2 = []
-            absic = []
-            for grd, b in zip(grdlst,blist):
-                #Simulate one line across the top of the sun
-                lineSim = simulate(grd, env, N = rez, findT = False, getProf = True)
-                #lineSim.plot('urProj')
-                #Simulate one point directly over the pole
-                point = simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
+            with open(file3, 'w') as f3out:
+                f1 = []
+                f2 = []
+                f3 = []
+                absic = []
+                for grd, b in zip(grdlst,blist):
+                    #Simulate one line across the top of the sun
+                    lineSim = simulate(grd, env, N = rez, findT = False, getProf = True)
+                    #lineSim.plot('urProj')
+                    #Simulate one point directly over the pole
+                    point = simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
 
-                urProj = lineSim.urProj/point.ur
-                rmsProj = lineSim.rmsProj/point.vRms
+                    urProj = lineSim.urProj/point.ur
+                    rmsProj = lineSim.rmsProj/point.vRms
+                    temProj = lineSim.temProj/point.T
 
-                #Store the info
-                print(str(b) + ' ur: ' + str(urProj)+ ', rms: ' + str(rmsProj))
-                f1.append(urProj)
-                f2.append(rmsProj)
-                absic.append(b)
-                f1out.write('{}   {}\n'.format(b,urProj))
-                f1out.flush()
-                f2out.write('{}   {}\n'.format(b,rmsProj))
-                f2out.flush()
-                #lineSim.plot('rmsProj')
-            plt.plot(np.asarray(absic), np.asarray(f1), label = 'f1')
-            plt.plot(np.asarray(absic), np.asarray(f2), label = 'f2')
-            plt.legend()
-            plt.axhline(1, color = 'k')
-            plt.show()
+                    #Store the info
+                    print(str(b) + ' ur: ' + str(urProj)+ ', rms: ' + str(rmsProj)+ ', tem: ' + str(temProj))
+                    f1.append(urProj)
+                    f2.append(rmsProj)
+                    f3.append(temProj)
+                    absic.append(b)
+                    f1out.write('{}   {}\n'.format(b,urProj))
+                    f1out.flush()
+                    f2out.write('{}   {}\n'.format(b,rmsProj))
+                    f2out.flush()
+                    f3out.write('{}   {}\n'.format(b,temProj))
+                    f3out.flush()
+                    #lineSim.plot('rmsProj')
+                plt.plot(np.asarray(absic), np.asarray(f1), label = 'f1')
+                plt.plot(np.asarray(absic), np.asarray(f2), label = 'f2')
+                plt.plot(np.asarray(absic), np.asarray(f3), label = 'f3')
+                plt.legend()
+                plt.axhline(1, color = 'k')
+                plt.show()
 
 def plotpB(maxN = 100):
         path = os.path.normpath("../dat/pB/*.txt")
@@ -2475,7 +2517,7 @@ def plotpB(maxN = 100):
                 pBavg = x[:,1]
                 pBstd = x[:,2]
                 label = file.rsplit(os.path.sep, 1)[-1]
-                plt.errorbar(absiss, pBavg, yerr = pBstd, label = label) 
+                plt.plot(absiss, pBavg, '-o', label = label)#, yerr = pBstd) 
             ind += 1
 
         plt.legend()
@@ -2484,7 +2526,60 @@ def plotpB(maxN = 100):
         plt.xlabel('Impact Parameter')
         plt.show()
 
+def pbRefinement(envsName, MIN, MAX, tol):
+    #THIS FUNCTION NEEDS TO BE MADE TO RUN IN PARALLEL
+    #This function compares the pB at a height of zz with and without B, and finds the Bmin which minimizes the difference
+    def runAtBminFull(grd, env, rez, Bmin):
+        simpoint.useB = True
+        simpoint.Bmin = Bmin
+        grd.reset()
+        lineSim = simulate(grd, env, N = rez, findT = False, getProf = True)
+        pBnew = lineSim.pB
+        print("B = {}, pB = {}".format(Bmin, pBnew))
+        return pBnew
+                    
+    def bisection(a,b,tol,f,pBgoal):
+        Nmax = 20
+        N = 0
+        c = (a+b)/2.0
+        fc = f(c) - pBgoal
 
+        while np.abs(fc) > tol:   
+            N += 1
+            if N > Nmax:
+                print("I failed to converge")
+                break
+            fc = f(c) - pBgoal
+            fa = f(a) -pBgoal
+            if fc == 0:
+                return c
+            elif fa*fc < 0:
+                b = c
+            else:
+                a = c
+            c = (a+b)/2.0
+        print("I converged to {}, with pB = {}".format(c,fc+pBgoal))
+        print("The goal was {}".format(pBgoal))
+        return c
+
+    zz = 1.5
+    len = 10
+    rez = 600
+            
+    env = envrs(envsName).loadEnvs(100)[1]
+    grd = grid.sightline([-len,1e-8,zz], [-len,1e-8,zz], findT = True)
+    from functools import partial
+    runAtBmin = partial(runAtBminFull, grd, env, rez)
+            
+    #Get the reference line pB
+    simpoint.useB = False
+    lineSim = simulate(grd, env, N = rez, findT = True, getProf = True)
+    pBgoal = lineSim.pB
+    print("The goal is pB = {}".format(pBgoal))
+
+    #Converge to that line        
+    return bisection(MIN,MAX,tol,runAtBmin,pBgoal)
+    
 
      
 
