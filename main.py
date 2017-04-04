@@ -22,27 +22,30 @@ if __name__ == '__main__':
     envsName = 'newF3'
     fFileName = 'newF3'
     maxEnvs = 10
+    refineBmin = False
     calcFFiles = False
     processEnvironments = False
 
+    #Which part of the program should run?
+    compute = False
+    analyze = True
+    simOne = False
+
     #Simulation Properties
-    sim.simpoint.useB = True
+    useB = True
     sim.simpoint.useWaves = True   
     sim.simpoint.useWind = True
     sim.simpoint.useFluxAngle = True
-    sim.simpoint.Bmin = 5.9218
+    sim.simpoint.Bmin = 3.89053
     sim.batchjob.statType = 'gauss' #'Gaussian'
     sim.batchjob.usePsf = True
 
-    #Which part of the program should run?
-    compute = False
-    analyze = False
-    simOne = False
+
 
     #Batch Parameters #####################
-    batchName = 'test1'
+    batchName = 'FullLong'
     impactPoints = 10
-    iterations = 1
+    iterations = 50
     b0 = 1.01
     b1 = 1.46
 
@@ -50,18 +53,19 @@ if __name__ == '__main__':
     rez = None #[3,3]
     size = [0.002, 0.01]
     timeAx = [0] #np.arange(0,1500)
+    length = 10
 
     printSim = False #This makes it show the generating profile progress bar
     widthPlot = True #Plot just line width instead of all 5 moments
-    firstRun = True #Overwrite any existing batch with this name
+    firstRun = True  #Overwrite any existing batch with this name
     redoStats = True #Perform statistics at analyze time
-    refineBmin = True
-    pBname = "pB_{}".format(sim.simpoint.Bmin)
+
+    #pBname = "pB_{}".format(sim.simpoint.Bmin)
 
     #Examine Batch Line Profiles
     showProfiles = False #Plot some number of line profiles at each impact parameter
     maxPlotLines = 3
-    average = True
+    average = False
     norm = False 
     log = False
 
@@ -69,13 +73,15 @@ if __name__ == '__main__':
     parallel = True
     cores = 7
 
+    sim.simpoint.useB = useB
+
 ##################################################################################
 ##################################################################################
 
     #This header handles calling the program in parallel
     try: go = int(sys.argv[1])
     except: go = 1
-    if parallel and go == True and compute:
+    if parallel and go == True and (compute or refineBmin):
         print("Starting MPI...")
         os.system("mpiexec -n " + str(cores) +" python main.py 0")
     else:
@@ -83,25 +89,33 @@ if __name__ == '__main__':
 
         ### Process Envs ###
         ####################
+        if refineBmin:
+            tol = 0.01
+            MIN = 3
+            MAX = 5
+            b = 1.5
+            iter = 1
+            envs = sim.envrs(envsName).loadEnvs(maxEnvs)
+            params = ["pbCalcs", envs, 1, iter, b, None, 600, rez, size, timeAx, length, False, False, False]
+            sim.simpoint.Bmin = sim.pbRefinement(envsName, params, MIN, MAX, tol)
+            sim.simpoint.useB = useB
+        comm.barrier()
+
         if calcFFiles and root:
             print('Beginning...')
+            sys.stdout.flush()
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(1)[0]
             sim.calcF1(envsName, N = 50, b0 = 1.001, b1 = 2, len = 10, rez = 600, name = fFileName)
-            comm.barrier()
-
-        if refineBmin:
-            tol = 0.001
-            MIN = 2
-            MAX = 10
-            sim.simpoint.Bmin = sim.pbRefinement(envsName, MIN, MAX, tol)
+        comm.barrier()
 
         if processEnvironments:
             if root:
                 envrs1 = sim.envrs(envsName, fFileName)
                 envs = envrs1.processEnvs(maxEnvs)
                 #envrs1.showEnvs(maxEnvs)
-            comm.barrier()
+                sys.stdout.flush()
+        comm.barrier()
 
         ### Level 3 ### BatchSim
         ########################
@@ -109,7 +123,7 @@ if __name__ == '__main__':
         if compute:
             if firstRun:       
                 envs = sim.envrs(envsName).loadEnvs(maxEnvs)
-                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, printSim, pBname = pBname)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim)
             else:
                 myBatch = sim.batch(batchName).restartBatch()  
         if root:      
@@ -137,7 +151,7 @@ if __name__ == '__main__':
             print('Beginning...')
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(100)[2]
-            sim.plotpB()
+            #sim.plotpB()
 
 
             #if self.root: 

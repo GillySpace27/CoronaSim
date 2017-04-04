@@ -1210,6 +1210,9 @@ class simulate:
 
         self.simulate_now()
         if getProf: self.lineProfile()
+        #print(self.pB)
+        #sys.stdout.flush()
+        
 
     def simulate_now(self):
   
@@ -1760,14 +1763,14 @@ class multisim:
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
         all_work = self.poolMPI(work, self.mpi_sim, bar)
+
+        if self.root:
+            self.profiles, self.pBs = zip(*all_work)
+        else: self.profiles, self.pBs = None, None
         #if self.root: 
         #    import pdb 
         #    pdb.set_trace()
         #self.comm.barrier()
-        if self.root:
-            self.profiles, self.pBs = zip(*all_work)
-        else: self.profiles, self.pBs = 0,0
-
         if self.root and self.print: 
             bar.display(force = True)
             print("Total Lines: " + str(len(self.profiles)))
@@ -1779,6 +1782,8 @@ class multisim:
         simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim)
         profile = simulation.lineProfile()
         pB = simulation.pB
+        #print(pB)
+        #sys.stdout.flush()
         return profile, pB
 
     def getLineArray(self):
@@ -1874,16 +1879,20 @@ class multisim:
             if not anext: break
             data = comm.recv(None, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
             all_data.append(data)
-            bar.increment() 
-            bar.display()
+            try:
+                bar.increment() 
+                bar.display()
+            except: pass
             comm.send(anext, dest=status.Get_source(), tag=WORKTAG)
 
  
         for i in range(1,size):
             data = comm.recv(None, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG)
             all_data.append(data)
-            bar.increment() 
-            bar.display()
+            try:
+                bar.increment() 
+                bar.display()
+            except: pass
     
         for i in range(1,size):
             comm.send(None, dest=i, tag=DIETAG)
@@ -1944,7 +1953,7 @@ class batchjob:
 
     def simulate_now(self):
         comm = MPI.COMM_WORLD
-        if self.root:
+        if self.root and self.print:
             print('\nCoronaSim!')
             print('Written by Chris Gilbert')
             print('-------------------------\n')
@@ -1957,7 +1966,7 @@ class batchjob:
 
             self.sims = []
             self.profiles = []
-            self.pBs = []
+            self.pBss = []
             self.doLabels = self.labels.tolist()
             self.doneLabels = []
 
@@ -1983,7 +1992,7 @@ class batchjob:
             if self.root:
                 self.sims.append(thisSim)
                 self.profiles.append(thisSim.profiles)
-                self.pBs.append(thisSim.pBs)
+                self.pBss.append(thisSim.pBs)
                 if self.print:
                     if self.printMulti: print('\nBatch Progress: '+ str(self.batchName))
                     self.bar.increment()
@@ -1991,28 +2000,19 @@ class batchjob:
 
                 self.save()
 
-        #if self.root:
-        #    self.pBs = np.asarray(self.pBs)
-        #    print(self.pBs)
-        #    sys.stdout.flush()
-        #else:
-        #    self.pBs = np.empty(len(self.doneLabels))
-        #comm.Bcast(self.pBs, root=0)
-        #self.pBs = self.pBs.tolist()
-        #self.doOnePB()
-
-
         if self.root: 
             self.__findBatchStats()
             self.makeVrms()
-            
+            self.doOnePB()
+
             if self.complete is False:
                 self.completeTime = time.asctime()
             self.complete = True
 
-            print('\nBatch Complete: '+ str(self.batchName))
-            try: print(self.completeTime)
-            except: print('')
+            if self.print: 
+                print('\nBatch Complete: '+ str(self.batchName))
+                try: print(self.completeTime)
+                except: print('')
             self.envs = []
             self.save(printout = False)
 
@@ -2094,6 +2094,7 @@ class batchjob:
         #Finds the mean and varience of each of the statistics for each multisim
         self.stat =  [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         self.statV = [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
+        self.allStd = []
         for vars, impact in zip(self.lineStats, self.labels):
             allAmp = [x[0] for x in vars]
             allMean = [x[1] for x in vars]
@@ -2118,6 +2119,7 @@ class batchjob:
             std1 = np.std([self.__mean2V(x) for x in allMean])
             self.assignStatV2(1, mean1, std1)
 
+            self.allStd.append([self.__std2V(x) for x in allStd])
             mean2= self.__std2V(np.mean(allStd))
             std2 = self.__std2V(np.std(allStd))
             self.assignStatV2(2, mean2, std2)
@@ -2254,21 +2256,48 @@ class batchjob:
         f.suptitle(str(self.batchName) + ': ' + str(self.completeTime) + '\n Wavelength: ' + str(self.env.lam0) + 
             ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + 
             '; Lines per Env: ' + str(self.Nrot) + '\n  usePsf = '+ str(self.usePsf) + '                                        statType = ' + str(self.statType))
-        #Plot the simulation Results
+
+        #Plot the actual distribution of line widths in the background
+        labels = []
+        edges = []
+        hists = []
+        for stdlist, label in zip(self.allStd, self.doneLabels):
+            hist, edge = np.histogram(stdlist, 200, range = [0,200])
+            labels.append(label)
+            edges.append(edge)
+            hists.append(hist)
+
+        array = np.asarray(hists).T
+        diff = np.average(np.diff(np.asarray(labels)))
+        labels.append(labels[-1] + diff)
+        ed = edges[0][:-1]
+        xx, yy = np.meshgrid(labels-diff/2, ed)
+        labels.pop()
+
+        plt.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Sim Hist")
+        cbar = plt.colorbar()
+        cbar.set_label('Number of Lines')
+
+
+        #Plot the Statistics of the Lines
         plt.errorbar(labels, self.statV[2][0], yerr = self.statV[2][1], fmt = 'bo', label = 'Simulation')
-        #Plot the hahn model
+
+        #Plot the Hahn Measurements
         try:
             plt.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr = self.env.hahnError, fmt = 'gs', label = 'Hahn Observations')
         except: pass
-        
+
+        plt.plot(labels, self.hahnV, label = "HahnV", color = 'g')        
+        #Plot the expected values
         plt.plot(labels, self.thisV, label = 'Expected', color = 'b') 
-        plt.plot(labels, self.hahnV, label = "HahnV", color = 'g')
+
+
         #Put numbers on plot of widths
         for xy in zip(labels, self.statV[2][0]): 
             plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
 
         plt.title('Line Width')
-        plt.legend()
+        plt.legend(loc =2)
         plt.ylabel('Km/s')
         spread = 0.05
         plt.xlim([labels[0]-spread, labels[-1]+spread]) #Get away from the edges
@@ -2282,7 +2311,7 @@ class batchjob:
         else:
             self.plotStatsV()
 
-    def save(self, batchName = None, keep = False, printout = True):
+    def save(self, batchName = None, keep = False, printout = False):
 
         if batchName is None: batchName = self.batchName
     
@@ -2328,36 +2357,32 @@ class batchjob:
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
 
-    def doPB(self, filename):
-        if filename is not None:
-            self.pBavg = []
-            self.pBstd = []
-            path = os.path.normpath("../dat/pB/" + filename + ".txt")
-            with open(path, 'w') as f:
-                for label, pBs in zip(self.getLabels(),self.pBs):
-                    data = np.asarray(pBs)
-                    avg = np.average(data)
-                    std = np.std(data)
+    #def doPB(self, filename):
+    #    if filename is not None:
+    #        self.pBavg = []
+    #        self.pBstd = []
+    #        path = os.path.normpath("../dat/pB/" + filename + ".txt")
+    #        with open(path, 'w') as f:
+    #            for label, pBs in zip(self.getLabels(),self.pBs):
+    #                data = np.asarray(pBs)
+    #                avg = np.average(data)
+    #                std = np.std(data)
 
-                    self.pBavg.append(avg)
-                    self.pBstd.append(std)
+    #                self.pBavg.append(avg)
+    #                self.pBstd.append(std)
 
-                    f.write("{}    {}    {}\n".format(label, avg, std))
-                    f.flush()
+    #                f.write("{}    {}    {}\n".format(label, avg, std))
+    #                f.flush()
 
                 #plt.errorbar(self.getLabels(), pBavg, yerr = pBstd, fmt = 'o')
                 #plt.yscale('log')
                 ##plt.semilogy(self.getLabels(), pB)
                 #plt.show()
-                    pass
+            
     def doOnePB(self):
-        
-        data = np.asarray(self.pBs[0])
-        avg = np.average(data)
-        std = np.std(data)
-
-        self.pBavg = avg
-        self.pBstd = std
+        pBs = np.asarray(self.pBss[-1])
+        self.pBavg = np.average(pBs)
+        self.pBstd = np.std(pBs)
 
 class batch:
     def __init__(self, batchname):
@@ -2390,7 +2415,7 @@ class batch:
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
-            rez = None, size = None, timeAx = [0], printSim = False, printOut = True, printMulti = True, pBname = None):
+            rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True):
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
         self.root = comm.Get_rank() == 0
@@ -2398,7 +2423,6 @@ class impactsim(batchjob):
         self.Nb = Nb
         self.batchName = batchName
         self.timeAx = timeAx
-        self.pBname = pBname
 
         try: self.Nenv = len(envs)
         except: self.Nenv = 1
@@ -2410,9 +2434,13 @@ class impactsim(batchjob):
 
         #Lines per impact
         self.Npt = self.Nrot * self.Nenv 
+        #print("{} lines per run".format(self.Npt))
         #Total Lines
         self.Ntot = self.Npt * self.Nb
-
+        #if self.root: 
+        #    import pdb 
+        #    pdb.set_trace()
+        #self.comm.barrier()
         self.print = printOut
         self.printMulti = printMulti
         self.printSim = printSim
@@ -2424,11 +2452,8 @@ class impactsim(batchjob):
         self.xlabel = 'Impact Parameter'    
         self.fullBatch = []
         for ind in self.impacts:
-            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size)) 
-        #if self.root: 
-        #    import pdb 
-        #    pdb.set_trace()
-        #self.comm.barrier()
+            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size, x0 = length)) 
+
         super().__init__(envs)
         
         return
@@ -2487,6 +2512,7 @@ def calcF1(envsName, N = 50, b0 = 1, b1 = 3, len = 50, rez = 600, name = 'defaul
 
                     #Store the info
                     print(str(b) + ' ur: ' + str(urProj)+ ', rms: ' + str(rmsProj)+ ', tem: ' + str(temProj))
+                    sys.stdout.flush()
                     f1.append(urProj)
                     f2.append(rmsProj)
                     f3.append(temProj)
@@ -2505,52 +2531,72 @@ def calcF1(envsName, N = 50, b0 = 1, b1 = 3, len = 50, rez = 600, name = 'defaul
                 plt.axhline(1, color = 'k')
                 plt.show()
 
-def plotpB(maxN = 100):
-        path = os.path.normpath("../dat/pB/*.txt")
-        files = glob.glob(path)
+#def plotpB(maxN = 100):
+#        path = os.path.normpath("../dat/pB/*.txt")
+#        files = glob.glob(path)
 
-        ind = 0
-        for file in files:
-            if ind < maxN: 
-                x = np.loadtxt(file)
-                absiss = x[:,0]
-                pBavg = x[:,1]
-                pBstd = x[:,2]
-                label = file.rsplit(os.path.sep, 1)[-1]
-                plt.plot(absiss, pBavg, '-o', label = label)#, yerr = pBstd) 
-            ind += 1
+#        ind = 0
+#        for file in files:
+#            if ind < maxN: 
+#                x = np.loadtxt(file)
+#                absiss = x[:,0]
+#                pBavg = x[:,1]
+#                pBstd = x[:,2]
+#                label = file.rsplit(os.path.sep, 1)[-1]
+#                plt.plot(absiss, pBavg, '-o', label = label)#, yerr = pBstd) 
+#            ind += 1
 
-        plt.legend()
-        plt.yscale('log')
-        plt.ylabel('pB')
-        plt.xlabel('Impact Parameter')
-        plt.show()
+#        plt.legend()
+#        plt.yscale('log')
+#        plt.ylabel('pB')
+#        plt.xlabel('Impact Parameter')
+#        plt.show()
 
-def pbRefinement(envsName, MIN, MAX, tol):
-    #THIS FUNCTION NEEDS TO BE MADE TO RUN IN PARALLEL
+def pbRefinement(envsName, params, MIN, MAX, tol):
     #This function compares the pB at a height of zz with and without B, and finds the Bmin which minimizes the difference
-    def runAtBminFull(grd, env, rez, Bmin):
+    def runAtBminFull(params, Bmin):
+        #This runs a multisim at a particular Bmin and returns the pB
+        comm = MPI.COMM_WORLD
+        root = comm.Get_rank() == 0
         simpoint.useB = True
         simpoint.Bmin = Bmin
-        grd.reset()
-        lineSim = simulate(grd, env, N = rez, findT = False, getProf = True)
-        pBnew = lineSim.pB
-        print("B = {}, pB = {}".format(Bmin, pBnew))
+        
+        bat = impactsim(*params)
+        if root:
+            pBnew = bat.pBavg
+            print("B = {}, pB = {}".format(Bmin, pBnew))
+            sys.stdout.flush()
+        else:
+            pBnew = np.empty(1)
+        comm.Bcast(pBnew, root=0)
         return pBnew
-                    
+                 
     def bisection(a,b,tol,f,pBgoal):
+        #Given a function f, a tolerance, and a goal, this returns the value that solves for the goal.
+        comm = MPI.COMM_WORLD
+        root = comm.Get_rank() == 0
         Nmax = 20
         N = 0
         c = (a+b)/2.0
         fc = f(c) - pBgoal
+        flist = {}
+        flist[c] = fc
 
         while np.abs(fc) > tol:   
             N += 1
             if N > Nmax:
-                print("I failed to converge")
+                if root: print("I failed to converge")
                 break
-            fc = f(c) - pBgoal
-            fa = f(a) -pBgoal
+
+            try: fc = flist[c]
+            except: 
+                fc = f(c) - pBgoal
+                flist[c] = fc
+            try: fa = flist[a]
+            except: 
+                fa = f(a) - pBgoal
+                flist[a] = fa
+
             if fc == 0:
                 return c
             elif fa*fc < 0:
@@ -2558,24 +2604,33 @@ def pbRefinement(envsName, MIN, MAX, tol):
             else:
                 a = c
             c = (a+b)/2.0
-        print("I converged to {}, with pB = {}".format(c,fc+pBgoal))
-        print("The goal was {}".format(pBgoal))
+        if root: 
+            print("Converged to {}, with pB = {}, in {} iterations".format(c,fc+pBgoal, N))
+            print("The goal was {}".format(pBgoal))
         return c
+   
+    comm = MPI.COMM_WORLD
+    root = comm.Get_rank() == 0
+    if root: 
+        print("Beginning Refinement...")
+        sys.stdout.flush()
 
-    zz = 1.5
-    len = 10
-    rez = 600
-            
-    env = envrs(envsName).loadEnvs(100)[1]
-    grd = grid.sightline([-len,1e-8,zz], [-len,1e-8,zz], findT = True)
+    zz = params[4]
+    len = params[10]
+    rez = params[7]          
+    refenv = params[1][0]
+    refgrd = grid.sightline([-len,1e-8,zz], [len,1e-8,zz], findT = True)
+
     from functools import partial
-    runAtBmin = partial(runAtBminFull, grd, env, rez)
+    runAtBmin = partial(runAtBminFull, params)
             
     #Get the reference line pB
     simpoint.useB = False
-    lineSim = simulate(grd, env, N = rez, findT = True, getProf = True)
+    lineSim = simulate(refgrd, refenv, N = rez, findT = True, getProf = True)
     pBgoal = lineSim.pB
-    print("The goal is pB = {}".format(pBgoal))
+    if root: 
+        print("The goal is pB = {}".format(pBgoal))
+        sys.stdout.flush()
 
     #Converge to that line        
     return bisection(MIN,MAX,tol,runAtBmin,pBgoal)
