@@ -1087,7 +1087,10 @@ class simpoint:
             if self.twave < 0: self.twave = -256
         else:
             self.twave = self.twave_fit  
-        self.twave_rat = self.twave/self.twave_fit
+        if not self.twave_fit == 0:
+            self.twave_rat = self.twave/self.twave_fit
+        else: self.twave_rat = np.nan
+
         
     def setTime(self,t = 0):
         #Updates velocities to input time
@@ -1762,29 +1765,45 @@ class multisim:
         else: bar = None
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
-        all_work = self.poolMPI(work, self.mpi_sim, bar)
+        sims = self.poolMPI(work, self.mpi_sim, bar)
+        self.collectVars(sims)
+        #if self.root:
+        #    #self.profiles, self.pBs = zip(*all_work)
 
-        if self.root:
-            self.profiles, self.pBs = zip(*all_work)
-        else: self.profiles, self.pBs = None, None
-        #if self.root: 
-        #    import pdb 
-        #    pdb.set_trace()
-        #self.comm.barrier()
+        #else: self.profiles, self.pBs = None, None
+
         if self.root and self.print: 
             bar.display(force = True)
             print("Total Lines: " + str(len(self.profiles)))
 
+    def collectVars(self, sims):
+        if self.root:
+            self.profiles = []
+            self.pBs = []
+            self.urProjs = []
+            self.rmsProjs = []
+            self.temProjs = []
+            for simulation in sims:
+                self.profiles.append(simulation.profile)
+                self.pBs.append(simulation.pB)
+                self.urProjs.append(simulation.urProj)
+                self.rmsProjs.append(simulation.rmsProj)
+                self.temProjs.append(simulation.temProj)
+        else:
+                self.profiles = None
+                self.pBs = None
+                self.urProjs = None
+                self.rmsProjs = None
+                self.temProjs = None
+
+
     def mpi_sim(self, data):
         grd, envInd = data
-
         self.envs[envInd].randomize()
-        simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim)
-        profile = simulation.lineProfile()
-        pB = simulation.pB
-        #print(pB)
-        #sys.stdout.flush()
-        return profile, pB
+        simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim, getProf = True)
+        #profile = simulation.lineProfile()
+        #pB = simulation.pB
+        return simulation
 
     def getLineArray(self):
         return np.asarray(self.profiles)
@@ -1866,7 +1885,7 @@ class multisim:
         DIETAG = 1
         all_data = []
         size = MPI.COMM_WORLD.Get_size()
-        current_work = Work(wi) 
+        current_work = self.__Work__(wi) 
         comm = MPI.COMM_WORLD
         status = MPI.Status()
         for i in range(1, size): 
@@ -1918,16 +1937,17 @@ class multisim:
         else:
             self.slave(do_work)
             return None
-        
+
+    class __Work__():
+        def __init__(self, work_items):
+            self.work_items = work_items[:] 
  
-class Work():
-    def __init__(self, work_items):
-        self.work_items = work_items[:] 
+        def get_next_item(self):
+            if len(self.work_items) == 0:
+                return None
+            return self.work_items.pop()      
  
-    def get_next_item(self):
-        if len(self.work_items) == 0:
-            return None
-        return self.work_items.pop()
+
 
 #Inputs: (self, batch, envs, N = 1000, findT = None, printOut = False)
 #Attributes: lines, lineStats
@@ -1950,6 +1970,8 @@ class batchjob:
         self.root = comm.rank == 0
 
         self.simulate_now()
+        if self.root:
+            self.finish()
 
     def simulate_now(self):
         comm = MPI.COMM_WORLD
@@ -1964,15 +1986,15 @@ class batchjob:
             if self.root and self.print: 
                 self.bar = pb.ProgressBar(len(self.labels))
 
-            self.sims = []
-            self.profiles = []
-            self.pBss = []
+
             self.doLabels = self.labels.tolist()
             self.doneLabels = []
 
         if self.root and self.print and self.printMulti: 
             print('\nBatch Progress: '+ str(self.batchName))
             self.bar.display()
+
+        self.initLists()
 
         while len(self.doLabels) > 0:
             ind = self.doLabels.pop(0)
@@ -1990,9 +2012,8 @@ class batchjob:
             comm.barrier()
 
             if self.root:
-                self.sims.append(thisSim)
-                self.profiles.append(thisSim.profiles)
-                self.pBss.append(thisSim.pBs)
+                self.collectVars(thisSim)
+
                 if self.print:
                     if self.printMulti: print('\nBatch Progress: '+ str(self.batchName))
                     self.bar.increment()
@@ -2000,21 +2021,38 @@ class batchjob:
 
                 self.save()
 
-        if self.root: 
-            self.__findBatchStats()
-            self.makeVrms()
-            self.doOnePB()
+    def finish(self):
+        self.__findBatchStats()
+        self.makeVrms()
+        self.doOnePB()
 
-            if self.complete is False:
-                self.completeTime = time.asctime()
-            self.complete = True
+        if self.complete is False:
+            self.completeTime = time.asctime()
+        self.complete = True
 
-            if self.print: 
-                print('\nBatch Complete: '+ str(self.batchName))
-                try: print(self.completeTime)
-                except: print('')
-            self.envs = []
-            self.save(printout = False)
+        if self.print: 
+            print('\nBatch Complete: '+ str(self.batchName))
+            try: print(self.completeTime)
+            except: print('')
+        if self.fName is not None: 
+            self.calcFfiles()
+        self.save(printout = False)
+
+    def initLists(self):
+            self.sims = []
+            self.profiless = []
+            self.pBss = []
+            self.urProjss = []
+            self.rmsProjss = []
+            self.temProjss = []
+
+    def collectVars(self, thisSim):
+        self.sims.append(thisSim)
+        self.profiless.append(thisSim.profiles)
+        self.pBss.append(thisSim.pBs)
+        self.urProjss.append(thisSim.urProjs)
+        self.rmsProjss.append(thisSim.rmsProjs)
+        self.temProjss.append(thisSim.temProjs)
 
     def findRank(self):
         comm = MPI.COMM_WORLD
@@ -2036,7 +2074,7 @@ class batchjob:
     def __findBatchStats(self):
         #Finds the statistics of all of the profiles in all of the multisims
         self.lineStats = []
-        for profiles in self.profiles:
+        for profiles in self.profiless:
             self.lineStats.append(self.__findSimStats(profiles))
         self.__findSampleStats()
 
@@ -2262,7 +2300,7 @@ class batchjob:
         edges = []
         hists = []
         for stdlist, label in zip(self.allStd, self.doneLabels):
-            hist, edge = np.histogram(stdlist, 200, range = [0,200])
+            hist, edge = np.histogram(stdlist, 150, range = [0,200])
             labels.append(label)
             edges.append(edge)
             hists.append(hist)
@@ -2357,33 +2395,82 @@ class batchjob:
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
 
-    #def doPB(self, filename):
-    #    if filename is not None:
-    #        self.pBavg = []
-    #        self.pBstd = []
-    #        path = os.path.normpath("../dat/pB/" + filename + ".txt")
-    #        with open(path, 'w') as f:
-    #            for label, pBs in zip(self.getLabels(),self.pBs):
-    #                data = np.asarray(pBs)
-    #                avg = np.average(data)
-    #                std = np.std(data)
-
-    #                self.pBavg.append(avg)
-    #                self.pBstd.append(std)
-
-    #                f.write("{}    {}    {}\n".format(label, avg, std))
-    #                f.flush()
-
-                #plt.errorbar(self.getLabels(), pBavg, yerr = pBstd, fmt = 'o')
-                #plt.yscale('log')
-                ##plt.semilogy(self.getLabels(), pB)
-                #plt.show()
-            
     def doOnePB(self):
         pBs = np.asarray(self.pBss[-1])
         self.pBavg = np.average(pBs)
         self.pBstd = np.std(pBs)
 
+    def calcFfiles(self):
+        #Calculate the f parameters 
+        #Make sure to have the B field and waves and wind on if you want this to work
+        print("\nCalculating f Files:")
+        sys.stdout.flush()
+        name = self.fName
+        folder = "../dat/data/"
+        file1 = os.path.normpath(folder + 'f1_' + name + '.txt')
+        file2 = os.path.normpath(folder + 'f2_' + name + '.txt')
+        file3 = os.path.normpath(folder + 'f3_' + name + '.txt')
+        f1 = []
+        f2 = []
+        f3 = []
+        absic = []
+
+        with open(file1, 'w') as f1out:
+            with open(file2, 'w') as f2out:
+                with open(file3, 'w') as f3out:
+
+                    for urProjs, rmsProjs, temProjs, b in zip(self.urProjss, self.rmsProjss, self.temProjss, self.doneLabels):
+                        #Simulate one line across the top of the sun
+                        #lineSim = simulate(grd, env, N = rez, findT = True, getProf = True)
+
+                        urProj = np.average(urProjs)
+                        rmsProj = np.average(rmsProjs)
+                        temProj = np.average(temProjs)
+                        #print(rmsProj)
+                        #sys.stdout.flush()
+                        #Simulate a point directly over the pole and average
+                        ptUr = []
+                        ptRms = []
+                        ptTem = []
+                        for env in self.envs:
+                            point = simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
+                            ptUr.append(point.ur)
+                            ptRms.append(point.vRms)
+                            ptTem.append(point.T)
+                        #print(ptRms)
+                        #sys.stdout.flush()
+                        pUr = np.average(ptUr)
+                        pRms = np.average(ptRms)
+                        pTem = np.average(ptTem)
+                        #print(pRms)
+                        #sys.stdout.flush()
+                        urProjA = urProj/pUr
+                        rmsProjA = rmsProj/pRms
+                        temProjA = temProj/pTem
+
+                        #Store the info
+                        print(str(b) + ' ur: ' + str(urProjA)+ ', rms: ' + str(rmsProjA)+ ', tem: ' + str(temProjA))
+                        sys.stdout.flush()
+                        f1.append(urProjA)
+                        f2.append(rmsProjA)
+                        f3.append(temProjA)
+                        absic.append(b)
+                        f1out.write('{}   {}\n'.format(b,urProjA))
+                        f1out.flush()
+                        f2out.write('{}   {}\n'.format(b,rmsProjA))
+                        f2out.flush()
+                        f3out.write('{}   {}\n'.format(b,temProjA))
+                        f3out.flush()
+                        #lineSim.plot('rmsProj')
+                    for env in self.envs:
+                        env._fLoad(name)
+                    plt.plot(np.asarray(absic), np.asarray(f1), label = 'f1')
+                    plt.plot(np.asarray(absic), np.asarray(f2), label = 'f2')
+                    plt.plot(np.asarray(absic), np.asarray(f3), label = 'f3')
+                    plt.legend()
+                    plt.axhline(1, color = 'k')
+                    plt.show()
+    
 class batch:
     def __init__(self, batchname):
         self.batchName = batchname
@@ -2415,11 +2502,12 @@ class batch:
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
-            rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True):
+            rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None):
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
         self.root = comm.Get_rank() == 0
 
+        self.fName = fName
         self.Nb = Nb
         self.batchName = batchName
         self.timeAx = timeAx
@@ -2464,93 +2552,38 @@ class impactsim(batchjob):
         self.hahnV = []
         
         for impact in self.doneLabels:
-            point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
+            ptUr = []
+            ptRms = []
+            ptTem = []
+            for env in self.envs:
+                point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env)
+                ptUr.append(point.ur)
+                ptRms.append(point.vRms)
+                ptTem.append(point.T)
 
-            thermal = self.env.interp_f3(impact) * self.env.KB * point.T / self.env.mI
-            wind =   (self.env.interp_f1(impact) * point.ur)**2 
-            rms =    (self.env.interp_f2(impact) * point.vRms)**2
-            V = np.sqrt(thermal + wind + rms)
+            pUr = np.average(ptUr)
+            pRms = np.average(ptRms)
+            pTem = np.average(ptTem)
+
+            #point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
+            #pUr = point.ur
+            #pRms = point.vRms
+            #pTem = point.T
+
+
+            wind =   (self.env.interp_f1(impact)/2 * pUr)**2 
+            rms =    (self.env.interp_f2(impact) * pRms)**2
+            thermal = self.env.interp_f3(impact)/2 * self.env.KB * pTem / self.env.mI
+            V = np.sqrt( (thermal + wind + rms) )
 
             self.thisV.append(self.env.cm2km(V))
             self.hahnV.append(self.hahnFit(impact))
-            #if impact == 1.5:
-            #    print(np.sqrt(  (self.env.interp_f1(impact) * point.ur)**2 + 2 * self.env.KB * point.T / self.env.mI) )
+
 
     def hahnFit(self, r, r0 = 1.05, vth = 25.8, vnt = 32.2, H = 0.0657):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))
         return veff
 
-
-#Calculate the f1 parameter for the solar wind
-def calcF1(envsName, N = 50, b0 = 1, b1 = 3, len = 50, rez = 600, name = 'default'):
-    #Determine the factor applied to the plane-of-sky wind speed as f(b)
-    #Make sure to have the B field and waves off if you want this to be general.
-    env = envrs(envsName).loadEnvs(1)[0]
-    grdlst, blist = grid.impactLines(N, b0, b1, len)
-    folder = "../dat/data/"
-    file1 = os.path.normpath(folder + 'f1_' + name + '.txt')
-    file2 = os.path.normpath(folder + 'f2_' + name + '.txt')
-    file3 = os.path.normpath(folder + 'f3_' + name + '.txt')
-
-    with open(file1, 'w') as f1out:
-        with open(file2, 'w') as f2out:
-            with open(file3, 'w') as f3out:
-                f1 = []
-                f2 = []
-                f3 = []
-                absic = []
-                for grd, b in zip(grdlst,blist):
-                    #Simulate one line across the top of the sun
-                    lineSim = simulate(grd, env, N = rez, findT = False, getProf = True)
-                    #lineSim.plot('urProj')
-                    #Simulate one point directly over the pole
-                    point = simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
-
-                    urProj = lineSim.urProj/point.ur
-                    rmsProj = lineSim.rmsProj/point.vRms
-                    temProj = lineSim.temProj/point.T
-
-                    #Store the info
-                    print(str(b) + ' ur: ' + str(urProj)+ ', rms: ' + str(rmsProj)+ ', tem: ' + str(temProj))
-                    sys.stdout.flush()
-                    f1.append(urProj)
-                    f2.append(rmsProj)
-                    f3.append(temProj)
-                    absic.append(b)
-                    f1out.write('{}   {}\n'.format(b,urProj))
-                    f1out.flush()
-                    f2out.write('{}   {}\n'.format(b,rmsProj))
-                    f2out.flush()
-                    f3out.write('{}   {}\n'.format(b,temProj))
-                    f3out.flush()
-                    #lineSim.plot('rmsProj')
-                plt.plot(np.asarray(absic), np.asarray(f1), label = 'f1')
-                plt.plot(np.asarray(absic), np.asarray(f2), label = 'f2')
-                plt.plot(np.asarray(absic), np.asarray(f3), label = 'f3')
-                plt.legend()
-                plt.axhline(1, color = 'k')
-                plt.show()
-
-#def plotpB(maxN = 100):
-#        path = os.path.normpath("../dat/pB/*.txt")
-#        files = glob.glob(path)
-
-#        ind = 0
-#        for file in files:
-#            if ind < maxN: 
-#                x = np.loadtxt(file)
-#                absiss = x[:,0]
-#                pBavg = x[:,1]
-#                pBstd = x[:,2]
-#                label = file.rsplit(os.path.sep, 1)[-1]
-#                plt.plot(absiss, pBavg, '-o', label = label)#, yerr = pBstd) 
-#            ind += 1
-
-#        plt.legend()
-#        plt.yscale('log')
-#        plt.ylabel('pB')
-#        plt.xlabel('Impact Parameter')
-#        plt.show()
 
 def pbRefinement(envsName, params, MIN, MAX, tol):
     #This function compares the pB at a height of zz with and without B, and finds the Bmin which minimizes the difference
@@ -2638,12 +2671,65 @@ def pbRefinement(envsName, params, MIN, MAX, tol):
 
      
 
-            
+
+
+    #def runAtImpact(params, b):
+    #    #This runs a multisim at a particular Bmin and returns the pB
+    #    comm = MPI.COMM_WORLD
+    #    root = comm.Get_rank() == 0
+    #    params = ["fCalcs", envs, impactPoints, iterations, b, None, N_line, rez, size, timeAx, length, False, False, False]
+    #    bat = impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim)
+    #    if root:
+    #        pBnew = bat.pBavg
+    #        print("B = {}, pB = {}".format(Bmin, pBnew))
+    #        sys.stdout.flush()
+    #    else:
+    #        pBnew = np.empty(1)
+    #    comm.Bcast(pBnew, root=0)
+    #    return pBnew
+#def plotpB(maxN = 100):
+#        path = os.path.normpath("../dat/pB/*.txt")
+#        files = glob.glob(path)
+
+#        ind = 0
+#        for file in files:
+#            if ind < maxN: 
+#                x = np.loadtxt(file)
+#                absiss = x[:,0]
+#                pBavg = x[:,1]
+#                pBstd = x[:,2]
+#                label = file.rsplit(os.path.sep, 1)[-1]
+#                plt.plot(absiss, pBavg, '-o', label = label)#, yerr = pBstd) 
+#            ind += 1
+
+#        plt.legend()
+#        plt.yscale('log')
+#        plt.ylabel('pB')
+#        plt.xlabel('Impact Parameter')
+#        plt.show()        
         
         
-        
-        
-        
+    #def doPB(self, filename):
+    #    if filename is not None:
+    #        self.pBavg = []
+    #        self.pBstd = []
+    #        path = os.path.normpath("../dat/pB/" + filename + ".txt")
+    #        with open(path, 'w') as f:
+    #            for label, pBs in zip(self.getLabels(),self.pBs):
+    #                data = np.asarray(pBs)
+    #                avg = np.average(data)
+    #                std = np.std(data)
+
+    #                self.pBavg.append(avg)
+    #                self.pBstd.append(std)
+
+    #                f.write("{}    {}    {}\n".format(label, avg, std))
+    #                f.flush()
+
+                #plt.errorbar(self.getLabels(), pBavg, yerr = pBstd, fmt = 'o')
+                #plt.yscale('log')
+                ##plt.semilogy(self.getLabels(), pB)
+                #plt.show()        
         
         
         

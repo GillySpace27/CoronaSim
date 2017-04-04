@@ -19,8 +19,8 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'newF3'
-    fFileName = 'newF3'
+    envsName = 'betterF'
+    fFileName = 'betterF'
     maxEnvs = 10
     refineBmin = False
     calcFFiles = False
@@ -43,9 +43,9 @@ if __name__ == '__main__':
 
 
     #Batch Parameters #####################
-    batchName = 'FullLong'
+    batchName = 'FullLong' #FullLong did 50 iterations
     impactPoints = 10
-    iterations = 50
+    iterations = 1
     b0 = 1.01
     b1 = 1.46
 
@@ -74,6 +74,7 @@ if __name__ == '__main__':
     cores = 7
 
     sim.simpoint.useB = useB
+    
 
 ##################################################################################
 ##################################################################################
@@ -101,14 +102,6 @@ if __name__ == '__main__':
             sim.simpoint.useB = useB
         comm.barrier()
 
-        if calcFFiles and root:
-            print('Beginning...')
-            sys.stdout.flush()
-            df = grid.defGrid()
-            env = sim.envrs(envsName).loadEnvs(1)[0]
-            sim.calcF1(envsName, N = 50, b0 = 1.001, b1 = 2, len = 10, rez = 600, name = fFileName)
-        comm.barrier()
-
         if processEnvironments:
             if root:
                 envrs1 = sim.envrs(envsName, fFileName)
@@ -116,6 +109,7 @@ if __name__ == '__main__':
                 #envrs1.showEnvs(maxEnvs)
                 sys.stdout.flush()
         comm.barrier()
+        if not calcFFiles: fFileName = None
 
         ### Level 3 ### BatchSim
         ########################
@@ -123,7 +117,7 @@ if __name__ == '__main__':
         if compute:
             if firstRun:       
                 envs = sim.envrs(envsName).loadEnvs(maxEnvs)
-                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim, fName = fFileName)
             else:
                 myBatch = sim.batch(batchName).restartBatch()  
         if root:      
@@ -134,13 +128,6 @@ if __name__ == '__main__':
                 except: myBatch = sim.batch(batchName).loadBatch()
                 #myBatch.plotProfiles(maxPlotLines)
                 myBatch.plotProfTogether(average, norm, log)
-
-
-
-
-        
-
-
 
 
 
