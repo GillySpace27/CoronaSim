@@ -30,6 +30,8 @@
     <Compile Include="MPI_main.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="run.py" />
+    <Compile Include="runl.py" />
     <Compile Include="scripts\density_sim.py" />
     <Compile Include="scripts\processEnvs.py" />
   </ItemGroup>

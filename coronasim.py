@@ -13,7 +13,7 @@ import sys
 import copy
 
 import matplotlib as mpl
-mpl.use('qt4agg')
+#mpl.use('qt4agg')
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -25,12 +25,13 @@ from scipy import interpolate as interp
 from scipy.stats import norm
 import scipy.stats as stats
 from scipy.optimize import curve_fit
+import copy
 
+#import warnings
+#with warnings.catch_warnings():
+#    warnings.simplefilter("ignore")
+#    import astropy.convolution as con
 
-import warnings
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    import astropy.convolution as con
 
 from collections import defaultdict
 
@@ -94,6 +95,7 @@ class environment:
     primeSeed = 27
     randOffset = 0  
 
+    timeRand = np.random.RandomState(primeSeed*2)
     streamRand = np.random.RandomState() #Gets seeded by streamindex
     primeRand = np.random.RandomState(primeSeed)
     
@@ -142,7 +144,6 @@ class environment:
         self._fLoad(fFile)
         self._hahnLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
-        self.makePSF(self.psfSig)
 
         print("Done")
         print('')
@@ -218,6 +219,8 @@ class environment:
         self.xi2_t = y[:,0]
         self.xi2_raw = y[:,1]
         self.last_xi2_t = y[-1,0]
+
+        self.tmax = int(min(self.last_xi1_t, self.last_xi2_t))
         #plt.plot(self.xi2_t, self.xi2_raw)
         #plt.show()
         pass
@@ -478,12 +481,7 @@ class environment:
         self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
         return self.lamAx
 
-    def makePSF(self, angSig):
-        if angSig is not None:
-            diff = np.abs(self.lamAx[1] - self.lamAx[0])
-            pix = int(np.ceil(angSig/diff))
-            self.psf = con.Gaussian1DKernel(pix)
-        else: self.psf = None
+
 
   ## Misc Methods #################################################################
 
@@ -627,7 +625,6 @@ class environment:
         plt.title(property)
         grid.maximizePlot()
         plt.show()
-
         
 #envs Class handles creation, saving, and loading of environments
 class envrs:
@@ -728,7 +725,7 @@ class simpoint:
     ID = 0
     useIonFrac = True    
     #Level 0: Simulates physical properties at a given coordinate
-    def __init__(self, cPos = [0.1,0.1,1.5], grid = None, env = None, findT = True, pbar = None):
+    def __init__(self, cPos = [0.1,0.1,1.5], grid = None, env = None, findT = True, pbar = None, copyPoint = None):
         #Inputs
         self.grid = grid
         self.env = env
@@ -742,6 +739,7 @@ class simpoint:
             self.findT = self.grid.findT
         else: self.findT = findT
 
+        self.loadParams(copyPoint)
         
         #Initialization
         self.findTemp()
@@ -758,6 +756,19 @@ class simpoint:
         if pbar is not None:
             pbar.increment()
             pbar.display()
+
+    def loadParams(self, copyPoint):
+        if copyPoint is None:
+            self.useWaves = simpoint.g_useWaves
+            self.useWind = simpoint.g_useWind
+            self.useFluxAngle = simpoint.g_useFluxAngle
+            self.Bmin = simpoint.g_Bmin
+        else:
+            self.useWaves = copyPoint.useWaves
+            self.useWind = copyPoint.useWind
+            self.useFluxAngle = copyPoint.useFluxAngle
+            self.Bmin = copyPoint.Bmin
+
 
 
   ## Temperature ######################################################################
@@ -1173,7 +1184,6 @@ class simpoint:
 
     def Vars(self):
         return vars(self) 
-#Inputs: (self, cPos = [0,0,1.5], grid = None, env = None, findT = None, pbar = None)
 
 
 ## Level 1: Initializes many Simpoints into a Simulation
@@ -1226,7 +1236,7 @@ class simulate:
         else: doBar = False
         
         if doBar and self.print: bar = pb.ProgressBar(self.Npoints)
-        self.sPoints = []
+        self.sims = []
         self.steps = []
         self.pData = []
         #if self.print: print("\nBeginning Simulation...")
@@ -1254,7 +1264,7 @@ class simulate:
 
             stepInd += 1
             
-            self.sPoints.append(thisPoint)
+            self.sims.append(thisPoint)
             self.steps.append(step)
             self.pData.append(thisPoint.Vars())
             
@@ -1265,7 +1275,7 @@ class simulate:
         if doBar and self.print: bar.display(force = True)
         #if self.print: print('Elapsed Time: ' + str(time.time() - t))
 
-        self.Npoints = len(self.sPoints)
+        self.Npoints = len(self.sims)
         if type(self.grid) is grid.sightline:
             self.shape = [self.Npoints, 1] 
         else: 
@@ -1411,18 +1421,18 @@ class simulate:
 
     def show(self):
         #Print all properties and values
-        myVars = vars(self.sPoints[0])
+        myVars = vars(self.sims[0])
         print("\nSimpoint Properties")
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
 
     def Vars(self):
         #Returns the vars of the simpoints
-        return self.sPoints[0].Vars()
+        return self.sims[0].Vars()
 
     def Keys(self):
         #Returns the keys of the simpoints
-        return self.sPoints[0].Vars().keys()
+        return self.sims[0].Vars().keys()
 
     ####################################################################
 
@@ -1439,9 +1449,15 @@ class simulate:
         plt.show()
 
     def setIntLam(self, lam):
-        for point in self.sPoints:
+        for point in self.sims:
             point.findIntensity(self.env.lam0, lam)
-        
+
+    def randomizeTime(self):
+        if self.timeAx[0] == 'rand':
+            self.env.timeRand.seed(int(self.env.primeSeed + self.rank))
+            self.timeAx = [self.env.timeRand.randint(self.env.tmax)]#put random num gen here
+            
+
     def lineProfile(self):
         #Get a line profile integrated over time
         profile = np.zeros_like(self.env.lamAx)
@@ -1450,10 +1466,11 @@ class simulate:
         temProj = 0
         rho2 = 0
         pB = 0
+        self.randomizeTime()
         if self.print and self.root: 
             print('\nGenerating Profile...')
-            bar = pb.ProgressBar(len(self.sPoints) * len(self.timeAx))
-        for point, step in zip(self.sPoints, self.steps):
+            bar = pb.ProgressBar(len(self.sims) * len(self.timeAx))
+        for point, step in zip(self.sims, self.steps):
             for tt in self.timeAx:
                 point.setTime(tt)
 
@@ -1482,7 +1499,7 @@ class simulate:
 
 ## Time Dependence ######################################################
     def setTime(self, tt = 0):
-        for point in self.sPoints:
+        for point in self.sims:
             point.setTime(tt)
 
     def makeSAxis(self):
@@ -1497,9 +1514,9 @@ class simulate:
         
     def peekLamTime(self, lam0 = 1000, lam = 1000, t = 0):
         self.makeSAxis()
-        intensity = np.zeros_like(self.sPoints)
+        intensity = np.zeros_like(self.sims)
         pInd = 0
-        for point in self.sPoints:
+        for point in self.sims:
             point.setTime(t)
             intensity[pInd] = point.findIntensity(lam0, lam)
             pInd += 1
@@ -1518,7 +1535,7 @@ class simulate:
         bar = pb.ProgressBar(len(self.times))
         timeInd = 0
         for tt in self.times:
-            for point in self.sPoints:
+            for point in self.sims:
                 point.setTime(tt)
             self.lineArray[timeInd][:] = self.lineProfile()
             bar.increment()
@@ -1655,7 +1672,6 @@ class simulate:
         ax4.set_title('Area')
         ax4.set_xlabel('Time (s)')
         plt.show(False)
-#Inputs: (self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, nMin = None)
 
 
 ## Level 2: Initializes many simulations (MPI Enabled) for statistics
@@ -1765,8 +1781,9 @@ class multisim:
         else: bar = None
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
-        sims = self.poolMPI(work, self.mpi_sim, bar)
-        self.collectVars(sims)
+        self.sims = self.poolMPI(work, self.mpi_sim, bar)
+        self.collectVars(self.sims)
+        if self.destroySims: del self.sims
         #if self.root:
         #    #self.profiles, self.pBs = zip(*all_work)
 
@@ -1946,15 +1963,37 @@ class multisim:
             if len(self.work_items) == 0:
                 return None
             return self.work_items.pop()      
- 
-
-
-#Inputs: (self, batch, envs, N = 1000, findT = None, printOut = False)
-#Attributes: lines, lineStats
-# For doing the same line from many angles, to get statistics
 
 
 ## Level 3: Initializes many Multisims, varying a parameter. Does statistics. Saves and loads Batches.
+class batch:
+    def __init__(self, batchname):
+        self.batchName = batchname
+        
+    #Handles loading and running of batches
+    def loadBatch(self):
+        print("Loading Batch...")
+        slash = os.path.sep
+        batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + self.batchName + '.batch'
+        absPth = absPath(batchPath)
+        try:
+            with open(absPth, 'rb') as input:
+                return pickle.load(input)
+        except:
+            sys.exit('Batch Not found')
+
+    def restartBatch(self):
+        myBatch = self.loadBatch()
+        myBatch.findRank()
+        myBatch.simulate_now()
+        return myBatch
+
+    def analyzeBatch(self, width = False):
+        myBatch = self.loadBatch()
+        myBatch.findRank()
+        myBatch.doStats(width)
+        return myBatch
+
 class batchjob:
 
     #Requires labels, xlabel, batch, N
@@ -1969,7 +2008,13 @@ class batchjob:
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
 
+        try:
+            self.statType = copy.deepcopy(batchjob.g_statType)
+            self.usePsf = copy.deepcopy(batchjob.g_usePsf)
+        except: pass
+
         self.simulate_now()
+        
         if self.root:
             self.finish()
 
@@ -1983,6 +2028,7 @@ class batchjob:
         if self.firstRunEver:
             self.count = 0
             self.batch = self.fullBatch
+            self.initLists()
             if self.root and self.print: 
                 self.bar = pb.ProgressBar(len(self.labels))
 
@@ -1994,7 +2040,7 @@ class batchjob:
             print('\nBatch Progress: '+ str(self.batchName))
             self.bar.display()
 
-        self.initLists()
+        
 
         while len(self.doLabels) > 0:
             ind = self.doLabels.pop(0)
@@ -2018,25 +2064,31 @@ class batchjob:
                     if self.printMulti: print('\nBatch Progress: '+ str(self.batchName))
                     self.bar.increment()
                     self.bar.display(True)
-
                 self.save()
 
+
     def finish(self):
-        self.__findBatchStats()
-        self.makeVrms()
-        self.doOnePB()
+        if self.root:
+            #self.__findBatchStats()
+            self.setFirstPoint()
+            self.makeVrms()
+            self.doOnePB()
 
-        if self.complete is False:
-            self.completeTime = time.asctime()
-        self.complete = True
+            if self.complete is False:
+                self.completeTime = time.asctime()
+            self.complete = True
 
-        if self.print: 
-            print('\nBatch Complete: '+ str(self.batchName))
-            try: print(self.completeTime)
-            except: print('')
-        if self.fName is not None: 
-            self.calcFfiles()
-        self.save(printout = False)
+            if self.print: 
+                print('\nBatch Complete: '+ str(self.batchName))
+                try: print(self.completeTime)
+                except: print('')
+            if self.fName is not None: 
+                self.calcFfiles()
+            self.save(printout = True)
+
+    def setFirstPoint(self):
+        try: self.copyPoint = self.sims[0].sims[0].sims[0]
+        except: self.copyPoint = None
 
     def initLists(self):
             self.sims = []
@@ -2060,12 +2112,7 @@ class batchjob:
         self.root = self.rank == 0
 
     def doStats(self, width):
-        if self.complete:
-            self.plot(width)
-        else:
-            self.redoStats(width)
-
-    def redoStats(self, width):
+        self.makePSF(self.env.psfSig)
         self.__findBatchStats()
         self.makeVrms()
         self.plot(width)
@@ -2074,8 +2121,14 @@ class batchjob:
     def __findBatchStats(self):
         #Finds the statistics of all of the profiles in all of the multisims
         self.lineStats = []
+        print("Fitting Profiles...")
+        bar = pb.ProgressBar(len(self.profiless))
+        bar.display()
         for profiles in self.profiless:
             self.lineStats.append(self.__findSimStats(profiles))
+            bar.increment()
+            bar.display()
+        bar.display(force = True)
         self.__findSampleStats()
 
     def __findSimStats(self, profiles):
@@ -2088,7 +2141,7 @@ class batchjob:
     def __findProfileStats(self, profile):
         if self.usePsf:
             try:
-                profile = con.convolve(profile, self.env.psf, boundary='extend')
+                profile = self.con.convolve(profile, self.psf, boundary='extend')
             except: print("No point spread function available")
 
         if self.statType.lower() == 'moment':
@@ -2125,8 +2178,22 @@ class batchjob:
             #plt.plot(self.env.lamAx, fit)
             #plt.show()
 
-
         return [power, mu, sigma, skew, kurt]
+
+
+
+    def makePSF(self, angSig):
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            import astropy.convolution as con
+            self.con = con
+        self.lamAx = self.env.makeLamAxis(self.env.Ln, self.env.lam0, self.env.lamPm)
+        if angSig is not None:
+            diff = np.abs(self.lamAx[1] - self.lamAx[0])
+            pix = int(np.ceil(angSig/diff))
+            self.psf = self.con.Gaussian1DKernel(pix)
+        else: self.psf = None
 
     def __findSampleStats(self):
         #Finds the mean and varience of each of the statistics for each multisim
@@ -2292,18 +2359,32 @@ class batchjob:
             self.completeTime
         except: self.completeTime = 'Incomplete Job'
         f.suptitle(str(self.batchName) + ': ' + str(self.completeTime) + '\n Wavelength: ' + str(self.env.lam0) + 
-            ' Angstroms\nLines per Impact: ' + str(self.Npt) + '\n Envs: ' + str(self.Nenv) + 
-            '; Lines per Env: ' + str(self.Nrot) + '\n  usePsf = '+ str(self.usePsf) + '                                        statType = ' + str(self.statType))
+            ' Angstroms\nLines per Impact: ' + str(self.Npt) + ';     Envs: ' + str(self.Nenv) + 
+            '; Lines per Env: ' + str(self.Nrot) + '\n  usePsf = '+ str(self.usePsf) + '                                          statType = ' + str(self.statType))
 
+        str1 = "{}: {}\nWavelength: {} Angstroms\nEnvs: {}; Lines per Env: {}; Lines per Impact: {}\n".format(self.batchName, self.completeTime, self.env.lam0, self.Nenv, self.Nrot, self.Npt)
+        str2 = "usePsf: {}                                          statType: {}".format(self.usePsf, self.statType)
+        f.suptitle(str1 + str2)
         #Plot the actual distribution of line widths in the background
         labels = []
         edges = []
         hists = []
+        low = []
+        mid = []
+        high = []
+        
         for stdlist, label in zip(self.allStd, self.doneLabels):
             hist, edge = np.histogram(stdlist, 150, range = [0,200])
             labels.append(label)
             edges.append(edge)
             hists.append(hist)
+
+            
+            quarts = np.percentile(stdlist, self.qcuts)
+            low.append(quarts[0])
+            mid.append(quarts[1])
+            high.append(quarts[2])
+
 
         array = np.asarray(hists).T
         diff = np.average(np.diff(np.asarray(labels)))
@@ -2316,6 +2397,9 @@ class batchjob:
         cbar = plt.colorbar()
         cbar.set_label('Number of Lines')
 
+        plt.plot(labels, low, 'c:', label = "{}%".format(self.qcuts[0]), drawstyle = "steps-mid")
+        plt.plot(labels, mid, 'c--', label = "{}%".format(self.qcuts[1]), drawstyle = "steps-mid")
+        plt.plot(labels, high, 'c:', label = "{}%".format(self.qcuts[2]), drawstyle = "steps-mid")
 
         #Plot the Statistics of the Lines
         plt.errorbar(labels, self.statV[2][0], yerr = self.statV[2][1], fmt = 'bo', label = 'Simulation')
@@ -2325,10 +2409,11 @@ class batchjob:
             plt.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr = self.env.hahnError, fmt = 'gs', label = 'Hahn Observations')
         except: pass
 
-        plt.plot(labels, self.hahnV, label = "HahnV", color = 'g')        
-        #Plot the expected values
-        plt.plot(labels, self.thisV, label = 'Expected', color = 'b') 
-
+        try:
+            plt.plot(labels, self.hahnV, label = "HahnV", color = 'g')        
+            #Plot the expected values
+            plt.plot(labels, self.thisV, label = 'Expected', color = 'b') 
+        except:pass
 
         #Put numbers on plot of widths
         for xy in zip(labels, self.statV[2][0]): 
@@ -2337,7 +2422,7 @@ class batchjob:
         plt.title('Line Width')
         plt.legend(loc =2)
         plt.ylabel('Km/s')
-        spread = 0.05
+        spread = 0.02
         plt.xlim([labels[0]-spread, labels[-1]+spread]) #Get away from the edges
         plt.xlabel(self.xlabel)
         grid.maximizePlot()
@@ -2349,7 +2434,7 @@ class batchjob:
         else:
             self.plotStatsV()
 
-    def save(self, batchName = None, keep = False, printout = False):
+    def save(self, batchName = None, keep = False, printout = False, dumpEnvs = False):
 
         if batchName is None: batchName = self.batchName
     
@@ -2369,7 +2454,9 @@ class batchjob:
 
         sims = self.sims
         self.sims = []
-
+        if dumpEnvs:
+            envs = self.envs
+            self.envs = []
 
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         absPath = os.path.join(script_dir, batchPath)  
@@ -2377,6 +2464,8 @@ class batchjob:
             pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
 
         self.sims = sims
+        if dumpEnvs:
+            self.envs = envs
         #self.env = env
         if printout: print('\nFile Saved')
             
@@ -2470,48 +2559,20 @@ class batchjob:
                     plt.legend()
                     plt.axhline(1, color = 'k')
                     plt.show()
-    
-class batch:
-    def __init__(self, batchname):
-        self.batchName = batchname
-        
-    #Handles loading and running of batches
-    def loadBatch(self):
-        slash = os.path.sep
-        batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + self.batchName + '.batch'
-        absPth = absPath(batchPath)
-        try:
-            with open(absPth, 'rb') as input:
-                return pickle.load(input)
-        except:
-            sys.exit('Batch Not found')
 
-    def restartBatch(self):
-        myBatch = self.loadBatch()
-        myBatch.findRank()
-        myBatch.simulate_now()
-        return myBatch
-
-    def plotBatch(self, redo = False, width = False):
-        myBatch = self.loadBatch()
-        myBatch.findRank()
-        if redo: myBatch.redoStats(width)
-        else: myBatch.doStats(width)
-        return myBatch
- 
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
-            rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None):
+            rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None, qcuts = [16,50,84]):
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
         self.root = comm.Get_rank() == 0
-
+        self.count = 0
         self.fName = fName
         self.Nb = Nb
         self.batchName = batchName
         self.timeAx = timeAx
-
+        self.qcuts = qcuts 
         try: self.Nenv = len(envs)
         except: self.Nenv = 1
 
@@ -2547,16 +2608,25 @@ class impactsim(batchjob):
         return
         
     def makeVrms(self):
-
+            #self.count += 1
+            #print("The count is {}".format(self.count))
+            #sys.stdout.flush()
         self.thisV = []
         self.hahnV = []
-        
+        #if self.root: 
+        #    import pdb 
+        #    pdb.set_trace()
+        if super().lockFlags:
+            try: copyPoint = self.copyPoint
+            except: copyPoint = None
+        else: copyPoint = None
+
         for impact in self.doneLabels:
             ptUr = []
             ptRms = []
             ptTem = []
             for env in self.envs:
-                point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env)
+                point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env, copyPoint = copyPoint)
                 ptUr.append(point.ur)
                 ptRms.append(point.vRms)
                 ptTem.append(point.T)
@@ -2565,12 +2635,6 @@ class impactsim(batchjob):
             pRms = np.average(ptRms)
             pTem = np.average(ptTem)
 
-            #point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = self.env)
-            #pUr = point.ur
-            #pRms = point.vRms
-            #pTem = point.T
-
-
             wind =   (self.env.interp_f1(impact)/2 * pUr)**2 
             rms =    (self.env.interp_f2(impact) * pRms)**2
             thermal = self.env.interp_f3(impact)/2 * self.env.KB * pTem / self.env.mI
@@ -2578,7 +2642,6 @@ class impactsim(batchjob):
 
             self.thisV.append(self.env.cm2km(V))
             self.hahnV.append(self.hahnFit(impact))
-
 
     def hahnFit(self, r, r0 = 1.05, vth = 25.8, vnt = 32.2, H = 0.0657):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))

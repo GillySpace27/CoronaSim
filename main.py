@@ -2,7 +2,7 @@
 import numpy as np
 #import progressBar as pb
 import matplotlib
-matplotlib.use('qt4agg')
+#matplotlib.use('qt4agg')
 import matplotlib.pyplot as plt
 import gridgen as grid
 import coronasim as sim
@@ -33,26 +33,27 @@ if __name__ == '__main__':
 
     #Simulation Properties
     useB = True
-    sim.simpoint.useWaves = True   
-    sim.simpoint.useWind = True
-    sim.simpoint.useFluxAngle = True
-    sim.simpoint.Bmin = 3.89053
-    sim.batchjob.statType = 'gauss' #'Gaussian'
-    sim.batchjob.usePsf = True
-
-
+    sim.simpoint.g_useWaves = True   
+    sim.simpoint.g_useWind = True
+    sim.simpoint.g_useFluxAngle = True
+    sim.simpoint.g_Bmin = 3.89053
+    sim.batchjob.g_statType = 'gauss' #'Gaussian'
+    sim.batchjob.g_usePsf = True
+    sim.batchjob.lockFlags = True
+    sim.batchjob.qcuts = [16,50,84]
+    sim.multisim.destroySims = True #This keeps memory from building up
 
     #Batch Parameters #####################
-    batchName = 'FullLong' #FullLong did 50 iterations
-    impactPoints = 10
-    iterations = 1
+    batchName = 'LCDLong2' #FullLong did 50 iterations
+    impactPoints = 10   
+    iterations = 5
     b0 = 1.01
     b1 = 1.46
 
     N_line = (200,600)
     rez = None #[3,3]
     size = [0.002, 0.01]
-    timeAx = [0] #np.arange(0,1500)
+    timeAx = ['rand'] #np.arange(0,1500)
     length = 10
 
     printSim = False #This makes it show the generating profile progress bar
@@ -60,12 +61,10 @@ if __name__ == '__main__':
     firstRun = True  #Overwrite any existing batch with this name
     redoStats = True #Perform statistics at analyze time
 
-    #pBname = "pB_{}".format(sim.simpoint.Bmin)
-
     #Examine Batch Line Profiles
     showProfiles = False #Plot some number of line profiles at each impact parameter
     maxPlotLines = 3
-    average = False
+    average = True
     norm = False 
     log = False
 
@@ -73,18 +72,19 @@ if __name__ == '__main__':
     parallel = True
     cores = 7
 
-    sim.simpoint.useB = useB
+
     
 
 ##################################################################################
 ##################################################################################
+    sim.simpoint.useB = useB
 
     #This header handles calling the program in parallel
     try: go = int(sys.argv[1])
     except: go = 1
-    if parallel and go == True and (compute or refineBmin):
+    if parallel and go == 1 and (compute or refineBmin):
         print("Starting MPI...")
-        os.system("mpiexec -n " + str(cores) +" python main.py 0")
+        os.system("mpiexec -n {} python main.py 0".format(cores))
     else:
 
 
@@ -122,7 +122,7 @@ if __name__ == '__main__':
                 myBatch = sim.batch(batchName).restartBatch()  
         if root:      
             if analyze:
-                myBatch = sim.batch(batchName).plotBatch(redoStats, widthPlot)
+                myBatch = sim.batch(batchName).analyzeBatch(widthPlot)
             if showProfiles: 
                 try: myBatch
                 except: myBatch = sim.batch(batchName).loadBatch()

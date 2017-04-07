@@ -6,5 +6,5 @@ if len(argv) > 0:
     num = argv.pop(0)
 else: num = 46
 
-    
-os.system("mpiexec -n " + str(num) +" python3 main.py")
+print("Starting run with {} cores.".format(num))
+os.system("mpiexec -n {} python3 main.py {}".format(num, 2))
