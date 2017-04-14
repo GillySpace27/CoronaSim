@@ -125,9 +125,9 @@ class environment:
     upper = 38 #upper energy level
 
     #LamAxis Stuff   #######################
-    Ln = 200
+    Ln = 600
     lam0 = 188.217
-    lamPm = 1
+    lamPm = 0.5
 
     psfSig = 0.047 #Angstroms
 
@@ -773,7 +773,7 @@ class simpoint:
 
   ## Temperature ######################################################################
     def findTemp(self):
-        self.T = self.interp_rx_dat(self.env.T_raw)
+        self.T = 100000 #self.interp_rx_dat(self.env.T_raw)
 
   ## Magnets ##########################################################################
     def findFootB(self):
@@ -2052,7 +2052,7 @@ class batchjob:
                 self.count = 1
             if self.root and self.printMulti: print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']--') 
 
-            self.firstRunEver = False
+            
             
             thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti, printSim = self.printSim, timeAx = self.timeAx)
             comm.barrier()
@@ -2064,13 +2064,15 @@ class batchjob:
                     if self.printMulti: print('\nBatch Progress: '+ str(self.batchName))
                     self.bar.increment()
                     self.bar.display(True)
-                self.save()
+                if self.firstRunEver: self.setFirstPoint()
+                self.firstRunEver = False
+                self.save(printout = True)
 
 
     def finish(self):
         if self.root:
             #self.__findBatchStats()
-            self.setFirstPoint()
+            
             self.makeVrms()
             self.doOnePB()
 
@@ -2268,7 +2270,7 @@ class batchjob:
         plt.xlabel('Wavelength')
         plt.ylabel('Intensity')
 
-        for profiles, impact in zip(self.profiles, self.doneLabels):
+        for profiles, impact in zip(self.profiless, self.doneLabels):
             profsum = np.zeros_like(profiles[0])
             count = 0
             for profile in profiles:
@@ -2366,43 +2368,60 @@ class batchjob:
         str2 = "usePsf: {}                                          statType: {}".format(self.usePsf, self.statType)
         f.suptitle(str1 + str2)
         #Plot the actual distribution of line widths in the background
-        labels = []
+        self.histlabels = []
         edges = []
         hists = []
         low = []
-        mid = []
+        self.medians = []
         high = []
-        
         for stdlist, label in zip(self.allStd, self.doneLabels):
-            hist, edge = np.histogram(stdlist, 150, range = [0,200])
-            labels.append(label)
+            hist, edge = np.histogram(stdlist, 150, range = [0,150])
+            hist = hist / np.amax(hist)
+            self.histlabels.append(label)
             edges.append(edge)
             hists.append(hist)
 
             
             quarts = np.percentile(stdlist, self.qcuts)
             low.append(quarts[0])
-            mid.append(quarts[1])
+            self.medians.append(quarts[1])
             high.append(quarts[2])
 
 
         array = np.asarray(hists).T
-        diff = np.average(np.diff(np.asarray(labels)))
-        labels.append(labels[-1] + diff)
+        diff = np.average(np.diff(np.asarray(self.histlabels)))
+        self.histlabels.append(self.histlabels[-1] + diff)
         ed = edges[0][:-1]
-        xx, yy = np.meshgrid(labels-diff/2, ed)
-        labels.pop()
+        xx, yy = np.meshgrid(self.histlabels-diff/2, ed)
+        self.histlabels.pop()
 
         plt.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Sim Hist")
         cbar = plt.colorbar()
         cbar.set_label('Number of Lines')
 
-        plt.plot(labels, low, 'c:', label = "{}%".format(self.qcuts[0]), drawstyle = "steps-mid")
-        plt.plot(labels, mid, 'c--', label = "{}%".format(self.qcuts[1]), drawstyle = "steps-mid")
-        plt.plot(labels, high, 'c:', label = "{}%".format(self.qcuts[2]), drawstyle = "steps-mid")
+        #Plot the confidence intervals
+        plt.plot(self.histlabels, low, 'c:', label = "{}%".format(self.qcuts[0]), drawstyle = "steps-mid")
+        plt.plot(self.histlabels, self.medians, 'c--', label = "{}%".format(self.qcuts[1]), drawstyle = "steps-mid")
+        plt.plot(self.histlabels, high, 'c:', label = "{}%".format(self.qcuts[2]), drawstyle = "steps-mid")
+
+
 
         #Plot the Statistics of the Lines
-        plt.errorbar(labels, self.statV[2][0], yerr = self.statV[2][1], fmt = 'bo', label = 'Simulation')
+        self.lineWidths = self.statV[2][0]
+        self.lineWidthErrors = self.statV[2][1]
+        plt.errorbar(self.histlabels, self.lineWidths, yerr = self.lineWidthErrors, fmt = 'bo', label = 'Simulation')
+
+        #Do the chi-squared test
+        self.chiTest()
+        height = 0.9
+        left = 0.65
+        shift = 0.1
+        plt.figtext(left, height + 0.04, "Fit to the Median")
+        plt.figtext(left, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mid))
+        plt.figtext(left, height, "Chi2_R = {:0.3f}".format(self.rChi_mid))
+        plt.figtext(left + shift, height + 0.04, "Fit to the Mean")
+        plt.figtext(left + shift, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mean))
+        plt.figtext(left + shift, height, "Chi2_R = {:0.3f}".format(self.rChi_mean))
 
         #Plot the Hahn Measurements
         try:
@@ -2410,23 +2429,50 @@ class batchjob:
         except: pass
 
         try:
-            plt.plot(labels, self.hahnV, label = "HahnV", color = 'g')        
+            plt.plot(self.histlabels, self.hahnV, label = "HahnV", color = 'g')        
             #Plot the expected values
-            plt.plot(labels, self.thisV, label = 'Expected', color = 'b') 
+            plt.plot(self.histlabels, self.thisV, label = 'Expected', color = 'b') 
         except:pass
 
         #Put numbers on plot of widths
-        for xy in zip(labels, self.statV[2][0]): 
+        for xy in zip(self.histlabels, self.statV[2][0]): 
             plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
 
         plt.title('Line Width')
         plt.legend(loc =2)
         plt.ylabel('Km/s')
         spread = 0.02
-        plt.xlim([labels[0]-spread, labels[-1]+spread]) #Get away from the edges
+        plt.xlim([self.histlabels[0]-spread, self.histlabels[-1]+spread]) #Get away from the edges
         plt.xlabel(self.xlabel)
         grid.maximizePlot()
         plt.show()
+
+    def chiTest(self):
+        #import pdb 
+        #pdb.set_trace()
+        #self.doneLabels
+        #self.lineWidths
+        #self.lineWidthErrors
+        #self.medians
+        #self.env.hahnAbs
+        #self.env.hahnPoints
+                
+        self.hahnMids = np.interp(self.env.hahnAbs, self.histlabels, self.medians)
+        self.hahnMeans = np.interp(self.env.hahnAbs, self.histlabels, self.lineWidths)
+        self.hahnMidErrors = np.interp(self.env.hahnAbs, self.histlabels, self.lineWidthErrors)
+
+        self.chi_mean = 0
+        self.chi_mid = 0
+        N = 0
+        for hWidth, hError, miWidth, meWidth, mError in zip(self.env.hahnPoints, self.env.hahnError, self.hahnMids, self.hahnMeans, self.hahnMidErrors):
+            N += 1
+            self.chi_mid += (hWidth - miWidth)**2 / (hError * mError)
+            self.chi_mean += (hWidth - meWidth)**2 / (hError * mError)
+        
+        self.rChi_mid = self.chi_mid / N
+        self.rChi_mean = self.chi_mean / N
+
+        
 
     def plot(self, width):
         if width:
@@ -2637,7 +2683,8 @@ class impactsim(batchjob):
 
             wind =   (self.env.interp_f1(impact)/2 * pUr)**2 
             rms =    (self.env.interp_f2(impact) * pRms)**2
-            thermal = self.env.interp_f3(impact)/2 * self.env.KB * pTem / self.env.mI
+            #print(pTem)
+            thermal = (2*self.env.KB * pTem / self.env.mI)**1 #* self.env.interp_f3(impact)/2
             V = np.sqrt( (thermal + wind + rms) )
 
             self.thisV.append(self.env.cm2km(V))

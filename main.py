@@ -19,7 +19,7 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'betterF'
+    envsName = 'highlamrez'
     fFileName = 'betterF'
     maxEnvs = 10
     refineBmin = False
@@ -32,9 +32,9 @@ if __name__ == '__main__':
     simOne = False
 
     #Simulation Properties
-    useB = True
-    sim.simpoint.g_useWaves = True   
-    sim.simpoint.g_useWind = True
+    useB = False
+    sim.simpoint.g_useWaves = False   
+    sim.simpoint.g_useWind = False
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.89053
     sim.batchjob.g_statType = 'gauss' #'Gaussian'
@@ -44,10 +44,10 @@ if __name__ == '__main__':
     sim.multisim.destroySims = True #This keeps memory from building up
 
     #Batch Parameters #####################
-    batchName = 'LCDLong2' #FullLong did 50 iterations
+    batchName = 'justT2' #'LCDLong2' #FullLong did 50 iterations
     impactPoints = 10   
-    iterations = 5
-    b0 = 1.01
+    iterations = 1
+    b0 = 1.02
     b1 = 1.46
 
     N_line = (200,600)
@@ -62,10 +62,10 @@ if __name__ == '__main__':
     redoStats = True #Perform statistics at analyze time
 
     #Examine Batch Line Profiles
-    showProfiles = False #Plot some number of line profiles at each impact parameter
+    showProfiles = True #Plot some number of line profiles at each impact parameter
     maxPlotLines = 3
     average = True
-    norm = False 
+    norm = True 
     log = False
 
     #Run in parallel?
