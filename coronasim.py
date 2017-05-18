@@ -773,7 +773,7 @@ class simpoint:
 
   ## Temperature ######################################################################
     def findTemp(self):
-        self.T = 100000 #self.interp_rx_dat(self.env.T_raw)
+        self.T = self.interp_rx_dat(self.env.T_raw)
 
   ## Magnets ##########################################################################
     def findFootB(self):
@@ -1783,7 +1783,11 @@ class multisim:
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
         self.sims = self.poolMPI(work, self.mpi_sim, bar)
         self.collectVars(self.sims)
-        if self.destroySims: del self.sims
+        #if self.root: 
+        #    import pdb 
+        #    pdb.set_trace()
+        #self.comm.barrier()
+        if self.destroySims and self.root: self.sims = self.sims[0:1]
         #if self.root:
         #    #self.profiles, self.pBs = zip(*all_work)
 
@@ -2089,8 +2093,7 @@ class batchjob:
             self.save(printout = True)
 
     def setFirstPoint(self):
-        try: self.copyPoint = self.sims[0].sims[0].sims[0]
-        except: self.copyPoint = None
+        self.copyPoint = self.sims[0].sims[0].sims[0]
 
     def initLists(self):
             self.sims = []
@@ -2114,6 +2117,11 @@ class batchjob:
         self.root = self.rank == 0
 
     def doStats(self, width):
+        if not self.lockFlags:
+            try:
+                self.statType = copy.deepcopy(batchjob.g_statType)
+                self.usePsf = copy.deepcopy(batchjob.g_usePsf)
+            except: pass
         self.makePSF(self.env.psfSig)
         self.__findBatchStats()
         self.makeVrms()
@@ -2168,11 +2176,15 @@ class batchjob:
             sig0 = np.sum((self.env.lamAx - self.env.lam0)**2)/len(profile)
             amp0 = np.max(profile)
             profNorm = profile - np.min(profile)
-            popt, pcov = curve_fit(gauss_function, self.env.lamAx, profNorm, p0 = [amp0, self.env.lam0, sig0])
-
+            popt, pcov = curve_fit(gauss_function, self.lamAx, profNorm, p0 = [amp0, self.env.lam0, sig0])
+            
             power = popt[0] * np.sqrt(np.pi * 2 * popt[2]**2)
             mu = popt[1]
-            sigma = np.abs(popt[2]) - psfSig
+
+            psfSig = 1.030086*psfSig #This is the factor that makes it the same before and after psf
+
+            sigma = np.sqrt(np.abs(popt[2])**2 - psfSig**2) #Subtract off the PSF width
+
             skew = 0
             kurt = 0
             fit = gauss_function(self.env.lamAx, popt[0], mu, sigma)
@@ -2367,6 +2379,16 @@ class batchjob:
         str1 = "{}: {}\nWavelength: {} Angstroms\nEnvs: {}; Lines per Env: {}; Lines per Impact: {}\n".format(self.batchName, self.completeTime, self.env.lam0, self.Nenv, self.Nrot, self.Npt)
         str2 = "usePsf: {}                                          statType: {}".format(self.usePsf, self.statType)
         f.suptitle(str1 + str2)
+
+        #Display the run flags
+        height = 0.9
+        left = 0.18
+        shift = 0.1
+
+        plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.useWind))
+        plt.figtext(left, height + 0.02, "Waves: {}".format(self.copyPoint.useWaves))
+        plt.figtext(left, height, "B: {}".format(self.copyPoint.useB))
+
         #Plot the actual distribution of line widths in the background
         self.histlabels = []
         edges = []
@@ -2374,8 +2396,20 @@ class batchjob:
         low = []
         self.medians = []
         high = []
+
+        small = 1e16
+        big = 0
+        for stdlist in self.allStd:
+            newBig = np.abs(np.ceil(np.amax(stdlist)))
+            newSmall = np.abs(np.floor(np.amin(stdlist)))
+            
+            small = int(min(small, newSmall))
+            big = int(max(big, newBig))
+        throw = int(np.abs(np.ceil(big-small)))
+
         for stdlist, label in zip(self.allStd, self.doneLabels):
-            hist, edge = np.histogram(stdlist, 150, range = [0,150])
+
+            hist, edge = np.histogram(stdlist, throw, range = [small,big])
             hist = hist / np.amax(hist)
             self.histlabels.append(label)
             edges.append(edge)
@@ -2403,8 +2437,6 @@ class batchjob:
         plt.plot(self.histlabels, low, 'c:', label = "{}%".format(self.qcuts[0]), drawstyle = "steps-mid")
         plt.plot(self.histlabels, self.medians, 'c--', label = "{}%".format(self.qcuts[1]), drawstyle = "steps-mid")
         plt.plot(self.histlabels, high, 'c:', label = "{}%".format(self.qcuts[2]), drawstyle = "steps-mid")
-
-
 
         #Plot the Statistics of the Lines
         self.lineWidths = self.statV[2][0]
@@ -2681,10 +2713,11 @@ class impactsim(batchjob):
             pRms = np.average(ptRms)
             pTem = np.average(ptTem)
 
+            vTh = 2 * self.env.KB * pTem / self.env.mI
+
             wind =   (self.env.interp_f1(impact)/2 * pUr)**2 
             rms =    (self.env.interp_f2(impact) * pRms)**2
-            #print(pTem)
-            thermal = (2*self.env.KB * pTem / self.env.mI)**1 #* self.env.interp_f3(impact)/2
+            thermal = (self.env.interp_f3(impact) * vTh)**1
             V = np.sqrt( (thermal + wind + rms) )
 
             self.thisV.append(self.env.cm2km(V))

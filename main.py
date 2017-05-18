@@ -29,12 +29,13 @@ if __name__ == '__main__':
     #Which part of the program should run?
     compute = False
     analyze = True
-    simOne = False
+    simOne = False  
 
     #Simulation Properties
     useB = False
     sim.simpoint.g_useWaves = False   
     sim.simpoint.g_useWind = False
+
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.89053
     sim.batchjob.g_statType = 'gauss' #'Gaussian'
@@ -44,7 +45,7 @@ if __name__ == '__main__':
     sim.multisim.destroySims = True #This keeps memory from building up
 
     #Batch Parameters #####################
-    batchName = 'justT2' #'LCDLong2' #FullLong did 50 iterations
+    batchName = 'test' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
     impactPoints = 10   
     iterations = 1
     b0 = 1.02
@@ -62,7 +63,7 @@ if __name__ == '__main__':
     redoStats = True #Perform statistics at analyze time
 
     #Examine Batch Line Profiles
-    showProfiles = True #Plot some number of line profiles at each impact parameter
+    showProfiles = False #Plot some number of line profiles at each impact parameter
     maxPlotLines = 3
     average = True
     norm = True 
