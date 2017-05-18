@@ -20,21 +20,21 @@ if __name__ == '__main__':
 
     #Environment Parameters
     envsName = 'highlamrez'
-    fFileName = 'betterF'
+    fFileName = 'twofactors'
     maxEnvs = 10
     refineBmin = False
     calcFFiles = False
     processEnvironments = False
 
     #Which part of the program should run?
-    compute = False
-    analyze = True
+    compute = True
+    analyze = False
     simOne = False  
 
     #Simulation Properties
-    useB = False
-    sim.simpoint.g_useWaves = False   
-    sim.simpoint.g_useWind = False
+    useB = True
+    sim.simpoint.g_useWaves = True   
+    sim.simpoint.g_useWind = True
 
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.89053
@@ -45,11 +45,12 @@ if __name__ == '__main__':
     sim.multisim.destroySims = True #This keeps memory from building up
 
     #Batch Parameters #####################
-    batchName = 'test' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
+    batchName = 'testprof' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
     impactPoints = 10   
-    iterations = 1
+    iterations = 3
     b0 = 1.02
     b1 = 1.46
+    spacing = 'lin'
 
     N_line = (200,600)
     rez = None #[3,3]
@@ -118,7 +119,7 @@ if __name__ == '__main__':
         if compute:
             if firstRun:       
                 envs = sim.envrs(envsName).loadEnvs(maxEnvs)
-                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim, fName = fFileName)
+                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim, fName = fFileName, spacing = spacing)
             else:
                 myBatch = sim.batch(batchName).restartBatch()  
         if root:      

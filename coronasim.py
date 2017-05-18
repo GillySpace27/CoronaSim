@@ -735,6 +735,7 @@ class simpoint:
         self.zx = self.rx - 1
         self.maxInt = 0
         self.totalInt = 0
+        self.bWasOn = copy.deepcopy(self.useB)
         if findT is None:
             self.findT = self.grid.findT
         else: self.findT = findT
@@ -1012,7 +1013,7 @@ class simpoint:
             delta = self.delta
         else: delta = 0
 
-        self.urProj =  (np.sin(theta + delta) * self.uw)**2 * self.rho**2
+        self.urProj =  0.5*(np.sin(theta + delta) * self.uw)**2 * self.rho**2
         self.rmsProj = (np.cos(theta + delta) * self.vRms)**2 * self.rho**2
         self.temProj = self.T * self.rho**2
 
@@ -2028,6 +2029,8 @@ class batchjob:
             print('\nCoronaSim!')
             print('Written by Chris Gilbert')
             print('-------------------------\n')
+            print("Simulating Impacts: \n{}".format(self.labels))
+
 
         if self.firstRunEver:
             self.count = 0
@@ -2184,10 +2187,9 @@ class batchjob:
             psfSig = 1.030086*psfSig #This is the factor that makes it the same before and after psf
 
             sigma = np.sqrt(np.abs(popt[2])**2 - psfSig**2) #Subtract off the PSF width
-
             skew = 0
             kurt = 0
-            fit = gauss_function(self.env.lamAx, popt[0], mu, sigma)
+            #fit = gauss_function(self.env.lamAx, popt[0], mu, sigma)
             #plt.plot(self.env.lamAx, profile)
             #plt.plot(self.env.lamAx, fit)
             #plt.show()
@@ -2387,7 +2389,7 @@ class batchjob:
 
         plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.useWind))
         plt.figtext(left, height + 0.02, "Waves: {}".format(self.copyPoint.useWaves))
-        plt.figtext(left, height, "B: {}".format(self.copyPoint.useB))
+        plt.figtext(left, height, "B: {}".format(self.copyPoint.bWasOn))
 
         #Plot the actual distribution of line widths in the background
         self.histlabels = []
@@ -2458,13 +2460,14 @@ class batchjob:
         #Plot the Hahn Measurements
         try:
             plt.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr = self.env.hahnError, fmt = 'gs', label = 'Hahn Observations')
-        except: pass
+        except: print("Failed to plot hahn measurements")
 
+        #Plot the expected values
         try:
-            plt.plot(self.histlabels, self.hahnV, label = "HahnV", color = 'g')        
-            #Plot the expected values
-            plt.plot(self.histlabels, self.thisV, label = 'Expected', color = 'b') 
-        except:pass
+            plt.plot(self.doneLabels, self.hahnV, label = "HahnV", color = 'g')        
+            
+            plt.plot(self.doneLabels, self.thisV, label = 'Expected', color = 'b') 
+        except: print("Failed to plot fit lines")
 
         #Put numbers on plot of widths
         for xy in zip(self.histlabels, self.statV[2][0]): 
@@ -2641,7 +2644,7 @@ class batchjob:
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
-            rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None, qcuts = [16,50,84]):
+            rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None, qcuts = [16,50,84], spacing = 'lin'):
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
         self.root = comm.Get_rank() == 0
@@ -2673,8 +2676,22 @@ class impactsim(batchjob):
         self.printSim = printSim
 
         self.N = N
-        if b1 is not None: self.labels = np.round(np.linspace(b0,b1,Nb), 4)
+
+        base = 1000
+
+        #if b1 is not None: 
+        if b1 is not None: 
+            if spacing.casefold() == 'log'.casefold():
+                steps = np.linspace(b0,b1,Nb)
+                logsteps = base**steps
+                logsteps = logsteps - np.amin(logsteps)
+                logsteps = logsteps / np.amax(logsteps) * (b1-b0) + b0
+                self.labels = logsteps
+
+                #self.labels = np.round(np.logspace(np.log(b0)/np.log(base),np.log(b1)/np.log(base), Nb, base = base), 4)
+            else: self.labels = np.round(np.linspace(b0,b1,Nb), 4)
         else: self.labels = np.round([b0], 4)
+        
         self.impacts = self.labels
         self.xlabel = 'Impact Parameter'    
         self.fullBatch = []
@@ -2715,7 +2732,7 @@ class impactsim(batchjob):
 
             vTh = 2 * self.env.KB * pTem / self.env.mI
 
-            wind =   (self.env.interp_f1(impact)/2 * pUr)**2 
+            wind =   (self.env.interp_f1(impact) * pUr)**2 
             rms =    (self.env.interp_f2(impact) * pRms)**2
             thermal = (self.env.interp_f3(impact) * vTh)**1
             V = np.sqrt( (thermal + wind + rms) )
