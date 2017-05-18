@@ -21,7 +21,7 @@ if __name__ == '__main__':
     #Environment Parameters
     envsName = 'highlamrez'
     fFileName = 'twofactors'
-    maxEnvs = 10
+    maxEnvs = 1
     refineBmin = False
     calcFFiles = False
     processEnvironments = False
@@ -46,8 +46,8 @@ if __name__ == '__main__':
 
     #Batch Parameters #####################
     batchName = 'testprof' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
-    impactPoints = 10   
-    iterations = 3
+    impactPoints = 2   
+    iterations = 1
     b0 = 1.02
     b1 = 1.46
     spacing = 'lin'
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     log = False
 
     #Run in parallel?
-    parallel = True
+    parallel = False
     cores = 7
 
 

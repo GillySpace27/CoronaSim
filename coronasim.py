@@ -1687,6 +1687,11 @@ class multisim:
         self.batch = []
         self.envInd = []
         
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.root = self.rank == 0
+        self.size = self.comm.Get_size()
+
         if type(envs) is list or type(envs) is tuple: 
             self.envs = envs
             self.Nenv = len(self.envs)
@@ -1701,7 +1706,9 @@ class multisim:
         
         self.N = N
         self.findT = findT
-        self.MPI_init_masterslave()
+        if self.comm.size > 1:
+            self.MPI_init_masterslave()
+        else: self.init_serial()
         #self.findProfiles()
 
     def MPI_init_fixed(self):
@@ -1761,10 +1768,7 @@ class multisim:
             print("Total Lines: " + str(len(self.profiles)))
 
     def MPI_init_masterslave(self):
-        self.comm = MPI.COMM_WORLD
-        self.rank = self.comm.Get_rank()
-        self.root = self.rank == 0
-        self.size = self.comm.Get_size()
+
 
         if self.root and self.print: 
             print('Running MultiSim: ' + time.asctime())
@@ -1777,26 +1781,20 @@ class multisim:
             #print('ChunkSize = ' + str(len(self.gridList)), end = '; ') 
             #print('Short Cores: ' + str(self.size * len(self.gridList) - len(self.batch)))#Print Stuff
 
-            bar = pb.ProgressBar(len(self.batch))
-            bar.display()
-        else: bar = None
+            self.Bar = pb.ProgressBar(len(self.batch))
+            self.Bar.display()
+        else: self.Bar = None
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
         self.sims = self.poolMPI(work, self.mpi_sim, bar)
         self.collectVars(self.sims)
-        #if self.root: 
-        #    import pdb 
-        #    pdb.set_trace()
-        #self.comm.barrier()
+
         if self.destroySims and self.root: self.sims = self.sims[0:1]
         #if self.root:
         #    #self.profiles, self.pBs = zip(*all_work)
 
         #else: self.profiles, self.pBs = None, None
 
-        if self.root and self.print: 
-            bar.display(force = True)
-            print("Total Lines: " + str(len(self.profiles)))
 
     def collectVars(self, sims):
         if self.root:
@@ -1811,13 +1809,15 @@ class multisim:
                 self.urProjs.append(simulation.urProj)
                 self.rmsProjs.append(simulation.rmsProj)
                 self.temProjs.append(simulation.temProj)
+            if self.print:
+                self.Bar.display(force = True)
+                print("Total Lines: " + str(len(self.profiles)))
         else:
                 self.profiles = None
                 self.pBs = None
                 self.urProjs = None
                 self.rmsProjs = None
                 self.temProjs = None
-
 
     def mpi_sim(self, data):
         grd, envInd = data
@@ -1855,26 +1855,19 @@ class multisim:
                 chunks[NN].extend([newList.pop(0)])              
         return chunks
 
-    def init(self):
+    def init_serial(self):
         #Serial Version
-        t = time.time()
-        self.root = True
-        self.simList = []
-        self.gridList = self.batch[0]
 
-        bar = pb.ProgressBar(len(self.gridList))
-        nn = 0
-        for grd in self.gridList:
-            #print('b = ' + str(self.gridLabels[nn]))
-            self.simList.append(simulate(grd, self.env, self.N, findT = self.findT))
-            bar.increment()
-            bar.display()
-            nn += 1
-        bar.display(force = True)
-        self.findLineStats()
-        print('Elapsed Time: ' + str(time.time() - t))
-        sys.stdout.flush()
-        self.plotStats()
+        work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
+        self.sims = []
+        self.Bar = pb.ProgressBar(len(work))
+
+        for line in work:
+            self.sims.append(self.mpi_sim(line))
+            self.Bar.increment()
+            self.Bar.display()
+
+        self.collectVars(self.sims)
 
     def plotLines(self):
         axes = self.oneBatch[0].quadAxOnly()
@@ -1902,7 +1895,7 @@ class multisim:
         return self
 
  
-    def master(self, wi, bar):
+    def master(self, wi):
         WORKTAG = 0
         DIETAG = 1
         all_data = []
@@ -1921,8 +1914,8 @@ class multisim:
             data = comm.recv(None, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
             all_data.append(data)
             try:
-                bar.increment() 
-                bar.display()
+                self.Bar.increment() 
+                self.Bar.display()
             except: pass
             comm.send(anext, dest=status.Get_source(), tag=WORKTAG)
 
@@ -1948,13 +1941,13 @@ class multisim:
             if status.Get_tag(): break
             comm.send(do_work(data), dest=0)
     
-    def poolMPI(self, work_list, do_work, bar):
+    def poolMPI(self, work_list, do_work):
         rank = MPI.COMM_WORLD.Get_rank()
         name = MPI.Get_processor_name()
         size = MPI.COMM_WORLD.Get_size() 
     
         if rank == 0:
-            all_dat = self.master(work_list, bar)
+            all_dat = self.master(work_list)
             return all_dat
         else:
             self.slave(do_work)
