@@ -742,7 +742,7 @@ class simpoint:
         self.zx = self.rx - 1
         self.maxInt = 0
         self.totalInt = 0
-        self.bWasOn = copy.deepcopy(self.useB)
+
         
         
 
@@ -774,6 +774,10 @@ class simpoint:
             self.useWind = simpoint.g_useWind
             self.useFluxAngle = simpoint.g_useFluxAngle
             self.Bmin = simpoint.g_Bmin
+
+            self.bWasOn = copy.deepcopy(self.useB)
+            self.waveWasOn = copy.deepcopy(self.useWaves)
+            self.windWasOn = copy.deepcopy(self.useWind)
         else:
             self.useWaves = copyPoint.useWaves
             self.useWind = copyPoint.useWind
@@ -823,13 +827,12 @@ class simpoint:
         self.frac = self.env.interp_frac(self.T) #ion fraction
 
         if self.useIonFrac:
-            self.nion = np.abs(0.8 * self.frac * self.env.abundance * self.rho/self.env.mP) #ion number density
+            self.nion = np.abs(0.8* self.frac * self.env.abundance * self.rho/self.env.mP) #ion number density 
         else: self.nion = self.nE
 
     def __findDensFac(self):
         # Find the density factor
         Bmin = self.Bmin
-        #Bmin = 4.17 #This number was calculated by hand to make the pB match with/without B.
         Bmax = 50
 
         if self.footB < Bmin: self.B0 = Bmin
@@ -903,7 +906,8 @@ class simpoint:
         self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mI)
         self.lamLos =  self.vLOS * self.lam0 / self.env.c
 
-        expblock = ((self.env.lamAx - self.lam0 - self.lamLos)/(self.deltaLam))
+        expblock = (self.env.lamAx - self.lam0 - self.lamLos)/(self.deltaLam)
+
         self.lamPhi = 1/(self.deltaLam * self.env.rtPi) * np.exp(-expblock*expblock) #Shouldn't there be twos?
         self.profile = self.nion * self.nE * self.qt * self.lamPhi
 
@@ -1785,6 +1789,7 @@ class multisim:
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
         self.sims = self.poolMPI(work, self.mpi_sim)
+        if self.print and self.root: self.Bar.display(force = True)
         self.collectVars(self.sims)
 
         if self.destroySims and self.root: self.sims = self.sims[0:1]
@@ -1808,7 +1813,7 @@ class multisim:
                 self.rmsProjs.append(simulation.rmsProj)
                 self.temProjs.append(simulation.temProj)
             if self.print:
-                self.Bar.display(force = True)
+                
                 print("Total Lines: " + str(len(self.profiles)))
         else:
                 self.profiles = None
@@ -1961,8 +1966,6 @@ class multisim:
             return self.work_items.pop()      
 
 
-
-
 ## Level 3: Initializes many Multisims, varying a parameter. Does statistics. Saves and loads Batches.
 class batch:
     def __init__(self, batchname):
@@ -1992,6 +1995,7 @@ class batch:
         myBatch.doStats(width)
         return myBatch
 
+
 class batchjob:
 
     #Requires labels, xlabel, batch, N
@@ -2005,11 +2009,6 @@ class batchjob:
         self.complete = False
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
-
-        try:
-            self.statType = copy.deepcopy(batchjob.g_statType)
-            self.usePsf = copy.deepcopy(batchjob.g_usePsf)
-        except: pass
 
         self.simulate_now()
         
@@ -2063,7 +2062,7 @@ class batchjob:
                     self.bar.display(True)
                 if self.firstRunEver: self.setFirstPoint()
                 self.firstRunEver = False
-                self.save(printout = True)
+                self.save(printout = self.print)
 
     def finish(self):
         if self.root:
@@ -2082,7 +2081,7 @@ class batchjob:
                 except: print('')
             if self.fName is not None: 
                 self.calcFfiles()
-            self.save(printout = True)
+            self.save(printout = self.print)
 
     def setFirstPoint(self):
         self.copyPoint = self.sims[0].sims[0].sims[0]
@@ -2108,45 +2107,20 @@ class batchjob:
         self.rank = comm.Get_rank()
         self.root = self.rank == 0
 
+
+    ###################################################################################
+
     def doStats(self, width):
-        if not self.lockFlags:
-            try:
-                self.statType = copy.deepcopy(batchjob.g_statType)
-                self.usePsf = copy.deepcopy(batchjob.g_usePsf)
-            except: pass
         self.makePSF(self.env.psfSig)
         self.__findBatchStats()
         self.makeVrms()
         self.plot(width)
         #self.doPB(self.pBname)
 
-    def __findBatchStats(self):
-        #Finds the statistics of all of the profiles in all of the multisims
-        self.lineStats = []
-        print("Fitting Profiles...")
-        bar = pb.ProgressBar(len(self.profiless))
-        bar.display()
-        for profiles in self.profiless:
-            self.lineStats.append(self.__findSimStats(profiles))
-            bar.increment()
-            bar.display()
-        bar.display(force = True)
-        self.__findSampleStats()
-
-    def __findSimStats(self, profiles):
-        #Finds the statistics of all profiles in a given list
-        simStats = []
-        for profile in profiles:
-            simStats.append(self.__findProfileStats(profile))
-        return simStats
-
     def __findProfileStats(self, profile):
-        if self.usePsf:
-            try:
-                profile = self.con.convolve(profile, self.psf, boundary='extend')
-            except: print("No point spread function available")
-
-        if self.statType.lower() == 'moment':
+        if self.usePsf: profile = self.con.convolve(profile, self.psf, boundary='extend')
+            
+        if self.statType.casefold() in 'moment'.casefold():
             #Finds the moment statistics of a single line profile
             maxMoment = 5
             moment = np.zeros(maxMoment)
@@ -2155,48 +2129,47 @@ class batchjob:
 
             power = moment[0] 
             mu = moment[1] / moment[0]
-            sigma = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
-            skew = (moment[3]/moment[0] - 3*mu*sigma**2 - mu**3) / sigma**3
-            kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigma**2 + 3*mu**4) / sigma**4 - 3
-        else:
+            sigmaRaw = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
+            skew = (moment[3]/moment[0] - 3*mu*sigmaRaw**2 - mu**3) / sigmaRaw**3
+            kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigmaRaw**2 + 3*mu**4) / sigmaRaw**4 - 3
+            amp = power/(2* sigmaRaw)
+
+        elif self.statType.casefold() in 'gaussian'.casefold():
             #Fits a gaussian to a single line profile
             def gauss_function(x, a, x0, sigma):
                 return a*np.exp(-(x-x0)**2/(2*sigma**2))
 
-            psfSig = (self.env.psfSig if self.usePsf else 0)
-
             sig0 = np.sum((self.env.lamAx - self.env.lam0)**2)/len(profile)
             amp0 = np.max(profile)
             profNorm = profile - np.min(profile)
-            popt, pcov = curve_fit(gauss_function, self.lamAx, profNorm, p0 = [amp0, self.env.lam0, sig0])
-            
+
+            try:
+                popt, pcov = curve_fit(gauss_function, self.lamAx, profNorm, p0 = [amp0, self.env.lam0, sig0])
+            except RuntimeError:
+                return [np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]
+
             power = popt[0] * np.sqrt(np.pi * 2 * popt[2]**2)
             mu = popt[1]
-
-            psfSig = 1.030086*psfSig #This is the factor that makes it the same before and after psf
-
-            sigma = np.sqrt(np.abs(popt[2])**2 - psfSig**2) #Subtract off the PSF width
+            sigmaRaw = np.abs(popt[2])
             skew = 0
             kurt = 0
-            #fit = gauss_function(self.env.lamAx, popt[0], mu, sigma)
-            #plt.plot(self.env.lamAx, profile)
-            #plt.plot(self.env.lamAx, fit)
-            #plt.show()
+            amp = popt[0]
+
+        else: raise Exception('Statistic Type Undefined')
+
+        if False: #Plot the fits
+            fit = gauss_function(self.env.lamAx, amp, mu, sigma)
+            plt.plot(self.env.lamAx, profile)
+            plt.plot(self.env.lamAx, fit)
+            plt.show()
+
+        if self.usePsf: 
+            psfSig = self.env.psfSig
+            psfSig = 1.030086*psfSig #This is the factor that makes it the same before and after psf
+            sigma = np.sqrt(np.abs(sigmaRaw**2 - psfSig**2)) #Subtract off the PSF width
+        else: sigma = sigmaRaw
 
         return [power, mu, sigma, skew, kurt]
-
-    def makePSF(self, angSig):
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            import astropy.convolution as con
-            self.con = con
-        self.lamAx = self.env.makeLamAxis(self.env.Ln, self.env.lam0, self.env.lamPm)
-        if angSig is not None:
-            diff = np.abs(self.lamAx[1] - self.lamAx[0])
-            pix = int(np.ceil(angSig/diff))
-            self.psf = self.con.Gaussian1DKernel(pix)
-        else: self.psf = None
 
     def __findSampleStats(self):
         #Finds the mean and varience of each of the statistics for each multisim
@@ -2204,12 +2177,12 @@ class batchjob:
         self.statV = [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
         self.allStd = []
         for vars, impact in zip(self.lineStats, self.labels):
-            allAmp = [x[0] for x in vars]
-            allMean = [x[1] for x in vars]
-            allMeanC = [x[1] - self.env.lam0 for x in vars]
-            allStd = [x[2] for x in vars]
-            allSkew = [x[3] for x in vars]
-            allKurt = [x[4] for x in vars]
+            allAmp = [x[0] for x in vars if not np.isnan(x[0])]
+            allMean = [x[1] for x in vars if not np.isnan(x[1])]
+            allMeanC = [x[1] - self.env.lam0 for x in vars if not np.isnan(x[1])]
+            allStd = [x[2] for x in vars if not np.isnan(x[2])]
+            allSkew = [x[3] for x in vars if not np.isnan(x[3])]
+            allKurt = [x[4] for x in vars if not np.isnan(x[4])]
             
             #Wavelength Units
             self.assignStat(0, allAmp)
@@ -2223,6 +2196,7 @@ class batchjob:
             self.assignStatV(3, allSkew)
             self.assignStatV(4, allKurt)
 
+            #I think that these functions do what they are supposed to.
             mean1= self.__mean2V(np.mean(allMean))
             std1 = np.std([self.__mean2V(x) for x in allMean])
             self.assignStatV2(1, mean1, std1)
@@ -2252,9 +2226,42 @@ class batchjob:
     def __std2V(self, std):
         return np.sqrt(2) * self.env.cm2km(self.env.c) * (std / self.env.lam0)
 
+    def __findBatchStats(self):
+        #Finds the statistics of all of the profiles in all of the multisims
+        self.lineStats = []
+        print("Fitting Profiles... {} Method".format(self.statType))
+        bar = pb.ProgressBar(len(self.profiless))
+        bar.display()
+        for profiles in self.profiless:
+            self.lineStats.append(self.__findSimStats(profiles))
+            bar.increment()
+            bar.display()
+        bar.display(force = True)
+        self.__findSampleStats()
+
+    def __findSimStats(self, profiles):
+        #Finds the statistics of all profiles in a given list
+        simStats = []
+        for profile in profiles:
+            simStats.append(self.__findProfileStats(profile))
+        return simStats
+
+    def makePSF(self, angSig):
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            import astropy.convolution as con
+            self.con = con
+        self.lamAx = self.env.makeLamAxis(self.env.Ln, self.env.lam0, self.env.lamPm)
+        if angSig is not None:
+            diff = np.abs(self.lamAx[1] - self.lamAx[0])
+            pix = int(np.ceil(angSig/diff))
+            self.psf = self.con.Gaussian1DKernel(pix)
+        else: self.psf = None
+
     def plotProfiles(self, max):
         if max is not None:
-            for profiles, impact in zip(self.profiles, self.doneLabels):
+            for profiles, impact in zip(self.profiless, self.doneLabels):
                 plt.figure()
                 plt.title('Impact: ' + str(impact))
                 plt.xlabel('Wavelength')
@@ -2304,7 +2311,7 @@ class batchjob:
         ax.set_xlabel(self.xlabel)
         plt.show(False)
 
-    #Main Plots
+    #Main Plots ########################################################################
     def plotStatsV(self):
         f, axArray = plt.subplots(5, 1, sharex=True)
         f.canvas.set_window_title('Coronasim')
@@ -2374,8 +2381,8 @@ class batchjob:
         left = 0.18
         shift = 0.1
 
-        plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.useWind))
-        plt.figtext(left, height + 0.02, "Waves: {}".format(self.copyPoint.useWaves))
+        plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.windWasOn))
+        plt.figtext(left, height + 0.02, "Waves: {}".format(self.copyPoint.waveWasOn))
         plt.figtext(left, height, "B: {}".format(self.copyPoint.bWasOn))
 
         #Plot the actual distribution of line widths in the background
@@ -2694,26 +2701,19 @@ class impactsim(batchjob):
             #sys.stdout.flush()
         self.thisV = []
         self.hahnV = []
-        #if self.root: 
-        #    import pdb 
-        #    pdb.set_trace()
-        if super().lockFlags:
-            try: copyPoint = self.copyPoint
-            except: copyPoint = None
-        else: copyPoint = None
 
         for impact in self.doneLabels:
             ptUr = []
             ptRms = []
             ptTem = []
             for env in self.envs:
-                point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env, copyPoint = copyPoint)
+                point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env, copyPoint = self.copyPoint)
                 ptUr.append(point.ur)
                 ptRms.append(point.vRms)
                 ptTem.append(point.T)
 
-            pUr = np.average(ptUr)
-            pRms = np.average(ptRms)
+            pUr = [np.average(ptUr) if self.copyPoint.windWasOn else 0].pop()
+            pRms = [np.average(ptRms) if self.copyPoint.waveWasOn else 0].pop()
             pTem = np.average(ptTem)
 
             vTh = 2 * self.env.KB * pTem / self.env.mI
@@ -2738,7 +2738,7 @@ def pbRefinement(envsName, params, MIN, MAX, tol):
         comm = MPI.COMM_WORLD
         root = comm.Get_rank() == 0
         simpoint.useB = True
-        simpoint.Bmin = Bmin
+        simpoint.g_Bmin = Bmin
         
         bat = impactsim(*params)
         if root:

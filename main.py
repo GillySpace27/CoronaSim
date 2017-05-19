@@ -27,27 +27,30 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Which part of the program should run?
-    compute = True
+    compute = False
     analyze = True
-    simOne = False  
+    simOne = True  
 
     #Simulation Properties
-    useB = True
-    sim.simpoint.g_useWaves = True   
+    sim.simpoint.useB = False
+    sim.simpoint.g_useWaves = False   
     sim.simpoint.g_useWind = True
-
+    
     sim.simpoint.g_useFluxAngle = True
-    sim.simpoint.g_Bmin = 3.89053
-    sim.batchjob.g_statType = 'gauss' #'Gaussian'
-    sim.batchjob.g_usePsf = True
-    sim.batchjob.lockFlags = True
-    sim.batchjob.qcuts = [16,50,84]
+    sim.simpoint.g_Bmin = 3.8905410
     sim.multisim.destroySims = True #This keeps memory from building up
+    
+
+    sim.batchjob.statType = 'Moment' #'Gaussian'
+    sim.batchjob.usePsf = True
+    sim.batchjob.qcuts = [16,50,84]
+
 
     #Batch Parameters #####################
-    batchName = "localtest2" #'Long5-18' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
+    batchName = "wind2" #'Long5-18' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
     impactPoints = 10 
-    iterations = 1
+    iterations = 3
+
     b0 = 1.02
     b1 = 1.46
     spacing = 'lin'
@@ -61,12 +64,12 @@ if __name__ == '__main__':
     printSim = False #This makes it show the generating profile progress bar
     widthPlot = True #Plot just line width instead of all 5 moments
     firstRun = True  #Overwrite any existing batch with this name
-    redoStats = True #Perform statistics at analyze time
+
 
     #Examine Batch Line Profiles
     showProfiles = False #Plot some number of line profiles at each impact parameter
-    maxPlotLines = 3
-    average = True
+    maxPlotLines = 30
+    average = False
     norm = True 
     log = False
 
@@ -79,7 +82,7 @@ if __name__ == '__main__':
 
 ##################################################################################
 ##################################################################################
-    sim.simpoint.useB = useB
+    
 
     #This header handles calling the program in parallel
     try: go = int(sys.argv[1])
@@ -100,6 +103,7 @@ if __name__ == '__main__':
             iter = 1
             envs = sim.envrs(envsName).loadEnvs(maxEnvs)
             params = ["pbCalcs", envs, 1, iter, b, None, 600, rez, size, timeAx, length, False, False, False]
+            useB = sim.simpoint.useB 
             sim.simpoint.Bmin = sim.pbRefinement(envsName, params, MIN, MAX, tol)
             sim.simpoint.useB = useB
         comm.barrier()
@@ -128,8 +132,8 @@ if __name__ == '__main__':
             if showProfiles: 
                 try: myBatch
                 except: myBatch = sim.batch(batchName).loadBatch()
-                #myBatch.plotProfiles(maxPlotLines)
-                myBatch.plotProfTogether(average, norm, log)
+                myBatch.plotProfiles(maxPlotLines)
+                #myBatch.plotProfTogether(average, norm, log)
 
 
 
@@ -151,10 +155,10 @@ if __name__ == '__main__':
             #env.plot('ur_raw', 'rx_raw')
 
             #lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
-            #lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True)
+            lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('densfac', linestyle = 'o')
-            #lineSim.plot('uTheta')
+            lineSim.plot('vLOS')
             #lineSim.plot('pPos', 1)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()
