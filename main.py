@@ -24,7 +24,7 @@ if __name__ == '__main__':
     maxEnvs = 1
     refineBmin = False
     calcFFiles = False
-    processEnvironments = False
+    processEnvironments = True
 
     #Which part of the program should run?
     compute = True
@@ -46,8 +46,8 @@ if __name__ == '__main__':
 
     #Batch Parameters #####################
     batchName = 'testprof' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
-    impactPoints = 2   
-    iterations = 1
+    impactPoints = 3   
+    iterations = 3
     b0 = 1.02
     b1 = 1.46
     spacing = 'lin'

@@ -144,6 +144,7 @@ class environment:
         self._fLoad(fFile)
         self._hahnLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
+        self.rtPi = np.sqrt(np.pi)
 
         print("Done")
         print('')
@@ -736,6 +737,9 @@ class simpoint:
         self.maxInt = 0
         self.totalInt = 0
         self.bWasOn = copy.deepcopy(self.useB)
+        
+        
+
         if findT is None:
             self.findT = self.grid.findT
         else: self.findT = findT
@@ -888,34 +892,38 @@ class simpoint:
 
         return Y
        
-    def findIntensity(self, lam0 = 1000, lam = 1000):
-        self.lam = lam #Angstroms
-        self.lam0 = lam0 #Angstroms
+    def findIntensity(self, lam = 1000):
 
-        self.lamLos =  self.vLOS * self.lam0 / self.env.c
-        self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mI)
-        self.lamPhi = 1/(self.deltaLam * np.sqrt(np.pi)) * np.exp(-((self.lam - self.lam0 - self.lamLos)/(self.deltaLam))**2) #Shouldn't there be twos?
+        expblock = ((lam - self.lam0 - self.lamLos)/(self.deltaLam))
+        self.lamPhi = 1/(self.deltaLam * self.env.rtPi) * np.exp(-expblock*expblock) #Shouldn't there be twos?
         self.intensity = self.nion * self.nE * self.qt * self.lamPhi
-        if not np.isnan(self.intensity): 
-            self.maxInt = max(self.maxInt, self.intensity)
-            self.totalInt += self.intensity
+
+        #if not np.isnan(self.intensity): 
+        #    #self.maxInt = max(self.maxInt, self.intensity)
+        #    self.totalInt += self.intensity
         return self.intensity
 
     def getProfile(self):
-
+        self.lam0 = self.env.lam0 #Angstroms
+        self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mI)
+        self.lamLos =  self.vLOS * self.lam0 / self.env.c
+        
         lamAx = self.env.lamAx
         profile = np.zeros_like(lamAx)
         index = 0
         for lam in lamAx:
-            profile[index] = self.findIntensity(self.env.lam0, lam)
+            profile[index] = self.findIntensity(lam)
             index += 1
-        if not np.mod(simpoint.ID,10) and 650 >= simpoint.ID >= 350:
-            pass
-            #plt.plot(lamAx, profile)
-            #plt.title(simpoint.ID)
-            #plt.show()
-        simpoint.ID +=1
         return profile
+
+
+        #if not np.mod(simpoint.ID,10) and 650 >= simpoint.ID >= 350:
+        #    pass
+        #    #plt.plot(lamAx, profile)
+        #    #plt.title(simpoint.ID)
+        #    #plt.show()
+        #simpoint.ID +=1
+        
 
     def chiantiSpectrum(self):
         a = 1
