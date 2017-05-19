@@ -508,11 +508,17 @@ class environment:
         abs = os.path.join(script_dir, path)    
         return abs
 
-    def __find_nearest(self,array,value):
-        #Returns the index of the point most similar to a given value
-        idx = (np.abs(array-value)).argmin()
-        return idx
+    #def __find_nearest(self,array,value):
+    #    #Returns the index of the point most similar to a given value
+    #    idx = (np.abs(array-value)).argmin()
+    #    return idx
 
+    def __find_nearest(self,array,value):
+        idx = np.searchsorted(array, value, side="left")
+        if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
+            return idx-1
+        else:
+            return idx
     def interp_rx_dat(self, rx, array):
         #Interpolates an array(rx)
         if rx < 1. : return math.nan
@@ -886,7 +892,7 @@ class simpoint:
         if K == 2 or K == 3: X = E/(E+C)
 
         Y = self.env.interp_upsilon(X)
-        if K == 1: Y = Y*np.log10(E+2.71828)
+        if K == 1: Y = Y*np.log10(E+np.exp(1))
         if K == 3: Y = Y/(E+1)
         if K == 4: Y = Y*np.log10(E+C)
 
@@ -902,29 +908,6 @@ class simpoint:
         self.profile = self.nion * self.nE * self.qt * self.lamPhi
 
         return self.profile
-
-
-    #def findIntensity(self, lam = 1000):
-
-
-
-    #    return self.intensity
-        #index = 0
-        #for lam in lamAx:
-        #    profile[index] = self.findIntensity(lam)
-        #    index += 1
-
-        #if not np.isnan(self.intensity): 
-        #    #self.maxInt = max(self.maxInt, self.intensity)
-        #    self.totalInt += self.intensity
-
-        #if not np.mod(simpoint.ID,10) and 650 >= simpoint.ID >= 350:
-        #    pass
-        #    #plt.plot(lamAx, profile)
-        #    #plt.title(simpoint.ID)
-        #    #plt.show()
-        #simpoint.ID +=1
-        
 
     def chiantiSpectrum(self):
         a = 1
@@ -1139,10 +1122,17 @@ class simpoint:
             return xi1+( (t%self.env.last_xi2_t) - t_int )*(xi2-xi1)
 
   ## Misc Methods ##########################################################################
+    #def __find_nearest(self,array,value):
+    #    #Returns the index of the point most similar to a given value
+    #    idx = (np.abs(array-value)).argmin()
+    #    return idx
+
     def __find_nearest(self,array,value):
-        #Returns the index of the point most similar to a given value
-        idx = (np.abs(array-value)).argmin()
-        return idx
+        idx = np.searchsorted(array, value, side="left")
+        if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
+            return idx-1
+        else:
+            return idx
 
     def interp_rx_dat(self, array):
         #Interpolates an array(rx)
