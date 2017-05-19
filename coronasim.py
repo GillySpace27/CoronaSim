@@ -508,17 +508,17 @@ class environment:
         abs = os.path.join(script_dir, path)    
         return abs
 
-    #def __find_nearest(self,array,value):
-    #    #Returns the index of the point most similar to a given value
-    #    idx = (np.abs(array-value)).argmin()
-    #    return idx
-
     def __find_nearest(self,array,value):
-        idx = np.searchsorted(array, value, side="left")
-        if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
-            return idx-1
-        else:
-            return idx
+        #Returns the index of the point most similar to a given value
+        return (np.abs(array-value)).argmin()
+
+    #def __find_nearest(self,array,value):
+    #    idx = np.searchsorted(array, value, side="left")
+    #    if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
+    #        return idx-1
+    #    else:
+    #        return idx
+
     def interp_rx_dat(self, rx, array):
         #Interpolates an array(rx)
         if rx < 1. : return math.nan
@@ -1122,17 +1122,16 @@ class simpoint:
             return xi1+( (t%self.env.last_xi2_t) - t_int )*(xi2-xi1)
 
   ## Misc Methods ##########################################################################
-    #def __find_nearest(self,array,value):
-    #    #Returns the index of the point most similar to a given value
-    #    idx = (np.abs(array-value)).argmin()
-    #    return idx
-
     def __find_nearest(self,array,value):
-        idx = np.searchsorted(array, value, side="left")
-        if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
-            return idx-1
-        else:
-            return idx
+        #Returns the index of the point most similar to a given value
+        return (np.abs(array-value)).argmin()
+
+    #def __find_nearest(self,array,value):
+    #    idx = np.searchsorted(array, value, side="left")
+    #    if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
+    #        return idx-1
+    #    else:
+    #        return idx
 
     def interp_rx_dat(self, array):
         #Interpolates an array(rx)
@@ -1785,7 +1784,7 @@ class multisim:
         else: self.Bar = None
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
-        self.sims = self.poolMPI(work, self.mpi_sim, bar)
+        self.sims = self.poolMPI(work, self.mpi_sim)
         self.collectVars(self.sims)
 
         if self.destroySims and self.root: self.sims = self.sims[0:1]
@@ -1962,6 +1961,8 @@ class multisim:
             return self.work_items.pop()      
 
 
+
+
 ## Level 3: Initializes many Multisims, varying a parameter. Does statistics. Saves and loads Batches.
 class batch:
     def __init__(self, batchname):
@@ -2023,7 +2024,6 @@ class batchjob:
             print('-------------------------\n')
             print("Simulating Impacts: \n{}".format(self.labels))
 
-
         if self.firstRunEver:
             self.count = 0
             self.batch = self.fullBatch
@@ -2038,8 +2038,6 @@ class batchjob:
         if self.root and self.print and self.printMulti: 
             print('\nBatch Progress: '+ str(self.batchName))
             self.bar.display()
-
-        
 
         while len(self.doLabels) > 0:
             ind = self.doLabels.pop(0)
@@ -2066,7 +2064,6 @@ class batchjob:
                 if self.firstRunEver: self.setFirstPoint()
                 self.firstRunEver = False
                 self.save(printout = True)
-
 
     def finish(self):
         if self.root:
@@ -2187,8 +2184,6 @@ class batchjob:
             #plt.show()
 
         return [power, mu, sigma, skew, kurt]
-
-
 
     def makePSF(self, angSig):
         import warnings
@@ -2499,8 +2494,6 @@ class batchjob:
         self.rChi_mid = self.chi_mid / N
         self.rChi_mean = self.chi_mean / N
 
-        
-
     def plot(self, width):
         if width:
             self.plotWidth()
@@ -2632,6 +2625,7 @@ class batchjob:
                     plt.legend()
                     plt.axhline(1, color = 'k')
                     plt.show()
+
 
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):

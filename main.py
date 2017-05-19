@@ -19,7 +19,7 @@ size = comm.Get_size()
 if __name__ == '__main__':
 
     #Environment Parameters
-    envsName = 'highlamrez'
+    envsName = 'Modern'
     fFileName = 'twofactors'
     maxEnvs = 10
     refineBmin = False
@@ -28,7 +28,7 @@ if __name__ == '__main__':
 
     #Which part of the program should run?
     compute = True
-    analyze = False
+    analyze = True
     simOne = False  
 
     #Simulation Properties
@@ -45,9 +45,9 @@ if __name__ == '__main__':
     sim.multisim.destroySims = True #This keeps memory from building up
 
     #Batch Parameters #####################
-    batchName = 'testprof' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
-    impactPoints = 3   
-    iterations = 3
+    batchName = "localtest2" #'Long5-18' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
+    impactPoints = 10 
+    iterations = 1
     b0 = 1.02
     b1 = 1.46
     spacing = 'lin'
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     log = False
 
     #Run in parallel?
-    parallel = False
+    parallel = True
     cores = 7
 
 
