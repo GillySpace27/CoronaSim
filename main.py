@@ -21,10 +21,10 @@ if __name__ == '__main__':
     #Environment Parameters
     envsName = 'highlamrez'
     fFileName = 'twofactors'
-    maxEnvs = 1
+    maxEnvs = 10
     refineBmin = False
     calcFFiles = False
-    processEnvironments = True
+    processEnvironments = False
 
     #Which part of the program should run?
     compute = True

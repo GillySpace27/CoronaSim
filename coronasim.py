@@ -892,30 +892,31 @@ class simpoint:
 
         return Y
        
-    def findIntensity(self, lam = 1000):
-
-        expblock = ((lam - self.lam0 - self.lamLos)/(self.deltaLam))
-        self.lamPhi = 1/(self.deltaLam * self.env.rtPi) * np.exp(-expblock*expblock) #Shouldn't there be twos?
-        self.intensity = self.nion * self.nE * self.qt * self.lamPhi
-
-        #if not np.isnan(self.intensity): 
-        #    #self.maxInt = max(self.maxInt, self.intensity)
-        #    self.totalInt += self.intensity
-        return self.intensity
-
     def getProfile(self):
         self.lam0 = self.env.lam0 #Angstroms
         self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mI)
         self.lamLos =  self.vLOS * self.lam0 / self.env.c
-        
-        lamAx = self.env.lamAx
-        profile = np.zeros_like(lamAx)
-        index = 0
-        for lam in lamAx:
-            profile[index] = self.findIntensity(lam)
-            index += 1
-        return profile
 
+        expblock = ((self.env.lamAx - self.lam0 - self.lamLos)/(self.deltaLam))
+        self.lamPhi = 1/(self.deltaLam * self.env.rtPi) * np.exp(-expblock*expblock) #Shouldn't there be twos?
+        self.profile = self.nion * self.nE * self.qt * self.lamPhi
+
+        return self.profile
+
+
+    #def findIntensity(self, lam = 1000):
+
+
+
+    #    return self.intensity
+        #index = 0
+        #for lam in lamAx:
+        #    profile[index] = self.findIntensity(lam)
+        #    index += 1
+
+        #if not np.isnan(self.intensity): 
+        #    #self.maxInt = max(self.maxInt, self.intensity)
+        #    self.totalInt += self.intensity
 
         #if not np.mod(simpoint.ID,10) and 650 >= simpoint.ID >= 350:
         #    pass
