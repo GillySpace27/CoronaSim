@@ -510,7 +510,9 @@ class environment:
 
     def __find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
-        return (np.abs(array-value)).argmin()
+        array = array-value
+        np.abs(array, out = array)
+        return array.argmin()
 
     #def __find_nearest(self,array,value):
     #    idx = np.searchsorted(array, value, side="left")
@@ -788,7 +790,7 @@ class simpoint:
 
   ## Temperature ######################################################################
     def findTemp(self):
-        self.T = self.interp_rx_dat(self.env.T_raw)
+        self.T = self.interp_rx_dat(self.env.T_raw) #Lowest Temp: 1200
 
   ## Magnets ##########################################################################
     def findFootB(self):
@@ -1128,7 +1130,9 @@ class simpoint:
   ## Misc Methods ##########################################################################
     def __find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
-        return (np.abs(array-value)).argmin()
+        array = array-value
+        np.abs(array, out = array)
+        return array.argmin()
 
     #def __find_nearest(self,array,value):
     #    idx = np.searchsorted(array, value, side="left")
@@ -1813,7 +1817,6 @@ class multisim:
                 self.rmsProjs.append(simulation.rmsProj)
                 self.temProjs.append(simulation.temProj)
             if self.print:
-                
                 print("Total Lines: " + str(len(self.profiles)))
         else:
                 self.profiles = None
@@ -2067,8 +2070,7 @@ class batchjob:
     def finish(self):
         if self.root:
             #self.__findBatchStats()
-            
-            self.makeVrms()
+            #self.makeVrms()
             self.doOnePB()
 
             if self.complete is False:
@@ -2118,56 +2120,78 @@ class batchjob:
         #self.doPB(self.pBname)
 
     def __findProfileStats(self, profile):
+        rawProfile = profile
         if self.usePsf: profile = self.con.convolve(profile, self.psf, boundary='extend')
-            
+        profNorm = profile - np.min(profile)
+
+        #Finds the moment statistics of a single line profile
+        maxMoment = 5
+        moment = np.zeros(maxMoment)
+        for mm in np.arange(maxMoment):
+                moment[mm] = np.dot(profNorm, self.env.lamAx**mm)
+
+        powerM = moment[0] 
+        muM = moment[1] / moment[0]
+        sigmaM = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
+        skewM = (moment[3]/moment[0] - 3*muM*sigmaM**2 - muM**3) / sigmaM**3
+        kurtM = (moment[4] / moment[0] - 4*muM*moment[3]/moment[0]+6*muM**2*sigmaM**2 + 3*muM**4) / sigmaM**4 - 3
+        ampM = powerM/(np.sqrt(2*np.pi) * sigmaM)/600
+        
+        #Fits a gaussian to a single line profile
+        def gauss_function(x, a, x0, sigma):
+            return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+        sig0 = sigmaM       #np.sum((self.env.lamAx - self.env.lam0)**2)/len(profile)
+        amp0 = ampM         #np.max(profNorm)
+        lam0 = muM
+
+        try:
+            popt, pcov = curve_fit(gauss_function, self.lamAx, profNorm, p0 = [amp0, lam0, sig0])
+        except RuntimeError:
+            return [np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]
+
+        perr = np.sqrt(np.diag(pcov)) #one standard deviation errors
+
+        powerG = popt[0] * np.sqrt(np.pi * 2 * popt[2]**2)
+        muG = popt[1]
+        sigmaG = np.abs(popt[2])
+        skewG = 0
+        kurtG = 0
+        ampG = popt[0]
+
+        #Output only the asked for type.
         if self.statType.casefold() in 'moment'.casefold():
-            #Finds the moment statistics of a single line profile
-            maxMoment = 5
-            moment = np.zeros(maxMoment)
-            for mm in np.arange(maxMoment):
-                    moment[mm] = np.dot(profile, self.env.lamAx**mm)
-
-            power = moment[0] 
-            mu = moment[1] / moment[0]
-            sigmaRaw = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
-            skew = (moment[3]/moment[0] - 3*mu*sigmaRaw**2 - mu**3) / sigmaRaw**3
-            kurt = (moment[4] / moment[0] - 4*mu*moment[3]/moment[0]+6*mu**2*sigmaRaw**2 + 3*mu**4) / sigmaRaw**4 - 3
-            amp = power/(2* sigmaRaw)
-
+            power, mu, sigmaRaw, skew, kurt, amp = powerM, muM, sigmaM, skewM, kurtM, ampM
         elif self.statType.casefold() in 'gaussian'.casefold():
-            #Fits a gaussian to a single line profile
-            def gauss_function(x, a, x0, sigma):
-                return a*np.exp(-(x-x0)**2/(2*sigma**2))
-
-            sig0 = np.sum((self.env.lamAx - self.env.lam0)**2)/len(profile)
-            amp0 = np.max(profile)
-            profNorm = profile - np.min(profile)
-
-            try:
-                popt, pcov = curve_fit(gauss_function, self.lamAx, profNorm, p0 = [amp0, self.env.lam0, sig0])
-            except RuntimeError:
-                return [np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]
-
-            power = popt[0] * np.sqrt(np.pi * 2 * popt[2]**2)
-            mu = popt[1]
-            sigmaRaw = np.abs(popt[2])
-            skew = 0
-            kurt = 0
-            amp = popt[0]
-
+            power, mu, sigmaRaw, skew, kurt, amp = powerG, muG, sigmaG, skewM, kurtM, ampG
         else: raise Exception('Statistic Type Undefined')
 
         if False: #Plot the fits
-            fit = gauss_function(self.env.lamAx, amp, mu, sigma)
-            plt.plot(self.env.lamAx, profile)
-            plt.plot(self.env.lamAx, fit)
+            fit = gauss_function(self.env.lamAx, amp, mu, sigmaRaw)
+            plt.plot(self.env.lamAx, rawProfile, "g")
+            plt.plot(self.env.lamAx, profile, "b")
+            plt.plot(self.env.lamAx, fit, 'ko')
             plt.show()
 
         if self.usePsf: 
-            psfSig = self.env.psfSig
-            psfSig = 1.030086*psfSig #This is the factor that makes it the same before and after psf
+            psfSig = 1.030086*self.env.psfSig #This is the factor that makes it the same before and after psf
             sigma = np.sqrt(np.abs(sigmaRaw**2 - psfSig**2)) #Subtract off the PSF width
         else: sigma = sigmaRaw
+
+        if self.plotFits and self.II < self.maxFitPlot: #Plot the fits
+            self.II += 1
+            normAmp = np.max(rawProfile)
+            fit1 = gauss_function(self.env.lamAx, amp, mu, sigmaRaw)
+            fit2 = gauss_function(self.env.lamAx, amp, mu, sigma)
+            fit3 = gauss_function(self.env.lamAx, normAmp, mu, sigma)
+            plt.plot(self.env.lamAx, rawProfile, "g", label = "Raw")
+            plt.plot(self.env.lamAx, profile, "b", label = "With PSF")
+            plt.plot(self.env.lamAx, fit1, 'k.', label ="PSF Fit")
+            plt.plot(self.env.lamAx, fit2, 'c.:', label = "Reconstruction")
+            plt.plot(self.env.lamAx, fit3, 'm.:', label = "Reconstruction Normed")
+            plt.title("A Line at b = {}".format(self.impact))
+            plt.legend()
+            plt.show()
 
         return [power, mu, sigma, skew, kurt]
 
@@ -2232,7 +2256,9 @@ class batchjob:
         print("Fitting Profiles... {} Method".format(self.statType))
         bar = pb.ProgressBar(len(self.profiless))
         bar.display()
-        for profiles in self.profiless:
+        for profiles, impact in zip(self.profiless, self.doneLabels):
+            self.II = 0
+            self.impact = impact
             self.lineStats.append(self.__findSimStats(profiles))
             bar.increment()
             bar.display()
@@ -2257,6 +2283,8 @@ class batchjob:
             diff = np.abs(self.lamAx[1] - self.lamAx[0])
             pix = int(np.ceil(angSig/diff))
             self.psf = self.con.Gaussian1DKernel(pix)
+            #plt.plot(self.psf)
+            #plt.show()
         else: self.psf = None
 
     def plotProfiles(self, max):
@@ -2355,6 +2383,37 @@ class batchjob:
             labels = np.arange(len(self.profiles))
             doRms = False
         return labels
+
+    def makeVrms(self):
+        self.env._fLoad(self.env.fFileName)
+        self.thisV = []
+        self.hahnV = []
+
+        for impact in self.doneLabels:
+            ptUr = []
+            ptRms = []
+            ptTem = []
+            for env in self.envs:
+                point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env, copyPoint = self.copyPoint)
+                ptUr.append(point.ur)
+                ptRms.append(point.vRms)
+                ptTem.append(point.T)
+
+            pUr = [np.average(ptUr) if self.copyPoint.windWasOn else 0].pop()
+            pRms = [np.average(ptRms) if self.copyPoint.waveWasOn else 0].pop()
+            pTem = np.average(ptTem)
+
+            vTh = 2 * self.env.KB * pTem / self.env.mI
+
+            wind =   (self.env.interp_f1(impact) * pUr)**2 
+            rms =    (self.env.interp_f2(impact) * pRms)**2
+            thermal = (self.env.interp_f3(impact) * vTh)**1
+            V = np.sqrt( (thermal + wind + rms) )
+
+            #print(self.env.cm2km(V))
+            self.thisV.append(self.env.cm2km(V))
+            self.hahnV.append(self.hahnFit(impact))
+
 
     def plotWidth(self):
         f = plt.figure()
@@ -2457,11 +2516,19 @@ class batchjob:
         except: print("Failed to plot hahn measurements")
 
         #Plot the expected values
-        try:
-            plt.plot(self.doneLabels, self.hahnV, label = "HahnV", color = 'g')        
-            
-            plt.plot(self.doneLabels, self.thisV, label = 'Expected', color = 'b') 
-        except: print("Failed to plot fit lines")
+        plt.plot(self.doneLabels, self.hahnV, label = "HahnV", color = 'g')        
+        plt.plot(self.doneLabels, self.thisV, label = 'Expected', color = 'b') 
+
+        #Plot Resolution Limit
+        diff = self.env.lamAx[1] - self.env.lamAx[0]
+        minrez = self.__std2V(diff)
+        psfrez = self.__std2V(self.env.psfSig)
+
+
+        #flr = np.ones_like(self.doneLabels)*minrez
+        plt.axhline(minrez, color = 'k', linewidth = 2)
+        plt.axhline(psfrez, color = 'k', linewidth = 2, linestyle = ':')
+        #plt.plot(self.doneLabels, flr, label = "Rez Limit", color = 'k', linewidth = 2)
 
         #Put numbers on plot of widths
         for xy in zip(self.histlabels, self.statV[2][0]): 
@@ -2670,7 +2737,7 @@ class impactsim(batchjob):
 
         self.N = N
 
-        base = 1000
+        base = 200
 
         #if b1 is not None: 
         if b1 is not None: 
@@ -2695,36 +2762,7 @@ class impactsim(batchjob):
         
         return
         
-    def makeVrms(self):
-            #self.count += 1
-            #print("The count is {}".format(self.count))
-            #sys.stdout.flush()
-        self.thisV = []
-        self.hahnV = []
 
-        for impact in self.doneLabels:
-            ptUr = []
-            ptRms = []
-            ptTem = []
-            for env in self.envs:
-                point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env, copyPoint = self.copyPoint)
-                ptUr.append(point.ur)
-                ptRms.append(point.vRms)
-                ptTem.append(point.T)
-
-            pUr = [np.average(ptUr) if self.copyPoint.windWasOn else 0].pop()
-            pRms = [np.average(ptRms) if self.copyPoint.waveWasOn else 0].pop()
-            pTem = np.average(ptTem)
-
-            vTh = 2 * self.env.KB * pTem / self.env.mI
-
-            wind =   (self.env.interp_f1(impact) * pUr)**2 
-            rms =    (self.env.interp_f2(impact) * pRms)**2
-            thermal = (self.env.interp_f3(impact) * vTh)**1
-            V = np.sqrt( (thermal + wind + rms) )
-
-            self.thisV.append(self.env.cm2km(V))
-            self.hahnV.append(self.hahnFit(impact))
 
     def hahnFit(self, r, r0 = 1.05, vth = 25.8, vnt = 32.2, H = 0.0657):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))

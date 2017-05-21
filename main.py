@@ -20,20 +20,21 @@ if __name__ == '__main__':
 
     #Environment Parameters
     envsName = 'Modern'
-    fFileName = 'twofactors'
+    fFileName = 'logFiles'
+    sim.environment.fFileName = fFileName
     maxEnvs = 10
     refineBmin = False
     calcFFiles = False
     processEnvironments = False
 
     #Which part of the program should run?
-    compute = False
-    analyze = True
-    simOne = True  
+    compute = True
+    analyze = False
+    simOne = False  
 
     #Simulation Properties
-    sim.simpoint.useB = False
-    sim.simpoint.g_useWaves = False   
+    sim.simpoint.useB = True
+    sim.simpoint.g_useWaves = True   
     sim.simpoint.g_useWind = True
     
     sim.simpoint.g_useFluxAngle = True
@@ -41,18 +42,20 @@ if __name__ == '__main__':
     sim.multisim.destroySims = True #This keeps memory from building up
     
 
-    sim.batchjob.statType = 'Moment' #'Gaussian'
+    sim.batchjob.statType = 'Gaussian' #'Gaussian'
     sim.batchjob.usePsf = True
     sim.batchjob.qcuts = [16,50,84]
+    sim.batchjob.plotFits = False
+    sim.batchjob.maxFitPlot = 3
 
 
     #Batch Parameters #####################
-    batchName = "wind2" #'Long5-18' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
+    batchName = "test" #'Long5-18' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
     impactPoints = 10 
-    iterations = 3
+    iterations = 1
 
-    b0 = 1.02
-    b1 = 1.46
+    b0 =  1.02
+    b1 =  1.46
     spacing = 'lin'
 
     N_line = (200,600)
@@ -74,7 +77,7 @@ if __name__ == '__main__':
     log = False
 
     #Run in parallel?
-    parallel = True
+    parallel = False
     cores = 7
 
 
