@@ -28,14 +28,14 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Which part of the program should run?
-    compute = True
-    analyze = False
+    compute = False
+    analyze = True
     simOne = False  
 
     #Simulation Properties
-    sim.simpoint.useB = True
-    sim.simpoint.g_useWaves = True   
-    sim.simpoint.g_useWind = True
+    sim.simpoint.useB = False
+    sim.simpoint.g_useWaves = False   
+    sim.simpoint.g_useWind = False
     
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
@@ -43,19 +43,19 @@ if __name__ == '__main__':
     
 
     sim.batchjob.statType = 'Gaussian' #'Gaussian'
-    sim.batchjob.usePsf = True
+    sim.batchjob.usePsf = False
     sim.batchjob.qcuts = [16,50,84]
     sim.batchjob.plotFits = False
-    sim.batchjob.maxFitPlot = 3
+    sim.batchjob.maxFitPlot = 2
 
 
     #Batch Parameters #####################
-    batchName = "test" #'Long5-18' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
+    batchName = "thermal" #'Long5-18' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
     impactPoints = 10 
     iterations = 1
 
     b0 =  1.02
-    b1 =  1.46
+    b1 =  1.6#46
     spacing = 'lin'
 
     N_line = (200,600)
@@ -77,10 +77,10 @@ if __name__ == '__main__':
     log = False
 
     #Run in parallel?
-    parallel = False
+    parallel = True
     cores = 7
 
-
+    sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
     
 
 ##################################################################################
@@ -158,10 +158,10 @@ if __name__ == '__main__':
             #env.plot('ur_raw', 'rx_raw')
 
             #lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
-            lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True)
+            lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('densfac', linestyle = 'o')
-            lineSim.plot('vLOS')
+            #lineSim.plot('vLOS')
             #lineSim.plot('pPos', 1)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()
