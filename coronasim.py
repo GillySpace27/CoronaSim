@@ -2195,6 +2195,7 @@ class batchjob:
         #Plot the fits
         if self.plotFits and self.II < self.maxFitPlot: 
             self.II += 1
+            plt.figure()
             plt.plot(self.lamAx, profile, "g", label = "Raw")
             plt.plot(self.lamAx, gauss_function(self.lamAx, ampRaw, muRaw, sigmaRaw, bRaw), 'g.:', label = 
                      "Raw Fit: {:.4} km/s".format(self.__std2V(sigmaRaw)))
@@ -2209,7 +2210,7 @@ class batchjob:
                      "Subtraction {:.4} km/s".format(self.__std2V(np.abs(sigmaSubtract))))
  
             plt.plot(self.lamAx, profileDecon, "r--", label = "Deconvolved")
-            plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.--', label = 
+            plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.:', label = 
                      "Deconvolved Fit: {:.4} km/s".format(self.__std2V(sigmaDecon)))
 
             grid.maximizePlot()
@@ -2247,7 +2248,17 @@ class batchjob:
         self.lamAx = self.env.makeLamAxis(self.env.Ln, self.env.lam0, self.env.lamPm)
         self.lamRez = np.diff(self.lamAx)[0]
         self.psfSig_e = self.FWHM_to_e(self.psfSig_FW)
+        self.psfPix = int(np.ceil(self.psfSig_e/self.lamRez))
         self.psf = gauss_function(self.env.lamAx, 1, self.env.lam0, self.psfSig_e, 0)
+        
+        #Try it with sinc
+        sincSig = self.psfSig_e / 0.69696969
+        newlam = (self.lamAx - self.env.lam0) / sincSig /1.5
+        self.sincPsf = np.sinc(newlam)
+
+        #plt.plot(self.sincPsf)
+        #plt.plot(self.psf)
+        #plt.show()
 
     def FWHM_to_e(self, sig): return sig / 2*np.sqrt(np.log(2))
     def e_to_FWHM(self, sig): return sig * 2*np.sqrt(np.log(2))
@@ -2256,36 +2267,53 @@ class batchjob:
         """Convolve a profile and deconvolve it again, return both. """
         profLen = len(profile)
 
-        # Do all the PSF Stuff
+        #Pad the profile and the psf, both for resolution and for edge effects
+        padd = 1000#self.psfPix 
+        psfPad = np.pad(self.psf, padd, 'constant')
+        psincPad = np.pad(self.sincPsf, padd, 'constant')
+        profilePad = np.pad(profile, (0,2*padd), 'constant')
+
+        #Shift the PSF to be correct in frequency space and normalize it
+        psfShift = np.fft.fftshift(psfPad)  
+        psfShift = psfShift/np.sum(psfShift)
+
+        psincShift = np.fft.fftshift(psincPad)  
+        psincShift = psincShift/np.sum(psincShift)
+
+        #Transform the PSF
+        psFFT = np.fft.fft(psfShift)
+        psincFFT = np.fft.fft(psincShift) 
+
+        #Convolve
+        proFFT = np.fft.fft(profilePad)
+        convFFT =  proFFT * psFFT
+        profileCon = np.fft.ifft(convFFT)
+
+        #Deconvolve
+        proConFFT = np.fft.fft(profileCon)
+        dconvFFT = proConFFT / (psFFT + 0.1)
+        profileDecon = np.fft.ifft(dconvFFT)
+
+        if self.plotFits and self.II < self.maxFitPlot:
+            plt.figure()
+            plt.plot(np.fft.ifftshift(psFFT), label='psf')
+            plt.plot(np.fft.ifftshift(proFFT), ':', label='profile')
+            plt.plot(np.fft.ifftshift(convFFT), label='conv')
+            plt.plot(np.fft.ifftshift(dconvFFT), label='dconv')
+            plt.legend()
+            grid.maximizePlot()
+            plt.show(False)
+
 
         #psf = self.con.Gaussian1DKernel(pix)
         #padleft = (len(profile) - len(self.psf.array)) // 2
         #padright = padleft + (len(profile) - len(self.psf.array)) % 2 
         #psfLong = np.pad(self.psf.array, (padleft, padright), mode='constant')
         ##psfLong = np.fft.fftshift(psfLong)
-
-
-        diff =  self.lamRez 
-        padd = 0 #int(np.ceil(angSig/diff))
-        
-        psfPad = np.pad(self.psf, padd, 'constant')
-        profilePad = np.pad(profile, (0,2*padd), 'constant')
-
-        psfShift = np.fft.fftshift(psfPad)  
-        psfShift = psfShift/np.sum(psfShift)
-
-        psFFT = np.fft.fft(psfShift) + 1e-10
-
-        prFFT = np.fft.fft(profilePad)
-        conv = psFFT * prFFT
-        profileCon = np.fft.ifft(conv)
+        #diff =  self.lamRez 
+        #padd = int(np.ceil(angSig/diff))
 
         #profileCon = self.con.convolve(profilePad, np.fft.ifftshift(psfShift[:-1]), boundary='extend', normalize_kernel = True)
-
-        prcFFT = np.fft.fft(profileCon)
-        dconv = prcFFT / psFFT
-        profileDecon = np.fft.ifft((dconv))
-
         #profileDecon, remainder = scisignal.deconvolve(profileCon, psfShift)
         #padleft = (len(profile) - len(profileDecon)) // 2
         #padright = padleft + (len(profile) - len(profileDecon)) % 2
@@ -2525,6 +2553,7 @@ class batchjob:
         self.hahnV = []
 
         for impact in self.doneLabels:
+            #Get average values for wind, rms, and temperature in plane of sky at this impact
             ptUr = []
             ptRms = []
             ptTem = []
@@ -2538,6 +2567,7 @@ class batchjob:
             #print("The ur is {} at impact {}, with f1 = {}".format(pUr, impact, self.env.interp_f1(impact)))
             pRms = [np.average(ptRms) if self.copyPoint.waveWasOn else 0].pop()
             pTem = np.average(ptTem)
+
 
             vTh = 2 * self.env.KB * pTem / self.env.mI
 
@@ -2600,10 +2630,10 @@ class batchjob:
             small = int(min(small, newSmall))
             big = int(max(big, newBig))
         throw = int(np.abs(np.ceil(big-small)))
-
+        spread = 2
         for stdlist, label in zip(self.allStd, self.doneLabels):
-
-            hist, edge = np.histogram(stdlist, throw, range = [small,big])
+            
+            hist, edge = np.histogram(stdlist, throw, range = [small-spread,big+spread])
             hist = hist / np.amax(hist)
             self.histlabels.append(label)
             edges.append(edge)
@@ -2707,7 +2737,7 @@ class batchjob:
         throw = int(np.abs(np.ceil(big-small)))
 
         for ratioList, label in zip(self.allRatio, self.doneLabels):
-            hist, edge = np.histogram(ratioList, 100, range = [small,big])
+            hist, edge = np.histogram(ratioList, 200, range = [small,big])
             #hist = hist / np.amax(hist)
             histlabels.append(label)
             edges.append(edge)
