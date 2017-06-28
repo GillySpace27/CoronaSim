@@ -18,7 +18,7 @@ from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 #import chianti.core as ch
-
+from scipy import signal as scisignal
 from scipy import io
 from scipy import ndimage
 from scipy import interpolate as interp
@@ -1510,7 +1510,7 @@ class simulate:
             plt.suptitle('Contributions to a single profile')
 
             mybatch = batch('analyze').loadBatch()
-            mybatch.makePSF(self.env.psfSig)
+            mybatch.makePSF()
             mybatch.II=0
             mybatch.impact = self.sims[0].cPos[2]
             mybatch.findProfileStats(profile)
@@ -2037,13 +2037,13 @@ class batchjob:
         self.env = self.envs[0]
         self.firstRunEver = True
         self.complete = False
+        self.completeTime = "Incomplete Job"
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
 
         self.simulate_now()
         
-        if self.root:
-            self.finish()
+        if self.root: self.finish()
 
     def simulate_now(self):
         comm = MPI.COMM_WORLD
@@ -2090,9 +2090,12 @@ class batchjob:
                     if self.printMulti: print('\nBatch Progress: '+ str(self.batchName))
                     self.bar.increment()
                     self.bar.display(True)
-                if self.firstRunEver: self.setFirstPoint()
-                self.firstRunEver = False
+                if self.firstRunEver: 
+                    self.setFirstPoint()
+                    self.firstRunEver = False
                 self.save(printout = self.print)
+
+            comm.barrier()
 
     def finish(self):
         if self.root:
@@ -2102,7 +2105,7 @@ class batchjob:
 
             if self.complete is False:
                 self.completeTime = time.asctime()
-            self.complete = True
+                self.complete = True
 
             if self.print: 
                 print('\nBatch Complete: '+ str(self.batchName))
@@ -2132,6 +2135,7 @@ class batchjob:
         self.temProjss.append(thisSim.temProjs)
 
     def findRank(self):
+        """Discover and record this PU's rank"""
         comm = MPI.COMM_WORLD
         self.rank = comm.Get_rank()
         self.root = self.rank == 0
@@ -2140,103 +2144,179 @@ class batchjob:
     ###################################################################################
 
     def doStats(self, width):
-        self.makePSF(self.env.psfSig)
+        """Do the statistics for the whole batch and plot."""
+        self.makePSF()
         self.__findBatchStats()
         self.makeVrms()
         self.plot(width)
         #self.doPB(self.pBname)
 
     def findProfileStats(self, profile):
-        rawProfile = profile
-        if self.usePsf: 
-            profile = self.con.convolve(profile, self.psf, boundary='extend')
+        """Analyze a single profile and return a list of the statistics"""
+        def gauss_function(x, a, x0, sigma, b): return a*np.exp(-(x-x0)**2/(2*sigma**2)) + b
 
-        profNorm = profile - np.min(profile)
+        #Convolve with PSF and the deconvolve again
+        profileCon, profileDecon = self.conDeconProfile(profile)
 
-        #Finds the moment statistics of a single line profile
+        #Use the moment method to get good initial guesses
+        p0 = self.momentStats(profile)
+
+        try:
+            #Fit gaussians to the lines
+
+            poptRaw, pcovRaw = curve_fit(gauss_function, self.lamAx, profile, p0 = p0)  
+            poptCon, pcovCon = curve_fit(gauss_function, self.lamAx, profileCon, p0 = p0) 
+            poptDecon, pcovDecon = curve_fit(gauss_function, self.lamAx, profileDecon, p0 = p0)
+
+            ampRaw = np.abs(poptRaw[0])
+            muRaw = np.abs(poptRaw[1])
+            sigmaRaw = np.abs(poptRaw[2])
+            bRaw = np.abs(poptRaw[3])
+            perrRaw = np.sqrt(np.diag(pcovRaw)) #one standard deviation errors
+            
+            ampCon = np.abs(poptCon[0])
+            muCon = np.abs(poptCon[1])
+            sigmaCon = np.abs(poptCon[2])
+            bCon = np.abs(poptCon[3])
+            perrCon = np.sqrt(np.diag(pcovCon))
+
+            ampDecon = np.abs(poptDecon[0])
+            muDecon = np.abs(poptDecon[1])
+            sigmaDecon = np.abs(poptDecon[2])
+            bDecon = np.abs(poptDecon[3])
+            perrDecon = np.sqrt(np.diag(pcovDecon))
+
+        except RuntimeError:
+            return [np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]
+
+        #Subtract the Point Spread Width in quadrature
+        sigmaSubtract = np.sqrt(np.abs(sigmaCon**2 - self.psfSig_e**2)) #Subtract off the PSF width
+
+        #Plot the fits
+        if self.plotFits and self.II < self.maxFitPlot: 
+            self.II += 1
+            plt.plot(self.lamAx, profile, "g", label = "Raw")
+            plt.plot(self.lamAx, gauss_function(self.lamAx, ampRaw, muRaw, sigmaRaw, bRaw), 'g.:', label = 
+                     "Raw Fit: {:.4} km/s".format(self.__std2V(sigmaRaw)))
+
+            plt.plot(self.lamAx, profileCon, "b", label = "Convolved")
+            plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaCon, bCon), 'b.:', label =
+                     "Conv Fit: {:.4} km/s".format(self.__std2V(sigmaCon)))
+
+            #plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaSubtract, bCon), 'c.:', label = 
+            #         "Subtraction: {:.4} km/s".format(self.__std2V(np.abs(sigmaSubtract))))
+            plt.plot(self.lamAx, gauss_function(self.lamAx, ampRaw, muCon, sigmaSubtract, bRaw), 'm.:', label = 
+                     "Subtraction {:.4} km/s".format(self.__std2V(np.abs(sigmaSubtract))))
+ 
+            plt.plot(self.lamAx, profileDecon, "r--", label = "Deconvolved")
+            plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.--', label = 
+                     "Deconvolved Fit: {:.4} km/s".format(self.__std2V(sigmaDecon)))
+
+            grid.maximizePlot()
+            #plt.yscale('log')
+            plt.title("A Line at b = {}".format(self.impact))
+            plt.legend()
+            plt.show()
+        
+        #Select which of the methods gets output
+        if self.usePsf:
+            if self.reconType.casefold() in 'Deconvolution'.casefold():
+                self.reconType = 'Deconvolution'
+                ampOut, muOut, sigOut, perrOut = ampDecon, muDecon, sigmaDecon, perrDecon
+            elif self.reconType.casefold() in 'Subtraction'.casefold():
+                self.reconType = 'Subtraction'
+                ampOut, muOut, sigOut, perrOut = ampCon, muCon, sigmaSubtract, perrCon
+            elif self.reconType.casefold() in 'None'.casefold():
+                self.reconType = 'None'
+                ampOut, muOut, sigOut, perrOut = ampCon, muCon, sigmaCon, perrCon
+            else: raise Exception('Undefined Reconstruction Type')
+        else:
+            self.reconType = 'N/A'
+            ampOut, muOut, sigOut, perrOut = ampRaw, muRaw, sigmaRaw, perrRaw
+
+        #Check the reconstruction against the raw fit
+        ratio = self.__std2V(sigOut) / self.__std2V(sigmaRaw) 
+
+
+        return [ampOut, muOut, sigOut, 0, 0, perrOut, ratio]
+
+
+    def makePSF(self):
+        """Do all the things for the PSF that only have to happen once per run"""
+        def gauss_function(x, a, x0, sigma, b): return a*np.exp(-(x-x0)**2/(2*sigma**2)) + b
+        self.lamAx = self.env.makeLamAxis(self.env.Ln, self.env.lam0, self.env.lamPm)
+        self.lamRez = np.diff(self.lamAx)[0]
+        self.psfSig_e = self.FWHM_to_e(self.psfSig_FW)
+        self.psf = gauss_function(self.env.lamAx, 1, self.env.lam0, self.psfSig_e, 0)
+
+    def FWHM_to_e(self, sig): return sig / 2*np.sqrt(np.log(2))
+    def e_to_FWHM(self, sig): return sig * 2*np.sqrt(np.log(2))
+
+    def conDeconProfile(self, profile):
+        """Convolve a profile and deconvolve it again, return both. """
+        profLen = len(profile)
+
+        # Do all the PSF Stuff
+
+        #psf = self.con.Gaussian1DKernel(pix)
+        #padleft = (len(profile) - len(self.psf.array)) // 2
+        #padright = padleft + (len(profile) - len(self.psf.array)) % 2 
+        #psfLong = np.pad(self.psf.array, (padleft, padright), mode='constant')
+        ##psfLong = np.fft.fftshift(psfLong)
+
+
+        diff =  self.lamRez 
+        padd = 0 #int(np.ceil(angSig/diff))
+        
+        psfPad = np.pad(self.psf, padd, 'constant')
+        profilePad = np.pad(profile, (0,2*padd), 'constant')
+
+        psfShift = np.fft.fftshift(psfPad)  
+        psfShift = psfShift/np.sum(psfShift)
+
+        psFFT = np.fft.fft(psfShift) + 1e-10
+
+        prFFT = np.fft.fft(profilePad)
+        conv = psFFT * prFFT
+        profileCon = np.fft.ifft(conv)
+
+        #profileCon = self.con.convolve(profilePad, np.fft.ifftshift(psfShift[:-1]), boundary='extend', normalize_kernel = True)
+
+        prcFFT = np.fft.fft(profileCon)
+        dconv = prcFFT / psFFT
+        profileDecon = np.fft.ifft((dconv))
+
+        #profileDecon, remainder = scisignal.deconvolve(profileCon, psfShift)
+        #padleft = (len(profile) - len(profileDecon)) // 2
+        #padright = padleft + (len(profile) - len(profileDecon)) % 2
+        #profileDecon = np.pad(profileDecon, (padleft, padright), mode='constant')
+        #plt.plot(self.env.lamAx, profile, label="raw")
+        #plt.plot(self.env.lamAx, profileCon[0:profLen], label="con")
+        #plt.plot(self.env.lamAx, profileDecon[0:profLen], ":", label="decon")
+        ##plt.plot(self.env.lamAx, remainder[0:profLen], ":", label="rem")
+        #plt.legend()
+        #plt.figure()
+        #plt.plot(prcFFT)
+        #plt.show()
+
+        return np.abs(profileCon[0:profLen]), np.abs(profileDecon[0:profLen])
+
+    def momentStats(self, profile):
+        #Finds the moment statistics of a profile
+
         maxMoment = 5
         moment = np.zeros(maxMoment)
         for mm in np.arange(maxMoment):
-                moment[mm] = np.dot(profNorm, self.env.lamAx**mm)
+                moment[mm] = np.dot(profile, self.env.lamAx**mm)
 
         powerM = moment[0] 
         muM = moment[1] / moment[0]
         sigmaM = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
         skewM = (moment[3]/moment[0] - 3*muM*sigmaM**2 - muM**3) / sigmaM**3
         kurtM = (moment[4] / moment[0] - 4*muM*moment[3]/moment[0]+6*muM**2*sigmaM**2 + 3*muM**4) / sigmaM**4 - 3
-        ampM = powerM/(np.sqrt(2*np.pi) * sigmaM)/600
-        
-        #Fits a gaussian to a single line profile
-        def gauss_function(x, a, x0, sigma, b):
-            return a*np.exp(-(x-x0)**2/(2*sigma**2)) + b
+        ampM = powerM/(np.sqrt(2*np.pi) * sigmaM)/len(self.env.lamAx)
 
-        sig0 = sigmaM       #np.sum((self.env.lamAx - self.env.lam0)**2)/len(profile)
-        amp0 = ampM         #np.max(profNorm)
-        lam0 = muM
-        b0 = 0
-
-        try:
-            error1 = np.sqrt(profNorm) + 1e-16
-            error2 = np.sqrt(rawProfile) + 1e-16
-            #plt.plot(self.env.lamAx, error1)
-            #plt.plot(self.env.lamAx, profNorm)
-            #plt.yscale('log')
-            #plt.show()
-            popt, pcov = curve_fit(gauss_function, self.lamAx, profNorm, p0 = [amp0, lam0, sig0, b0])#, sigma=error1)
-            popt2, pcov2 = curve_fit(gauss_function, self.lamAx, rawProfile, p0 = [amp0, lam0, sig0, b0])#, sigma = error2)
-            
-            ampRaw = np.abs(popt2[0])
-            muRaw = np.abs(popt2[1])
-            sigmaRaw = np.abs(popt2[2])
-
-        except RuntimeError:
-            return [np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]
-
-        perr = np.sqrt(np.diag(pcov)) #one standard deviation errors
-
-        powerG = popt[0] * np.sqrt(np.pi * 2 * popt[2]**2)
-        muG = popt[1]
-        sigmaG = np.abs(popt[2])
-        skewG = 0
-        kurtG = 0
-        ampG = popt[0]
-        bG = popt[3]
-
-
-        if self.usePsf: 
-            psfSig = self.env.psfSig# * 1.030086 #This is the factor that makes it the same before and after psf
-            sigmaMFix = np.sqrt(np.abs(sigmaM**2 - psfSig**2)) #Subtract off the PSF width
-            sigmaGFix = np.sqrt(np.abs(sigmaG**2 - psfSig**2)) #Subtract off the PSF width
-        else: 
-            sigmaMFix = sigmaM
-            sigmaGFix = sigmaG
-
-        #Output only the asked for type.
-        if self.statType.casefold() in 'moment'.casefold():
-            power, mu, sigmaStatFix, skew, kurt, amp, sigmaStat = powerM, muM, sigmaMFix, skewM, kurtM, ampM, sigmaM
-        elif self.statType.casefold() in 'gaussian'.casefold():
-            power, mu, sigmaStatFix, skew, kurt, amp, sigmaStat = powerG, muG, sigmaGFix, skewM, kurtM, ampG, sigmaG
-        else: raise Exception('Statistic Type Undefined')
-
-
-
-
-        if self.plotFits and self.II < self.maxFitPlot: #Plot the fits
-            self.II += 1
-            plt.plot(self.env.lamAx, rawProfile, "g", label = "Raw")
-            plt.plot(self.env.lamAx, profile, "b", label = "With PSF")
-            plt.plot(self.env.lamAx, gauss_function(self.env.lamAx, amp, mu, sigmaStat, bG), 'k.', label ="PSF Fit")
-            plt.plot(self.env.lamAx, gauss_function(self.env.lamAx, amp, mu, sigmaStatFix, bG), 'c.:', label = "Reconstruction: {:.4} km/s".format(self.__std2V(np.abs(sigmaStatFix))))
-            plt.plot(self.env.lamAx, gauss_function(self.env.lamAx, ampRaw, mu, sigmaStatFix, bG), 'm.:', label = "Reconstruction Normed")
-            plt.plot(self.env.lamAx, gauss_function(self.env.lamAx, ampRaw, muRaw, sigmaRaw, bG), 'y.:', label = "Raw Fit: {:.4} km/s".format(self.__std2V(sigmaRaw)))
-            
-            grid.maximizePlot()
-            #plt.yscale('log')
-            plt.title("A Line at b = {}".format(self.impact))
-            plt.legend()
-            plt.show()
-        ratio = self.__std2V(sigmaStatFix) / self.__std2V(sigmaRaw) #Reconstruction over Raw fit
-        return [power, mu, sigmaStatFix, skew, kurt, perr, ratio]
+        return [ampM, muM, sigmaM, 0]
 
     def __findSampleStats(self):
         #Finds the mean and varience of each of the statistics for each multisim
@@ -2309,7 +2389,7 @@ class batchjob:
         #Finds the statistics of all of the profiles in all of the multisims
         self.lineStats = []
         self.binStats = []
-        print("Fitting Profiles... {} Method".format(self.statType))
+        print("Fitting Profiles...")
         bar = pb.ProgressBar(len(self.profiless))
         bar.display()
         
@@ -2339,21 +2419,7 @@ class batchjob:
             simStats.append(self.findProfileStats(profile))
         return simStats
 
-    def makePSF(self, angSig):
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            import astropy.convolution as con
-            self.con = con
-        self.lamAx = self.env.makeLamAxis(self.env.Ln, self.env.lam0, self.env.lamPm)
-        if angSig is not None:
-            diff = np.abs(self.lamAx[1] - self.lamAx[0])
-            pix = int(np.ceil(angSig/diff))
-            #self.con.
-            self.psf = self.con.Gaussian1DKernel(pix)
-            #plt.plot(self.psf)
-            #plt.show()
-        else: self.psf = None
+
 
     def plotProfiles(self, max):
         if max is not None:
@@ -2408,7 +2474,14 @@ class batchjob:
         plt.show(False)
 
     #Main Plots ########################################################################
+    def plot(self, width):
+        if width:
+            self.plotWidth()
+        else:
+            self.plotStatsV()
+
     def plotStatsV(self):
+        """Plot all of the statistics for the whole batch."""
         f, axArray = plt.subplots(5, 1, sharex=True)
         f.canvas.set_window_title('Coronasim')
         doRms = True
@@ -2444,13 +2517,7 @@ class batchjob:
         grid.maximizePlot()
         plt.show()
 
-    def getLabels(self):
-        try:
-            labels = np.asarray(self.doneLabels)
-        except: 
-            labels = np.arange(len(self.profiles))
-            doRms = False
-        return labels
+
 
     def makeVrms(self):
         self.env._fLoad(self.env.fFileName)
@@ -2484,25 +2551,27 @@ class batchjob:
             self.thisV.append(self.env.cm2km(V))
             self.hahnV.append(self.hahnFit(impact))
 
-
-    def plotWidth(self):
-        f = plt.figure()
-        f.canvas.set_window_title('Coronasim')
-        doRms = True
+    def getLabels(self):
         try:
             labels = np.asarray(self.doneLabels)
         except: 
             labels = np.arange(len(self.profiles))
             doRms = False
-        try:
-            self.completeTime
+        return labels
+
+    def plotWidth(self):
+        """Generate the primary plot"""
+        f = plt.figure()
+        f.canvas.set_window_title('Coronasim')
+
+        labels = self.getLabels()
+
+        #Format the header
+        try: self.completeTime
         except: self.completeTime = 'Incomplete Job'
-        f.suptitle(str(self.batchName) + ': ' + str(self.completeTime) + '\n Wavelength: ' + str(self.env.lam0) + 
-            ' Angstroms\nLines per Impact: ' + str(self.Npt) + ';     Envs: ' + str(self.Nenv) + 
-            '; Lines per Env: ' + str(self.Nrot) + '\n  usePsf = '+ str(self.usePsf) + '                                          statType = ' + str(self.statType))
 
         str1 = "{}: {}\nWavelength: {} Angstroms\nEnvs: {}; Lines per Env: {}; Lines per Impact: {}\n".format(self.batchName, self.completeTime, self.env.lam0, self.Nenv, self.Nrot, self.Npt)
-        str2 = "usePsf: {}                                          statType: {}".format(self.usePsf, self.statType)
+        str2 = "usePsf: {}                                          reconType: {}".format(self.usePsf, self.reconType)
         f.suptitle(str1 + str2)
 
         #Display the run flags
@@ -2563,12 +2632,10 @@ class batchjob:
         plt.plot(self.histlabels, self.medians, 'c--', label = "{}%".format(self.qcuts[1]), drawstyle = "steps-mid")
         plt.plot(self.histlabels, high, 'c:', label = "{}%".format(self.qcuts[2]), drawstyle = "steps-mid")
 
-        #Plot the Statistics of the Lines
+        #Plot the Statistics from the Lines
         self.lineWidths = self.statV[2][0]
         self.lineWidthErrors = self.statV[2][1]
         plt.errorbar(self.histlabels, self.lineWidths, yerr = self.lineWidthErrors, fmt = 'bo', label = 'Simulation', capsize=4)
-
-
 
         #Do the chi-squared test
         self.chiTest()
@@ -2582,23 +2649,21 @@ class batchjob:
         plt.figtext(left + shift, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mean))
         plt.figtext(left + shift, height, "Chi2_R = {:0.3f}".format(self.rChi_mean))
 
-        #Plot the Hahn Measurements
-        try:
+        if False:
+            #Plot the Hahn Measurements
             plt.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr = self.env.hahnError, fmt = 'gs', label = 'Hahn Observations', capsize=4)
-        except: print("Failed to plot hahn measurements")
-
+            plt.plot(self.doneLabels, self.hahnV, label = "HahnV", color = 'g') 
+                   
         #Plot the expected values
-        plt.plot(self.doneLabels, self.hahnV, label = "HahnV", color = 'g')        
         plt.plot(self.doneLabels, self.thisV, label = 'Expected', color = 'b') 
 
         #Plot the results of the binned Test
         plt.errorbar(self.doneLabels, self.binStdV, yerr = self.binStdVsig, fmt = 'mo', label = "Binned Profiles", capsize=6)
 
-
         #Plot Resolution Limit
         diff = self.env.lamAx[1] - self.env.lamAx[0]
         minrez = self.__std2V(diff)
-        psfrez = self.__std2V(self.env.psfSig)
+        psfrez = self.__std2V(self.psfSig_e)
 
 
         #flr = np.ones_like(self.doneLabels)*minrez
@@ -2681,7 +2746,7 @@ class batchjob:
         plt.figtext(left, height, "B: {}".format(self.copyPoint.bWasOn))
 
         str1 = "{}: {}\nEnvs: {}; Lines per Env: {}; Lines per Impact: {}\n".format(self.batchName, self.completeTime, self.Nenv, self.Nrot, self.Npt)
-        str2 = "usePsf: {}                                          statType: {}".format(self.usePsf, self.statType)
+        str2 = "usePsf: {}                                          reconType: {}".format(self.usePsf, self.reconType)
         plt.suptitle(str1 + str2)
 
         plt.title("Sigma_Reconstructed / Sigma_Raw_Fit")
@@ -2707,11 +2772,13 @@ class batchjob:
         self.rChi_mid = self.chi_mid / N
         self.rChi_mean = self.chi_mean / N
 
-    def plot(self, width):
-        if width:
-            self.plotWidth()
-        else:
-            self.plotStatsV()
+    def getLabels(self):
+        try:
+            labels = np.asarray(self.doneLabels)
+        except: 
+            labels = np.arange(len(self.profiles))
+            doRms = False
+        return labels
 
     def save(self, batchName = None, keep = False, printout = False, dumpEnvs = False):
 
@@ -2749,7 +2816,7 @@ class batchjob:
         if printout: print('\nFile Saved')
             
     def show(self):
-        #Print all properties and values
+        """Print all properties and values except statistics"""
         myVars = vars(self)
         print("\nBatch Properties\n")
         for ii in sorted(myVars.keys()):
@@ -2757,7 +2824,7 @@ class batchjob:
                 print(ii, " : ", myVars[ii])
                 
     def showAll(self):
-        #Print all properties and values
+        """Print all properties and values"""
         myVars = vars(self)
         print("\nBatch Properties\n")
         for ii in sorted(myVars.keys()):
@@ -3056,10 +3123,35 @@ def pbRefinement(envsName, params, MIN, MAX, tol):
         
         
         
+        #From profileStats
+                #return [power, mu, sigout, skew, kurt, perr, ratio]
+
+
         
+            #error1 = np.sqrt(profNorm) + 1e-16 #, sigma = error2)
+            #error2 = np.sqrt(profileRaw) + 1e-16 #, sigma=error1)
+        #powerCon = poptCon[0] * np.sqrt(np.pi * 2 * poptCon[2]**2)
+        ##Output only the asked for type.
+        #if self.statType.casefold() in 'moment'.casefold():
+        #    power, mu, sigmaStatFix, skew, kurt, amp, sigmaStat = powerM, muM, sigmaMFix, skewM, kurtM, ampM, sigmaM
+        #elif self.statType.casefold() in 'gaussian'.casefold():
+        #    power, mu, sigmaStatFix, skew, kurt, amp, sigmaStat = powerG, muG, sigmaGFix, skewM, kurtM, ampCon, sigmaG
+        #else: raise Exception('Statistic Type Undefined')
+        # * 1.030086 #This is the factor that makes it the same before and after psf
         
-        
-        
+        #From makePSF
+                     #import warnings
+        #with warnings.catch_warnings():
+        #    warnings.simplefilter("ignore")
+        #    import astropy.convolution as con
+        #    self.con = con
+        #if angSig is not None:
+        #    diff = np.abs(self.lamAx[1] - self.lamAx[0])
+        #    pix = int(np.ceil(angSig/diff))
+        #    self.psf = self.con.Gaussian1DKernel(pix)
+        #    #plt.plot(self.psf)
+        #    #plt.show()
+        #else: self.psf = None   
         
         
         

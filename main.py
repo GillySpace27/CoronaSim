@@ -33,26 +33,27 @@ if __name__ == '__main__':
     simOne = False  
 
     #Simulation Properties
-    sim.simpoint.useB = False
-    sim.simpoint.g_useWaves = False   
-    sim.simpoint.g_useWind = False
+    sim.simpoint.useB = True
+    sim.simpoint.g_useWaves = True   
+    sim.simpoint.g_useWind = True
     
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
     sim.multisim.destroySims = True #This keeps memory from building up
     
-
-    sim.batchjob.statType = 'Gaussian' #'Gaussian'
     sim.batchjob.usePsf = False
+    sim.batchjob.reconType = 'Dec' #'Deconvolution' or 'Subtraction' or 'None'
+    sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
+
     sim.batchjob.qcuts = [16,50,84]
-    sim.batchjob.plotFits = False
-    sim.batchjob.maxFitPlot = 2
+    sim.batchjob.plotFits = True
+    sim.batchjob.maxFitPlot = 3
 
 
     #Batch Parameters #####################
-    batchName = "thermal" #'Long5-18' #'FullLong'#'LCDLong2' #FullLong did 50 iterations
+    batchName = "All" #"Wind" #"Thermal"
     impactPoints = 10 
-    iterations = 1
+    iterations = 10
 
     b0 =  1.02
     b1 =  1.6#46
