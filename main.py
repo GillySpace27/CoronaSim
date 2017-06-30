@@ -29,20 +29,20 @@ if __name__ == '__main__':
 
     #Which part of the program should run?
     compute = False
-    analyze = True
-    simOne = False  
+    analyze = False
+    simOne = True  
 
     #Simulation Properties
     sim.simpoint.useB = False
     sim.simpoint.g_useWaves = True   
-    sim.simpoint.g_useWind = False
+    sim.simpoint.g_useWind = True
     
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
     sim.multisim.destroySims = True #This keeps memory from building up
     
     sim.batchjob.usePsf = True
-    sim.batchjob.reconType = 'd' #'Deconvolution' or 'Subtraction' or 'None'
+    sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
     sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
 
     sim.batchjob.qcuts = [16,50,84]
@@ -147,7 +147,7 @@ if __name__ == '__main__':
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
-            env = sim.envrs(envsName).loadEnvs(100)[2]
+            env = sim.envrs(envsName).loadEnvs(100)[0]
             #sim.plotpB()
 
 
@@ -162,7 +162,8 @@ if __name__ == '__main__':
             lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('densfac', linestyle = 'o')
-            #lineSim.plot('vLOS')
+            T = 500
+            lineSim.evolveLine(T,0,T)
             #lineSim.plot('pPos', 1)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()

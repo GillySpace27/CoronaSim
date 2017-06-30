@@ -127,7 +127,7 @@ class environment:
     #LamAxis Stuff   #######################
     Ln = 600
     lam0 = 188.217
-    lamPm = 0.5
+    lamPm = 0.35
 
     psfSig = 0.047 #Angstroms
 
@@ -1200,6 +1200,7 @@ class simulate:
         self.findT = findT
         self.env = envObj
         self.timeAx = timeAx
+        self.randomizeTime()
         self.profile = None
         self.adapt = False
 
@@ -1482,7 +1483,7 @@ class simulate:
         temProj = 0
         rho2 = 0
         pB = 0
-        self.randomizeTime()
+        
         if self.print and self.root: 
             print('\nGenerating Profile...')
             bar = pb.ProgressBar(len(self.sims) * len(self.timeAx))
@@ -1566,8 +1567,7 @@ class simulate:
         bar = pb.ProgressBar(len(self.times))
         timeInd = 0
         for tt in self.times:
-            for point in self.sims:
-                point.setTime(tt)
+            self.timeAx = [tt]
             self.lineArray[timeInd][:] = self.lineProfile()
             bar.increment()
             bar.display()  
@@ -1576,10 +1576,200 @@ class simulate:
 
         self.lineList = self.lineArray.tolist()
 
+        self.timeStats()
+        self.slidingWindow()
+        self.windowPlot()
+        #self.__fitGaussians_t()
+        #self.__findMoments_t()
+        #self.plotLineArray_t()
 
-        self.__fitGaussians_t()
-        self.__findMoments_t()
-        self.plotLineArray_t()
+    def timeStats(self):
+        self.mybatch = batch('analyze').loadBatch()
+        self.mybatch.makePSF()
+        self.mybatch.II=0
+        self.mybatch.impact = self.sims[0].cPos[2]
+
+        #bar = pb.ProgressBar(len(self.times))
+        #for profile in self.lineList:
+        #    p = self.mybatch.findProfileStats(profile)
+        #    self.centroid.append(p[1])
+        #    self.sigma.append(p[2])
+        #    bar.increment()
+        #    bar.display()
+        #bar.display(force = True)  
+
+    def slidingWindow(self):
+
+        profileNorm = True
+        logbreak = 10
+
+        #Get the Arrays
+        profiles = self.lineArray
+
+        #Calculate bounds
+        NT = len(self.times)
+        longestWindow = NT // 1.5
+
+        self.firstIndex = 0 #longestWindow + 1
+        self.lastIndex = NT - 1
+        
+        theBreak = min(longestWindow/logbreak, 100)
+
+        linpart = np.arange(theBreak)
+        logpart = np.logspace( np.log10(theBreak) , np.log10(longestWindow) , 100)
+        self.winAx = np.concatenate((linpart, logpart)).astype(int)
+
+        
+        #Generate SlideList/SlideArray
+        slideProfiles = []
+        slideCentroids = []
+        slideSigmas = []
+
+        print("Windowing...")
+        bar = pb.ProgressBar(len(self.times))
+
+        for tt in self.times:
+            #For every timestep
+            winList = []
+            centList = []
+            sigList = []
+            for window in self.winAx:
+                #Gather each window and append to the list
+                profile = self.getWindow(profiles,tt,window,NT)
+
+                if profileNorm: profile /= np.sum(profile)
+
+                winList.append(profile)
+                #p = self.mybatch.findProfileStats(profile)
+                p = self.mybatch.findMomentStats(profile)
+                centList.append(p[1])
+                sigList.append(p[2])
+
+            #Append that whole list as one timepoint
+            slideProfiles.append(np.asarray(winList))
+            slideCentroids.append(np.asarray(centList))
+            slideSigmas.append(np.asarray(sigList))
+            #plt.pcolormesh(np.asarray(winList))
+            #plt.show()
+
+
+            bar.increment()
+            bar.display()
+        bar.display(force = True)  
+
+        #Convert to arrays
+        self.slideArray = np.asarray(slideProfiles)
+        self.slideCents = np.asarray(slideCentroids)
+        self.slideSigs = np.asarray(slideSigmas)
+
+        #Get statistics on centroids
+        self.centDt = 100
+        varCentsL = []
+        for tt in self.times:
+            range = self.makeRange(tt,self.centDt,NT)
+
+            centroids = self.slideCents[range]
+            varience = np.std(centroids, axis = 0)
+            varCentsL.append(varience)
+        self.varCents = np.asarray(varCentsL)
+
+        self.cents = np.std(self.slideCents, axis = 0)
+
+    def getWindow(self, profiles, tt, window, NT):
+        """Get the binned profile at given time with given window"""
+        range = self.makeRange(tt, window, NT)
+        profile = np.sum(profiles[range][:], axis = 0)
+        return profile
+
+    def makeRange(self, tt, window, NT):
+        range = np.arange(-window, 1) + tt
+        range = np.mod(range, NT).astype(int)
+        return range
+
+        #start = tt-window
+        #end = tt + 1
+        
+        ##low = math.fmod(tt-window, NT)
+        #low = np.mod(tt-window, -NT)
+        #high = np.mod(tt+1, NT)
+        ##if low > high: low, high = high, low
+        #range = np.arange(low,high)
+
+    def windowPlot(self):
+        
+        #Create all the axes
+        from matplotlib import gridspec
+        gs = gridspec.GridSpec(1,3, width_ratios=[1,4,1])
+        fig = plt.figure()
+        mAx = plt.subplot(gs[0])
+        slAx= plt.subplot(gs[1])
+        vAx = plt.subplot(gs[2], sharey = slAx)
+
+        #fig, [mAx, slAx, vAx] = plt.subplots(1,3, sharey = True, gridspec_kw = {'width_ratios':[1, 4, 1]})
+        tit = fig.suptitle("Time: {}".format(self.firstIndex))
+
+
+        #Just the regular time series with ticker line
+        mAx.pcolormesh(self.env.lamAx.astype('float32'), self.times, self.lineArray)
+        mAx.set_ylabel('Time')
+        mAx.set_title('Time Series')
+        tickerLine = mAx.axhline(0)
+
+        #The sliding window plot
+        slAx.set_title('Integration View')
+        slAx.set_xlabel("Wavelength")
+        slAx.set_ylabel("Integration Time (S)")
+        quad = slAx.pcolormesh(self.env.lamAx, self.winAx, self.slideArray[self.lastIndex])
+
+        #The centroid line
+        line1, = slAx.plot(self.slideCents[self.lastIndex], self.winAx, 'r')
+        slAx.axvline(self.env.lam0, color = 'y', ls= ":")
+
+        #THe sigma lines
+        line2, = slAx.plot(self.slideCents[self.lastIndex] + self.slideSigs[self.lastIndex], self.winAx, 'm')
+        line3, = slAx.plot(self.slideCents[self.lastIndex] - self.slideSigs[self.lastIndex], self.winAx, 'm')
+
+        #Centroid Sigma
+        vAx.plot(self.cents, self.winAx)
+        vAx.axvline()
+        #line4, = vAx.plot(self.varCents[self.lastIndex], self.winAx)
+        #throw = np.nanmax(self.varCents)
+        #vAx.set_xlim(0,throw)
+        #vAx.set_title('Varience of the Centroid \nfor {}s'.format(self.centDt))
+        vAx.set_xlabel('Angstroms')
+
+
+        def init():
+            tit.set_text("Time: {}".format(self.lastIndex))
+            tickerLine.set_ydata(self.lastIndex)
+            quad.set_array(self.slideArray[self.lastIndex][:-1,:-1].flatten())
+            line1.set_xdata(self.slideCents[self.lastIndex])
+            line2.set_xdata(self.slideCents[self.lastIndex] + self.slideSigs[self.lastIndex])
+            line3.set_xdata(self.slideCents[self.lastIndex] - self.slideSigs[self.lastIndex])
+            #line4.set_xdata(self.varCents[self.lastIndex])
+            return tickerLine, quad, line1, line2, line3, tit
+
+        #Animate
+        from matplotlib import animation
+
+        def animate(i):
+            tit.set_text("Time: {}".format(i))
+            tickerLine.set_ydata(i)
+            quad.set_array(self.slideArray[i][:-1,:-1].flatten())
+            line1.set_xdata(self.slideCents[i])
+            line2.set_xdata(self.slideCents[i] + self.slideSigs[i])
+            line3.set_xdata(self.slideCents[i] - self.slideSigs[i])
+            #line4.set_xdata(self.varCents[i])
+            return tickerLine, quad, line1, line2, line3
+
+        anim = animation.FuncAnimation(fig, animate, init_func = init, frames = np.arange(self.firstIndex,self.lastIndex), 
+                                       repeat = True, interval = 25, blit=True)
+        #anim.save(filename = 'movie.mp4')
+        grid.maximizePlot()
+        plt.show()
+
+
+        return     
 
     def __findMoments_t(self):
         #Find the moments of each line in lineList
@@ -1636,8 +1826,7 @@ class simulate:
     def plotLineArray_t(self):
         ## Plot the lineArray
         self.fig, ax = self.grid.plot(iL = self.iL)
-        #print('')
-        #print(np.shape(self.lineArray))
+
         im = ax.pcolormesh(self.env.lamAx.astype('float32'), self.times, self.lineArray)
         #ax.xaxis.get_major_formatter().set_powerlimits((0, 1))
         ax.set_xlabel('Angstroms')
@@ -1650,8 +1839,10 @@ class simulate:
         self.fig.subplots_adjust(right=0.7)
         cent_ax = self.fig.add_axes([0.74, 0.10, 0.15, 0.8], autoscaley_on = True)
         cent_ax.set_xlabel('Centroid')
+
         cent_ax.plot(self.centroid, self.times)
-        cent_ax.plot(np.ones_like(self.times)*self.env.lam0, self.times)
+        cent_ax.axvline(self.env.lam0)
+
         #cent_ax.set_xlim([np.min(self.env.lamAx), np.max(self.env.lamAx)])
         cent_ax.xaxis.get_major_formatter().set_useOffset(False)
         max_xticks = 4
@@ -2159,7 +2350,7 @@ class batchjob:
         profileCon, profileDecon = self.conDeconProfile(profile)
 
         #Use the moment method to get good initial guesses
-        p0 = self.momentStats(profile)
+        p0 = self.findMomentStats(profile)
 
         try:
             #Fit gaussians to the lines
@@ -2267,8 +2458,10 @@ class batchjob:
         """Convolve a profile and deconvolve it again, return both. """
         profLen = len(profile)
 
+        buffer = 0.1
+
         #Pad the profile and the psf, both for resolution and for edge effects
-        padd = 1000#self.psfPix 
+        padd = 1000 #self.psfPix 
         psfPad = np.pad(self.psf, padd, 'constant')
         psincPad = np.pad(self.sincPsf, padd, 'constant')
         profilePad = np.pad(profile, (0,2*padd), 'constant')
@@ -2291,7 +2484,7 @@ class batchjob:
 
         #Deconvolve
         proConFFT = np.fft.fft(profileCon)
-        dconvFFT = proConFFT / (psFFT + 0.1)
+        dconvFFT = proConFFT / (psFFT + buffer)
         profileDecon = np.fft.ifft(dconvFFT)
 
         if self.plotFits and self.II < self.maxFitPlot:
@@ -2329,7 +2522,7 @@ class batchjob:
 
         return np.abs(profileCon[0:profLen]), np.abs(profileDecon[0:profLen])
 
-    def momentStats(self, profile):
+    def findMomentStats(self, profile):
         #Finds the moment statistics of a profile
 
         maxMoment = 5
