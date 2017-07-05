@@ -271,7 +271,6 @@ class sightline(generator):
         pt = self.cPoint(self.currS)
         self.currS += self.step
         return (pt, self.step)
-		
 
 
 #TODO create cylinder
@@ -418,6 +417,19 @@ def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, rez = None, size = None):
         #thisLine.plot(show = True)
         lines.append(thisLine)
     return [lines, angles]      
+
+def image(N = [20,20], rez=[0.5,0.5], target = [0,1.5], len = 10):
+
+    yy = np.linspace(target[0] - rez[0]/2, target[0] + rez[0]/2, N[0])
+    zz = np.linspace(target[1] - rez[1]/2, target[1] + rez[1]/2, N[1])
+    lines = []
+    coords = []
+    for y in yy:
+        for z in zz:
+            lines.append(sightline([len,y,z],[-len,y,z]))
+            coords.append((y,z))
+
+    return [lines, index]
                         
 def maximizePlot():
     try:

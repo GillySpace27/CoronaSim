@@ -18,42 +18,41 @@ size = comm.Get_size()
 
 if __name__ == '__main__':
 
+    integration = 120
+
     #Environment Parameters
     envsName = 'Modern'
     fFileName = 'logFiles'
     sim.environment.fFileName = fFileName
-    maxEnvs = 10
+    maxEnvs = 6
     refineBmin = False
     calcFFiles = False
     processEnvironments = False
 
     #Which part of the program should run?
     compute = False
-    analyze = False
-    simOne = True  
+    analyze = True  
+    simOne = False  
 
     #Simulation Properties
-    sim.simpoint.useB = False
+    sim.simpoint.useB = True
     sim.simpoint.g_useWaves = True   
     sim.simpoint.g_useWind = True
     
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
     sim.multisim.destroySims = True #This keeps memory from building up
+    sim.batchjob.qcuts = [16,50,84]
     
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
     sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
 
-    sim.batchjob.qcuts = [16,50,84]
-    sim.batchjob.plotFits = False
-    sim.batchjob.maxFitPlot = 3
-
 
     #Batch Parameters #####################
-    batchName = 'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'int{}'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
     impactPoints = 10 
-    iterations = 10
+    iterations = 15
 
     b0 =  1.02
     b1 =  1.6#46
@@ -62,13 +61,26 @@ if __name__ == '__main__':
     N_line = (200,600)
     rez = None #[3,3]
     size = [0.002, 0.01]
-    timeAx = ['rand'] #np.arange(0,1500)
+    timeAx = np.arange(integration) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
+    sim.simulate.randTime = True
     length = 10
 
-    printSim = False #This makes it show the generating profile progress bar
+    printSim = True #This makes it show the generating profile progress bar
     widthPlot = True #Plot just line width instead of all 5 moments
     firstRun = True  #Overwrite any existing batch with this name
 
+    #Run in parallel?
+    parallel = True
+    cores = 7
+
+    ##Plotting Flags
+    sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
+    
+    sim.batchjob.plotFits = False #Plots the Different fits to the line w/ the raw line
+    sim.batchjob.maxFitPlot = 3    
+
+    sim.batchjob.hahnPlot = False #Plot the green Hahn Data on the primary plot
+    sim.batchjob.plotRatio = False #Plot the ratio of the reconstruction/raw fits
 
     #Examine Batch Line Profiles
     showProfiles = False #Plot some number of line profiles at each impact parameter
@@ -76,13 +88,6 @@ if __name__ == '__main__':
     average = False
     norm = True 
     log = False
-
-    #Run in parallel?
-    parallel = True
-    cores = 7
-
-    sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
-    
 
 ##################################################################################
 ##################################################################################
@@ -162,7 +167,7 @@ if __name__ == '__main__':
             lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('densfac', linestyle = 'o')
-            T = 500
+            T = 4000
             lineSim.evolveLine(T,0,T)
             #lineSim.plot('pPos', 1)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)

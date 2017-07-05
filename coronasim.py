@@ -1200,7 +1200,7 @@ class simulate:
         self.findT = findT
         self.env = envObj
         self.timeAx = timeAx
-        self.randomizeTime()
+
         self.profile = None
         self.adapt = False
 
@@ -1208,7 +1208,7 @@ class simulate:
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
-        
+        self.randomizeTime()       
 
         if findT is None:
             self.findT = self.grid.findT
@@ -1466,9 +1466,10 @@ class simulate:
         plt.show()
 
     def randomizeTime(self):
-        if self.timeAx[0] == 'rand':
-            self.env.timeRand.seed(int(self.env.primeSeed + self.rank))
-            self.timeAx = [self.env.timeRand.randint(self.env.tmax)]
+        self.env.timeRand.seed(int(self.env.primeSeed + self.rank))
+        self.rOffset = self.env.timeRand.randint(self.env.tmax)
+        if self.randTime:
+            self.timeAx = [ t + self.rOffset for t in self.timeAx]
             
 
     def lineProfile(self):
@@ -1492,7 +1493,7 @@ class simulate:
                 point.setTime(tt)
                 prof = point.getProfile() * step
                 profile += prof
-                if self.plotSimProfs: pp.append(prof)
+                #if self.plotSimProfs: pp.append(prof)
                 pB += point.dPB * step
                 urProj += point.urProj * step
                 rmsProj += point.rmsProj * step
@@ -1503,18 +1504,18 @@ class simulate:
                     bar.increment()
                     bar.display()
 
-                if self.plotSimProfs: axarray[1].plot(self.env.lamAx, prof)
+                #if self.plotSimProfs: axarray[1].plot(self.env.lamAx, prof)
         if self.plotSimProfs:
             axarray[1].plot(self.env.lamAx, profile, 'k')
-            axarray[0].stackplot(self.env.lamAx, np.asarray(pp))
+            #axarray[0].stackplot(self.env.lamAx, np.asarray(pp))
             grid.maximizePlot()
             plt.suptitle('Contributions to a single profile')
-
-            mybatch = batch('analyze').loadBatch()
-            mybatch.makePSF()
-            mybatch.II=0
-            mybatch.impact = self.sims[0].cPos[2]
-            mybatch.findProfileStats(profile)
+            plt.show()
+            #mybatch = batch('analyze').loadBatch()
+            #mybatch.makePSF()
+            #mybatch.II=0
+            #mybatch.impact = self.sims[0].cPos[2]
+            #mybatch.findProfileStats(profile)
 
         self.profile = profile
         self.pB = pB
@@ -1618,6 +1619,8 @@ class simulate:
         linpart = np.arange(theBreak)
         logpart = np.logspace( np.log10(theBreak) , np.log10(longestWindow) , 100)
         self.winAx = np.concatenate((linpart, logpart)).astype(int)
+        self.nWin = len(self.winAx)
+        self.nLam = len(profiles[0][:])
 
         
         #Generate SlideList/SlideArray
@@ -1627,29 +1630,47 @@ class simulate:
 
         print("Windowing...")
         bar = pb.ProgressBar(len(self.times))
+        bar.display()
 
         for tt in self.times:
             #For every timestep
-            winList = []
+
+            #Get the window
+            shiftedProfiles = np.flipud(self.getMaxWindow(profiles, tt, longestWindow, NT))
+
+            #Initialize variables
+            profile = np.zeros(self.nLam)
+            winArray = np.zeros((self.nWin, self.nLam))
+            TT = 0
+            ww = 0
             centList = []
             sigList = []
+
             for window in self.winAx:
-                #Gather each window and append to the list
-                profile = self.getWindow(profiles,tt,window,NT)
+                #Sum profiles until current window length
+                while window >= TT:
+                    profile += shiftedProfiles[TT]
+                    TT+=1
 
-                if profileNorm: profile /= np.sum(profile)
+                #profile = self.getWindow(profiles,tt,window,NT)
 
-                winList.append(profile)
+                if profileNorm: outProf = profile/ np.sum(profile)
+                else: outProf = profile
+
+                winArray[ww] = outProf
+                ww+=1
+                
                 #p = self.mybatch.findProfileStats(profile)
                 p = self.mybatch.findMomentStats(profile)
                 centList.append(p[1])
                 sigList.append(p[2])
 
             #Append that whole list as one timepoint
-            slideProfiles.append(np.asarray(winList))
+            #slideProfiles.append(np.asarray(winList))
+            slideProfiles.append(winArray)
             slideCentroids.append(np.asarray(centList))
             slideSigmas.append(np.asarray(sigList))
-            #plt.pcolormesh(np.asarray(winList))
+            #plt.pcolormesh(winArray)
             #plt.show()
 
 
@@ -1678,8 +1699,12 @@ class simulate:
     def getWindow(self, profiles, tt, window, NT):
         """Get the binned profile at given time with given window"""
         range = self.makeRange(tt, window, NT)
-        profile = np.sum(profiles[range][:], axis = 0)
-        return profile
+        profilez = np.sum(profiles[range][:], axis = 0)
+        return profilez
+
+    def getMaxWindow(self, profiles, tt, window, NT):
+        range = self.makeRange(tt, window, NT)
+        return profiles[range][:]
 
     def makeRange(self, tt, window, NT):
         range = np.arange(-window, 1) + tt
@@ -2194,10 +2219,9 @@ class batch:
         
     #Handles loading and running of batches
     def loadBatch(self):
-        print("Loading Batch...")
-        slash = os.path.sep
-        batchPath = '..' + slash + 'dat' + slash + 'batches' + slash + self.batchName + '.batch'
-        absPth = absPath(batchPath)
+        print("Loading Batch: {}".format(self.batchName))
+        batchPath = '../dat/batches/{}.batch'.format(self.batchName)
+        absPth = os.path.normpath(batchPath)
         try:
             with open(absPth, 'rb') as input:
                 return pickle.load(input)
@@ -2400,9 +2424,9 @@ class batchjob:
             plt.plot(self.lamAx, gauss_function(self.lamAx, ampRaw, muCon, sigmaSubtract, bRaw), 'm.:', label = 
                      "Subtraction {:.4} km/s".format(self.__std2V(np.abs(sigmaSubtract))))
  
-            plt.plot(self.lamAx, profileDecon, "r--", label = "Deconvolved")
-            plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.:', label = 
-                     "Deconvolved Fit: {:.4} km/s".format(self.__std2V(sigmaDecon)))
+            #plt.plot(self.lamAx, profileDecon, "r--", label = "Deconvolved")
+            #plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.:', label = 
+            #         "Deconvolved Fit: {:.4} km/s".format(self.__std2V(sigmaDecon)))
 
             grid.maximizePlot()
             #plt.yscale('log')
@@ -2487,7 +2511,7 @@ class batchjob:
         dconvFFT = proConFFT / (psFFT + buffer)
         profileDecon = np.fft.ifft(dconvFFT)
 
-        if self.plotFits and self.II < self.maxFitPlot:
+        if self.plotFits and self.II < self.maxFitPlot and False:
             plt.figure()
             plt.plot(np.fft.ifftshift(psFFT), label='psf')
             plt.plot(np.fft.ifftshift(proFFT), ':', label='profile')
@@ -2785,7 +2809,7 @@ class batchjob:
     def plotWidth(self):
         """Generate the primary plot"""
         f = plt.figure()
-        f.canvas.set_window_title('Coronasim')
+        f.canvas.set_window_title(self.batchName)
 
         labels = self.getLabels()
 
@@ -2799,7 +2823,7 @@ class batchjob:
 
         #Display the run flags
         height = 0.9
-        left = 0.18
+        left = 0.09
         shift = 0.1
 
         plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.windWasOn))
@@ -2822,12 +2846,15 @@ class batchjob:
             
             small = int(min(small, newSmall))
             big = int(max(big, newBig))
-        throw = int(np.abs(np.ceil(big-small)))
+        throw = int(np.abs(np.ceil(big-small))) / 5
+        throw = np.arange(0,250,5)
         spread = 2
+        vmax = 0
         for stdlist, label in zip(self.allStd, self.doneLabels):
             
-            hist, edge = np.histogram(stdlist, throw, range = [small-spread,big+spread])
-            hist = hist / np.amax(hist)
+            hist, edge = np.histogram(stdlist, throw)#, range = [small-spread,big+spread])
+            hist = hist / np.sum(hist)
+            vmax = max(vmax, np.amax(hist))
             self.histlabels.append(label)
             edges.append(edge)
             hists.append(hist)
@@ -2846,7 +2873,9 @@ class batchjob:
         xx, yy = np.meshgrid(self.histlabels-diff/2, ed)
         self.histlabels.pop()
 
-        plt.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Sim Hist")
+        hhist = plt.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Sim Hist")
+        hhist.cmap.set_under("#FFFFFF")
+        hhist.set_clim(1e-8,vmax)
         #cbar = plt.colorbar()
         #cbar.set_label('Number of Lines')
 
@@ -2863,7 +2892,7 @@ class batchjob:
         #Do the chi-squared test
         self.chiTest()
         height = 0.9
-        left = 0.65
+        left = 0.65 + 0.09
         shift = 0.1
         #plt.figtext(left, height + 0.04, "Fit to the Median")
         #plt.figtext(left, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mid))
@@ -2872,7 +2901,7 @@ class batchjob:
         plt.figtext(left + shift, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mean))
         plt.figtext(left + shift, height, "Chi2_R = {:0.3f}".format(self.rChi_mean))
 
-        if False:
+        if self.hahnPlot:
             #Plot the Hahn Measurements
             plt.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr = self.env.hahnError, fmt = 'gs', label = 'Hahn Observations', capsize=4)
             plt.plot(self.doneLabels, self.hahnV, label = "HahnV", color = 'g') 
@@ -2894,19 +2923,25 @@ class batchjob:
         plt.axhline(psfrez, color = 'k', linewidth = 2, linestyle = ':')
         #plt.plot(self.doneLabels, flr, label = "Rez Limit", color = 'k', linewidth = 2)
 
+        ##Put numbers on plot of widths
+        #for xy in zip(self.histlabels, self.statV[2][0]): 
+        #    plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
+
         #Put numbers on plot of widths
-        for xy in zip(self.histlabels, self.statV[2][0]): 
+        for xy in zip(self.doneLabels, self.binStdV): 
             plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
+
 
         plt.title('Line Width')
         plt.legend(loc =2)
         plt.ylabel('Km/s')
         spread = 0.02
         plt.xlim([self.histlabels[0]-spread, self.histlabels[-1]+spread]) #Get away from the edges
+        plt.ylim([0,250])
         plt.xlabel(self.xlabel)
         grid.maximizePlot()
         plt.show(False)
-        self.ratioPlot()
+        if self.plotRatio: self.ratioPlot()
 
     def ratioPlot(self):
         #Plots the ratio between the raw fits and the reconstructed fits.
@@ -2948,9 +2983,12 @@ class batchjob:
         xx, yy = np.meshgrid(histlabels-diff/2, ed)
         histlabels.pop()
 
-        plt.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Ratio Hist")
+        hhist = plt.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Ratio Hist")
+        hhist.cmap.set_under("#FFFFFF")
+        hhist.set_clim(1e-8,np.amax(array))
         cbar = plt.colorbar()
         cbar.set_label('Number of Occurances')
+
         #Plot the Line Ratios
         plt.errorbar(histlabels, self.statV[5][0], yerr = self.statV[5][1], fmt = 'co', label = 'Mean/Std', capsize = 4)
 
@@ -2961,7 +2999,7 @@ class batchjob:
 
         #Display the run flags
         height = 0.9
-        left = 0.18
+        left = 0.09
         shift = 0.1
 
         plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.windWasOn))
@@ -3156,10 +3194,7 @@ class impactsim(batchjob):
         #print("{} lines per run".format(self.Npt))
         #Total Lines
         self.Ntot = self.Npt * self.Nb
-        #if self.root: 
-        #    import pdb 
-        #    pdb.set_trace()
-        #self.comm.barrier()
+
         self.print = printOut
         self.printMulti = printMulti
         self.printSim = printSim
@@ -3170,7 +3205,7 @@ class impactsim(batchjob):
 
         #if b1 is not None: 
         if b1 is not None: 
-            if spacing.casefold() == 'log'.casefold():
+            if spacing.casefold() in 'log'.casefold():
                 steps = np.linspace(b0,b1,Nb)
                 logsteps = base**steps
                 logsteps = logsteps - np.amin(logsteps)
@@ -3196,6 +3231,7 @@ class impactsim(batchjob):
     def hahnFit(self, r, r0 = 1.05, vth = 25.8, vnt = 32.2, H = 0.0657):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))
         return veff
+
 
 
 def pbRefinement(envsName, params, MIN, MAX, tol):
