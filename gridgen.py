@@ -419,17 +419,25 @@ def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, rez = None, size = None):
     return [lines, angles]      
 
 def image(N = [20,20], rez=[0.5,0.5], target = [0,1.5], len = 10):
-
     yy = np.linspace(target[0] - rez[0]/2, target[0] + rez[0]/2, N[0])
     zz = np.linspace(target[1] - rez[1]/2, target[1] + rez[1]/2, N[1])
     lines = []
     coords = []
+    yi = 0
+    ii = 0
     for y in yy:
+        zi = 0
         for z in zz:
-            lines.append(sightline([len,y,z],[-len,y,z]))
+            line = sightline([len,y,z],[-len,y,z])
+            line.findT = False
+            line.index = (yi,zi,ii)
+            lines.append(line)
             coords.append((y,z))
+            zi += 1
+            ii += 1
+        yi += 1
 
-    return [lines, index]
+    return [[lines, coords]], [yy,zz]
                         
 def maximizePlot():
     try:

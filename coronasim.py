@@ -1200,6 +1200,8 @@ class simulate:
         self.findT = findT
         self.env = envObj
         self.timeAx = timeAx
+        try: self.index = gridObj.index
+        except: self.index = (0,0)
 
         self.profile = None
         self.adapt = False
@@ -1930,6 +1932,7 @@ class multisim:
         self.timeAx = timeAx
         self.gridLabels = batch[1]
         self.oneBatch = batch[0]
+
         self.batch = []
         self.envInd = []
         
@@ -1939,6 +1942,7 @@ class multisim:
         self.size = self.comm.Get_size()
 
         if type(envs) is list or type(envs) is tuple: 
+
             self.envs = envs
             self.Nenv = len(self.envs)
             import copy
@@ -2033,10 +2037,12 @@ class multisim:
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
         self.sims = self.poolMPI(work, self.mpi_sim)
+
         try: 
             self.Bar.display(force = True)
             sys.stdout.flush()
         except: pass
+
         self.collectVars(self.sims)
 
         if self.destroySims and self.root: self.sims = self.sims[0:1]
@@ -2049,24 +2055,30 @@ class multisim:
     def collectVars(self, sims):
         if self.root:
             self.profiles = []
+            self.intensities = []
             self.pBs = []
             self.urProjs = []
             self.rmsProjs = []
             self.temProjs = []
+            self.indices = []
             for simulation in sims:
                 self.profiles.append(simulation.profile)
+                self.intensities.append(np.sum(simulation.profile))
                 self.pBs.append(simulation.pB)
                 self.urProjs.append(simulation.urProj)
                 self.rmsProjs.append(simulation.rmsProj)
                 self.temProjs.append(simulation.temProj)
+                self.indices.append(simulation.index)
             if self.print:
                 print("Total Lines: " + str(len(self.profiles)))
         else:
                 self.profiles = None
+                self.intensities = None
                 self.pBs = None
                 self.urProjs = None
                 self.rmsProjs = None
                 self.temProjs = None
+                self.index = None
 
     def mpi_sim(self, data):
         grd, envInd = data
@@ -2249,6 +2261,7 @@ class batchjob:
         if type(envs) is list or type(envs) is tuple: 
             self.envs = envs
         else: self.envs = [envs]
+        #print(self.envs)
         self.env = self.envs[0]
         self.firstRunEver = True
         self.complete = False
@@ -2291,7 +2304,9 @@ class batchjob:
                 self.count += 1
             except:
                 self.count = 1
-            if self.root and self.printMulti: print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']--') 
+            if self.root and self.printMulti: 
+                #print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']--') 
+                print('\n\n\n--{} = {}: [{}/{}]--'.format(self.xlabel, ind, self.count, self.Nb))
 
             
             
@@ -2336,6 +2351,8 @@ class batchjob:
     def initLists(self):
             self.sims = []
             self.profiless = []
+            self.indicess = []
+            self.intensitiess = []
             self.pBss = []
             self.urProjss = []
             self.rmsProjss = []
@@ -2344,6 +2361,8 @@ class batchjob:
     def collectVars(self, thisSim):
         self.sims.append(thisSim)
         self.profiless.append(thisSim.profiles)
+        self.indicess.append(thisSim.indices)
+        self.intensitiess.append(thisSim.intensities)
         self.pBss.append(thisSim.pBs)
         self.urProjss.append(thisSim.urProjs)
         self.rmsProjss.append(thisSim.rmsProjs)
@@ -3232,7 +3251,48 @@ class impactsim(batchjob):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))
         return veff
 
+class imagesim(batchjob):
+    def __init__(self, batchName, env, NN = [5,5], rez=[0.5,0.5], target = [0,1.5], len = 10):
+        comm = MPI.COMM_WORLD
+        self.size = comm.Get_size()
+        self.root = comm.Get_rank() == 0
 
+        try: self.env = env[0]
+        except: self.env = env
+        #print(self.env)
+        self.print = True
+        self.printMulti = True
+        self.printSim = False
+        self.batchName = batchName
+        self.labels = np.round([1], 4)
+        self.Nb = 1
+        self.N = (200,600)
+        self.NN = NN
+        self.timeAx = [0]
+        self.fName = None
+
+        self.impacts = self.labels
+        self.xlabel = 'Nothing'
+        self.fullBatch, self.axis =  grid.image(N = NN, rez = rez, target = target, len = len)
+        multisim.destroySims = True
+
+
+        super().__init__(self.env)
+        
+        return
+
+    def plot(self):
+        #self.sims
+        #self.profiless
+        indices = [x[2] for x in self.indicess[0]]
+        intensities = np.array(self.intensitiess[0])[indices].reshape(self.NN).T
+
+        plt.pcolormesh(self.axis[0], self.axis[1], intensities)
+        plt.xlabel('The y direction')
+        plt.ylabel('The z direction')
+        plt.show()
+
+        return
 
 def pbRefinement(envsName, params, MIN, MAX, tol):
     #This function compares the pB at a height of zz with and without B, and finds the Bmin which minimizes the difference

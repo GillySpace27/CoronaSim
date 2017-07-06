@@ -18,7 +18,7 @@ size = comm.Get_size()
 
 if __name__ == '__main__':
 
-    integration = 120
+    integration = 240
 
     #Environment Parameters
     envsName = 'Modern'
@@ -31,8 +31,16 @@ if __name__ == '__main__':
 
     #Which part of the program should run?
     compute = False
-    analyze = True  
+    analyze = False  
     simOne = False  
+
+    #3D Stuff
+    compute3d = False
+    analyze3d = False
+
+    NN3D = [30,30]
+    rez3D =  [0.25,0.25]
+    target3D = [0,1.25]
 
     #Simulation Properties
     sim.simpoint.useB = True
@@ -41,7 +49,7 @@ if __name__ == '__main__':
     
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
-    sim.multisim.destroySims = True #This keeps memory from building up
+    sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
     sim.batchjob.qcuts = [16,50,84]
     
     sim.batchjob.usePsf = True
@@ -50,9 +58,9 @@ if __name__ == '__main__':
 
 
     #Batch Parameters #####################
-    batchName = 'int{}'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
-    impactPoints = 10 
-    iterations = 15
+    batchName = 'asdf'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    impactPoints = 2 
+    iterations = 1
 
     b0 =  1.02
     b1 =  1.6#46
@@ -96,7 +104,7 @@ if __name__ == '__main__':
     #This header handles calling the program in parallel
     try: go = int(sys.argv[1])
     except: go = 1
-    if parallel and go == 1 and (compute or refineBmin):
+    if parallel and go == 1 and (compute or refineBmin or compute3d):
         print("Starting MPI...")
         os.system("mpiexec -n {} python main.py 0".format(cores))
     else:
@@ -144,8 +152,13 @@ if __name__ == '__main__':
                 myBatch.plotProfiles(maxPlotLines)
                 #myBatch.plotProfTogether(average, norm, log)
 
-
-
+        if compute3d:
+            envs = sim.envrs(envsName).loadEnvs(maxEnvs)
+            myBatch = sim.imagesim(batchName, envs, NN3d, rez3D, target3D)
+        if analyze3d and root:
+            try: myBatch
+            except: myBatch = sim.batch(batchName).loadBatch()
+            myBatch.plot()
         #### Level 1 ### Simulate
         ################
 
