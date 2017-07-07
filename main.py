@@ -36,10 +36,10 @@ if __name__ == '__main__':
 
     #3D Stuff
     compute3d = False
-    analyze3d = False
+    analyze3d = True
 
-    NN3D = [30,30]
-    rez3D =  [0.25,0.25]
+    NN3D = [200,200]
+    rez3D =  [0.5,0.5]
     target3D = [0,1.25]
 
     #Simulation Properties
@@ -50,6 +50,7 @@ if __name__ == '__main__':
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
     sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
+    sim.multisim.keepAll = False
     sim.batchjob.qcuts = [16,50,84]
     
     sim.batchjob.usePsf = True
@@ -58,7 +59,7 @@ if __name__ == '__main__':
 
 
     #Batch Parameters #####################
-    batchName = 'asdf'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = '3Dlong'#inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
     impactPoints = 2 
     iterations = 1
 
@@ -108,7 +109,7 @@ if __name__ == '__main__':
         print("Starting MPI...")
         os.system("mpiexec -n {} python main.py 0".format(cores))
     else:
-
+        
 
         ### Process Envs ###
         ####################
@@ -154,7 +155,7 @@ if __name__ == '__main__':
 
         if compute3d:
             envs = sim.envrs(envsName).loadEnvs(maxEnvs)
-            myBatch = sim.imagesim(batchName, envs, NN3d, rez3D, target3D)
+            myBatch = sim.imagesim(batchName, envs, NN3D, rez3D, target3D)
         if analyze3d and root:
             try: myBatch
             except: myBatch = sim.batch(batchName).loadBatch()

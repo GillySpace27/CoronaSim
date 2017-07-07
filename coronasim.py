@@ -35,7 +35,7 @@ import copy
 
 from collections import defaultdict
 
-
+import pdb
 import gridgen as grid
 import progressBar as pb
 import math
@@ -1444,7 +1444,6 @@ class simulate:
                 except: p = True
                 if p: print(ii, " : ", var)
                 
-
     def Vars(self):
         #Returns the vars of the simpoints
         return self.sims[0].Vars()
@@ -1956,6 +1955,9 @@ class multisim:
         
         self.N = N
         self.findT = findT
+
+        self.initLists()
+
         if self.comm.size > 1:
             self.MPI_init_masterslave()
         else: self.init_serial()
@@ -2036,14 +2038,15 @@ class multisim:
         else: self.Bar = None
 
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
-        self.sims = self.poolMPI(work, self.mpi_sim)
+        #self.sims = self.poolMPI(work, self.mpi_sim)
+        self.poolMPI(work, self.mpi_sim)
 
         try: 
             self.Bar.display(force = True)
             sys.stdout.flush()
         except: pass
 
-        self.collectVars(self.sims)
+        #self.collectVars(self.sims)
 
         if self.destroySims and self.root: self.sims = self.sims[0:1]
         #if self.root:
@@ -2051,34 +2054,55 @@ class multisim:
 
         #else: self.profiles, self.pBs = None, None
 
+    def initLists(self):
+        self.sims = []
+        self.profiles = []
+        self.intensities = []
+        self.pBs = []
+        self.urProjs = []
+        self.rmsProjs = []
+        self.temProjs = []
+        self.indices = []
 
-    def collectVars(self, sims):
-        if self.root:
-            self.profiles = []
-            self.intensities = []
-            self.pBs = []
-            self.urProjs = []
-            self.rmsProjs = []
-            self.temProjs = []
-            self.indices = []
-            for simulation in sims:
-                self.profiles.append(simulation.profile)
-                self.intensities.append(np.sum(simulation.profile))
-                self.pBs.append(simulation.pB)
-                self.urProjs.append(simulation.urProj)
-                self.rmsProjs.append(simulation.rmsProj)
-                self.temProjs.append(simulation.temProj)
-                self.indices.append(simulation.index)
-            if self.print:
-                print("Total Lines: " + str(len(self.profiles)))
-        else:
-                self.profiles = None
-                self.intensities = None
-                self.pBs = None
-                self.urProjs = None
-                self.rmsProjs = None
-                self.temProjs = None
-                self.index = None
+    def collectVars(self, simulation):
+        if self.keepAll: self.sims.append(simulation)
+        else: self.sims = [simulation]
+        self.profiles.append(simulation.profile)
+        self.intensities.append(np.sum(simulation.profile))
+        self.pBs.append(simulation.pB)
+        self.urProjs.append(simulation.urProj)
+        self.rmsProjs.append(simulation.rmsProj)
+        self.temProjs.append(simulation.temProj)
+        self.indices.append(simulation.index)
+
+    #def collectVars(self, sims):
+    #    if self.root:
+    #        self.profiles = []
+    #        self.intensities = []
+    #        self.pBs = []
+    #        self.urProjs = []
+    #        self.rmsProjs = []
+    #        self.temProjs = []
+    #        self.indices = []
+    #        for simulation in sims:
+    #            self.profiles.append(simulation.profile)
+    #            self.intensities.append(np.sum(simulation.profile))
+    #            self.pBs.append(simulation.pB)
+    #            self.urProjs.append(simulation.urProj)
+    #            self.rmsProjs.append(simulation.rmsProj)
+    #            self.temProjs.append(simulation.temProj)
+    #            self.indices.append(simulation.index)
+    #        if self.print:
+    #            print("Total Lines: " + str(len(self.profiles)))
+    #    else:
+    #            self.profiles = None
+    #            self.intensities = None
+    #            self.pBs = None
+    #            self.urProjs = None
+    #            self.rmsProjs = None
+    #            self.temProjs = None
+    #            self.index = None
+
 
     def mpi_sim(self, data):
         grd, envInd = data
@@ -2173,7 +2197,8 @@ class multisim:
             anext = current_work.get_next_item()
             if not anext: break
             data = comm.recv(None, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-            all_data.append(data)
+            self.collectVars(data)
+            all_data.append([])
             try:
                 self.Bar.increment() 
                 self.Bar.display()
@@ -2183,7 +2208,8 @@ class multisim:
  
         for i in range(1,size):
             data = comm.recv(None, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG)
-            all_data.append(data)
+            self.collectVars(data)
+            all_data.append([])
             try:
                 self.Bar.increment() 
                 self.Bar.display()
@@ -2420,7 +2446,7 @@ class batchjob:
             bDecon = np.abs(poptDecon[3])
             perrDecon = np.sqrt(np.diag(pcovDecon))
 
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             return [np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]
 
         #Subtract the Point Spread Width in quadrature
@@ -3278,21 +3304,152 @@ class imagesim(batchjob):
 
 
         super().__init__(self.env)
-        
+
+        self.makePSF()        
+        self.imageStats()
+
         return
+
+    def imageStats(self):
+        print("Finding Line Stats...")
+        bar = pb.ProgressBar(len(self.profiless[0]))
+
+        centroids = []
+        sigmas = []
+        for profile in self.profiless[0]:
+            Stats = self.findProfileStats(profile)
+            centroids.append(Stats[1] - self.env.lam0)
+            sigmas.append(Stats[2])
+            bar.increment()
+            bar.display()
+        bar.display(True)
+        self.centroidss = [centroids]
+        self.sigmass = [sigmas]
+        self.save(printout = True)
+
+    def coronagraph(self, array):
+        """Normalize each radius so that there is better contrast"""
+        #Set up impact bins
+        zaxis = self.axis[1].tolist()
+        yaxis = self.axis[0].tolist()
+        mask = np.zeros_like(array, dtype=int)
+        rez = 500
+        self.graphEdges = np.linspace(np.amin(zaxis), 1.1*np.amax(zaxis), rez)
+        #self.graphBins = np.zeros_like(self.graphEdges)
+        self.graphList = [[] for x in np.arange(rez)]
+        self.graphList[0].append(0)
+
+        yit = np.arange(len(yaxis))
+        zit = np.arange(len(zaxis))
+
+        #place each pixel intensity into an impact bin, and assign each pixel an impact
+        for yy, yi in zip(yaxis, yit):
+            for zz, zi in zip(zaxis, zit):
+                r = np.sqrt(yy*yy + zz*zz)
+                index = np.searchsorted(self.graphEdges, r)
+                mask[yi,zi] = int(index)
+
+                inten = array[yi,zi]
+                self.graphList[index].append(inten)
+                #self.graphBins[index] += inten
+
+        #Get the statistics for each impact bin
+        mins = []
+        mids = []
+        maxs = []
+                ##TODO smooth these guys out
+        for intensities in self.graphList:
+            try:
+                min = np.log10(np.nanmin(intensities))
+                mid = np.log10(np.average(intensities))
+                max = np.log10(np.nanmax(intensities))
+            except:
+                min, mid, max = np.nan, np.nan, np.nan
+            mins.append(min)
+            mids.append(mid)
+            maxs.append(max)
+
+
+        #Create new scaled output array
+        output = np.zeros_like(array)
+        for yi in yit:
+            for zi in zit:
+                intensity = array[yi,zi]
+                logint = np.log10(intensity)
+
+                index = int(mask[yi,zi])
+                inte = (logint-mins[index]) / (maxs[index] - mins[index])
+                output[yi,zi] = inte
+        output[np.isnan(output)] = 0
+
+        plt.imshow(mask)
+        plt.show()
+        return output
+
+        #plt.pcolormesh(output)
+        #plt.colorbar()
+        #plt.show()
+
+        #plt.plot(self.graphEdges,mins)
+        #plt.plot(self.graphEdges,mids)
+        #plt.plot(self.graphEdges,maxs)
+        
+        #plt.show()
+
+        #pdb.set_trace()
+        #plt.plot(self.graphEdges, self.graphBins)
+        #plt.show()
+        #plt.pcolormesh(zaxis,yaxis,mask)
+        #plt.show()
+
+
+
 
     def plot(self):
         #self.sims
         #self.profiless
-        indices = [x[2] for x in self.indicess[0]]
-        intensities = np.array(self.intensitiess[0])[indices].reshape(self.NN).T
+        #self.makePSF()
+        #self.imageStats()
 
-        plt.pcolormesh(self.axis[0], self.axis[1], intensities)
-        plt.xlabel('The y direction')
-        plt.ylabel('The z direction')
+        intensity = self.reconstruct(self.intensitiess)
+        pB = self.reconstruct(self.pBss)
+        centroid = self.reconstruct(self.centroidss)
+        sigma = self.reconstruct(self.sigmass)
+
+        intensity = self.coronagraph(intensity)
+        pB = self.coronagraph(pB)
+
+        #intensity[np.isnan(intensity)] = 0
+
+        #fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2,2,True, True)
+        fig, (ax0, ax1) = plt.subplots(1,2,True, True)
+
+        p0 = ax0.pcolormesh(self.axis[1], self.axis[0], intensity)
+        #plt.colorbar(p0,cax=ax0)
+        ax1.pcolormesh(self.axis[1], self.axis[0], pB)
+        ax0.set_ylabel('The y direction')
+        ax0.set_xlabel('The z direction')
+        ax0.set_title('Total Intensity')
+        ax1.set_title('Polarization Brightness')
+
+
+        #ax2.pcolormesh(self.axis[1], self.axis[0], centroid, cmap = 'RdBu')
+        #ax2.set_title('Centroid')
+
+        #ax3.pcolormesh(self.axis[1], self.axis[0], sigma)
+        #ax3.set_title('Sigma')
+        #axarray[0].colorbar()
+        #axarray[1].colorbar()
         plt.show()
 
         return
+
+    def reconstruct(self, array, nans = False):
+        """Re-order an array to account for random parallel order"""
+        indices = [x[2] for x in self.indicess[0]]
+        data = np.array(array[0])[indices].reshape(self.NN)
+        if not nans: data[np.isnan(data)] = 0
+        return data
 
 def pbRefinement(envsName, params, MIN, MAX, tol):
     #This function compares the pB at a height of zz with and without B, and finds the Bmin which minimizes the difference
