@@ -30,7 +30,7 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Batch Name
-    batchName = '3Dwide1' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = '3DBig' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
@@ -38,14 +38,17 @@ if __name__ == '__main__':
     simOne = False  
 
     #3D Stuff - ImageSim Parameters
-    compute3d = False
-    analyze3d = True
+    compute3d = True
+    analyze3d = False
 
-    NN3D = [75,100]
+    NN3D = [200,300]
+    sim.imagesim.N = (200, 2000)
     rez3D =  [0.75,1]
     target3D = [0,1.5]
-    envInd = 2
+    len3D = 20
+    envInd = 0
     sim.imagesim.corRez = 5000
+    sim.imagesim.filt = 5
 
     #1D Stuff - ImpactSim Parameters
     compute = False
@@ -163,7 +166,7 @@ if __name__ == '__main__':
 
         if compute3d:
             envs = sim.envrs(envsName).loadEnvs(maxEnvs)[envInd]
-            myBatch = sim.imagesim(batchName, envs, NN3D, rez3D, target3D, length)
+            myBatch = sim.imagesim(batchName, envs, NN3D, rez3D, target3D, len3D)
         if analyze3d and root:
             try: myBatch
             except: myBatch = sim.batch(batchName).loadBatch()
@@ -184,11 +187,16 @@ if __name__ == '__main__':
             #self.comm.barrier()
 
             #env.plot('ur_raw', 'rx_raw')
+            x = 10
+            y = 0.001
+            z = 1.2
 
-            lineSim = sim.simulate(df.polePlane, env, N = 500, findT = False, getProf = False, printOut = True)
-            #lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True, getProf = True)
+            position, target = [x, y, z], [-x, y, z]
+            myLine = grid.sightline(position, target, coords = 'cart')
+            #lineSim = sim.simulate(df.polePlane, env, N = 500, findT = False, getProf = False, printOut = True)
+            lineSim = sim.simulate(myLine, env, N = (200,2000), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
-            lineSim.plot('densfac', cmap = 'viridis')
+            lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
 
             #The cool new time evolution plots
             #T = 4000

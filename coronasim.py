@@ -1254,14 +1254,14 @@ class simulate:
         t = time.time()
         stepInd = 0
         rhoSum = 0
-        tol = 0.67
+        tol = 2500
         for cPos, step in self.grid: 
 
             thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
 
             if self.adapt:
                 #Adaptive Mesh
-                thisDens = thisPoint.densfac
+                thisDens = thisPoint.dPB
 
                 if (thisDens > tol) and self.grid.backflag:
                     self.grid.back()
@@ -1341,9 +1341,9 @@ class simulate:
             return
 
         if dim is None:
-            ax.set_title(property + ", scaling = " + scaling + ', sum = {}'.format(datSum))
+            ax.set_title(property + ", scaling = " + scaling)
         else:
-            ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling + ', sum = {}'.format(datSum))
+            ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling )
 
         grid.maximizePlot()
         plt.show()
@@ -3296,7 +3296,7 @@ class imagesim(batchjob):
         self.batchName = batchName
         self.labels = np.round([1], 4)
         self.Nb = 1
-        self.N = (200,600)
+        #self.N = (200,600)
         self.NN = NN
         self.timeAx = [0]
         self.fName = None
@@ -3358,7 +3358,7 @@ class imagesim(batchjob):
 
         plotInt = True      
         plotpB = True    
-        plotStats = False   
+        plotStats = True   
 
 
         ystring = 'The y direction'
@@ -3408,7 +3408,6 @@ class imagesim(batchjob):
             ax1.set_title('Total Intensity - Log')
             ax1.patch.set(hatch='x', edgecolor='black')
 
-
         if plotpB:
             fig2, (ax4, ax5) = plt.subplots(1,2,True, True)
             fig2.suptitle(self.batchName)
@@ -3423,17 +3422,21 @@ class imagesim(batchjob):
             ax5.set_title('Polarization Brightness - Log')
             ax5.patch.set(hatch='x', edgecolor='black')
 
-
-
         if plotStats:
             fig1, (ax2, ax3) = plt.subplots(1,2,True, True)
 
-            ax2.pcolormesh(self.zax, self.yax, centroid, cmap = 'RdBu')
+            centroid = np.ma.masked_invalid(centroid)
+            throw = np.amax(np.abs(np.nanmin(centroid)), np.abs(np.nanmax(centroid)))
+            ax2.pcolormesh(self.zax, self.yax, centroid, cmap = 'RdBu', vmin = -throw, vmax = throw)
+            ax2.patch.set(hatch='x', edgecolor='black')
+
             ax2.set_title('Centroid')
             ax2.set_ylabel(ystring)
             ax2.set_xlabel(zstring)
 
-            ax3.pcolormesh(self.zax, self.yax, sigma)
+            sigma = np.ma.masked_invalid(sigma)
+            ax3.pcolormesh(self.zax, self.yax, sigma, vmin = np.nanmin(sigma), vmax = np.nanmax(sigma))
+            ax3.patch.set(hatch='x', edgecolor='black')
             ax3.set_title('Sigma')
 
         plt.show()
@@ -3483,20 +3486,20 @@ class imagesim(batchjob):
             mids.append(mid)
             maxs.append(max)
 
-            filt = 10
-            smins = ndimage.filters.gaussian_filter1d(mins, filt) #filters.gaussian_filter1d(mins, filt)
-            smids = ndimage.filters.gaussian_filter1d(mids, filt)
-            smaxs = ndimage.filters.gaussian_filter1d(maxs, filt)
 
-        plt.plot(self.graphEdges,mins, 'b:')
-        plt.plot(self.graphEdges,mids, 'g:')
-        plt.plot(self.graphEdges,maxs, 'r:')
+            smins = ndimage.filters.gaussian_filter1d(mins, self.filt) #filters.gaussian_filter1d(mins, filt)
+            smids = ndimage.filters.gaussian_filter1d(mids, self.filt)
+            smaxs = ndimage.filters.gaussian_filter1d(maxs, self.filt)
 
-        plt.plot(self.graphEdges,smins, 'b')
-        plt.plot(self.graphEdges,smids, 'g')
-        plt.plot(self.graphEdges,smaxs, 'r')
+        #plt.plot(self.graphEdges,mins, 'b:')
+        #plt.plot(self.graphEdges,mids, 'g:')
+        #plt.plot(self.graphEdges,maxs, 'r:')
+
+        #plt.plot(self.graphEdges,smins, 'b')
+        #plt.plot(self.graphEdges,smids, 'g')
+        #plt.plot(self.graphEdges,smaxs, 'r')
         
-        plt.show()
+        #plt.show()
         smooth = True
         if smooth:
             usemin = smins
