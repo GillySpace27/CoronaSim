@@ -29,37 +29,28 @@ if __name__ == '__main__':
     calcFFiles = False
     processEnvironments = False
 
-    #Which part of the program should run?
-    compute = False
-    analyze = False  
+    #Batch Name
+    batchName = '3Dwide1' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+
+    # # # Which part of the program should run? # # #
+
+    #Single Sim Playground
     simOne = False  
 
-    #3D Stuff
+    #3D Stuff - ImageSim Parameters
     compute3d = False
     analyze3d = True
 
-    NN3D = [200,200]
-    rez3D =  [0.5,0.5]
-    target3D = [0,1.25]
+    NN3D = [75,100]
+    rez3D =  [0.75,1]
+    target3D = [0,1.5]
+    envInd = 2
+    sim.imagesim.corRez = 5000
 
-    #Simulation Properties
-    sim.simpoint.useB = True
-    sim.simpoint.g_useWaves = True   
-    sim.simpoint.g_useWind = True
-    
-    sim.simpoint.g_useFluxAngle = True
-    sim.simpoint.g_Bmin = 3.8905410
-    sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
-    sim.multisim.keepAll = False
-    sim.batchjob.qcuts = [16,50,84]
-    
-    sim.batchjob.usePsf = True
-    sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
-    sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
+    #1D Stuff - ImpactSim Parameters
+    compute = False
+    analyze = False  
 
-
-    #Batch Parameters #####################
-    batchName = '3Dlong'#inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
     impactPoints = 2 
     iterations = 1
 
@@ -71,8 +62,25 @@ if __name__ == '__main__':
     rez = None #[3,3]
     size = [0.002, 0.01]
     timeAx = np.arange(integration) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
-    sim.simulate.randTime = True
+    sim.simulate.randTime = False
     length = 10
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # #
+    #Simulation Properties
+    sim.simpoint.useB = True
+    sim.simpoint.g_useWaves = True   
+    sim.simpoint.g_useWind = True
+    sim.simpoint.useIonFrac = True
+
+    sim.simpoint.g_useFluxAngle = True
+    sim.simpoint.g_Bmin = 3.8905410
+    sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
+    sim.multisim.keepAll = False
+    sim.batchjob.qcuts = [16,50,84]
+    
+    sim.batchjob.usePsf = True
+    sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
+    sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
 
     printSim = True #This makes it show the generating profile progress bar
     widthPlot = True #Plot just line width instead of all 5 moments
@@ -154,8 +162,8 @@ if __name__ == '__main__':
                 #myBatch.plotProfTogether(average, norm, log)
 
         if compute3d:
-            envs = sim.envrs(envsName).loadEnvs(maxEnvs)
-            myBatch = sim.imagesim(batchName, envs, NN3D, rez3D, target3D)
+            envs = sim.envrs(envsName).loadEnvs(maxEnvs)[envInd]
+            myBatch = sim.imagesim(batchName, envs, NN3D, rez3D, target3D, length)
         if analyze3d and root:
             try: myBatch
             except: myBatch = sim.batch(batchName).loadBatch()
@@ -177,12 +185,16 @@ if __name__ == '__main__':
 
             #env.plot('ur_raw', 'rx_raw')
 
-            #lineSim = sim.simulate(df.bpolePlane, env, N = 50, findT = False, getProf = False, printOut = True)
-            lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True, getProf = True)
+            lineSim = sim.simulate(df.polePlane, env, N = 500, findT = False, getProf = False, printOut = True)
+            #lineSim = sim.simulate(df.primeLineLong, env, N = (150,500), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
-            #lineSim.plot('densfac', linestyle = 'o')
-            T = 4000
-            lineSim.evolveLine(T,0,T)
+            lineSim.plot('densfac', cmap = 'viridis')
+
+            #The cool new time evolution plots
+            #T = 4000
+            #lineSim.evolveLine(T,0,T)
+
+
             #lineSim.plot('pPos', 1)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()

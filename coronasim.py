@@ -35,7 +35,7 @@ import copy
 
 from collections import defaultdict
 
-import pdb
+
 import gridgen as grid
 import progressBar as pb
 import math
@@ -569,8 +569,9 @@ class environment:
 
     def interp(self, X, Y, K):
         #Takes in X and Y and returns linearly interpolated Y at K
-        if K > np.amax(X) or K < np.amin(X): return np.nan
+        if K >= np.amax(X) or K < np.amin(X) or np.isnan(K): return np.nan
         TInd = int(np.searchsorted(X, K))
+        #if TInd == 101: pdb.set_trace()
         val1 = Y[TInd]
         val2 = Y[TInd+1]
         slope = val2 - val1
@@ -731,8 +732,7 @@ class envrs:
 ## Level 0: Simulates physical properties at a given coordinate
 class simpoint:
 
-    ID = 0
-    useIonFrac = True    
+    ID = 0  
     #Level 0: Simulates physical properties at a given coordinate
     def __init__(self, cPos = [0.1,0.1,1.5], grid = None, env = None, findT = True, pbar = None, copyPoint = None):
         #Inputs
@@ -788,7 +788,7 @@ class simpoint:
 
   ## Temperature ######################################################################
     def findTemp(self):
-        self.T = self.interp_rx_dat(self.env.T_raw) #Lowest Temp: 1200
+        self.T = self.interp_rx_dat_log(self.env.T_raw) #Lowest Temp: 1200
 
   ## Magnets ##########################################################################
     def findFootB(self):
@@ -855,7 +855,7 @@ class simpoint:
         return (0.3334 + (d - 0.3334)*0.5*(1. + np.tanh((x - 0.37)/0.26)))*3
 
     def __findRho(self, densfac): 
-        return self.interp_rx_dat(self.env.rho_raw) * densfac  
+        return self.interp_rx_dat_log(self.env.rho_raw) * densfac  
 
   ## pB stuff ############################################################################
 
@@ -1150,6 +1150,9 @@ class simpoint:
         diff = self.rx - discreteRx
         diffstep = diff / step
         return val1+ diffstep*(slope)
+
+    def interp_rx_dat_log(self, array):
+        return 10**(self.interp_rx_dat(np.log10(array)))
 
     def r2rx(self, r):
         return r/self.env.rstar
@@ -3279,6 +3282,7 @@ class impactsim(batchjob):
 
 class imagesim(batchjob):
     def __init__(self, batchName, env, NN = [5,5], rez=[0.5,0.5], target = [0,1.5], len = 10):
+        """Set variables and call the simulator"""
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
         self.root = comm.Get_rank() == 0
@@ -3299,44 +3303,154 @@ class imagesim(batchjob):
 
         self.impacts = self.labels
         self.xlabel = 'Nothing'
-        self.fullBatch, self.axis =  grid.image(N = NN, rez = rez, target = target, len = len)
+        self.fullBatch, (self.yax, self.zax) =  grid.image(N = NN, rez = rez, target = target, len = len)
         multisim.destroySims = True
 
 
         super().__init__(self.env)
 
-        self.makePSF()        
-        self.imageStats()
+        if self.root: self.imageStats()
 
         return
 
     def imageStats(self):
+        """Do all the post processing on the lines"""
         print("Finding Line Stats...")
         bar = pb.ProgressBar(len(self.profiless[0]))
+        self.makePSF()  
 
         centroids = []
         sigmas = []
         for profile in self.profiless[0]:
+            #Find the centroids and the sigmas
             Stats = self.findProfileStats(profile)
             centroids.append(Stats[1] - self.env.lam0)
             sigmas.append(Stats[2])
             bar.increment()
             bar.display()
         bar.display(True)
+
         self.centroidss = [centroids]
         self.sigmass = [sigmas]
+
+        #Store all the variables and save
+        self.reconstructAll()
         self.save(printout = True)
+
+    def reconstructAll(self):
+        """Get out the arrays after they were jumbled from the compute process"""
+        self.intensity = self.reconstruct(self.intensitiess)
+        self.pB = self.reconstruct(self.pBss)
+        self.centroid = self.reconstruct(self.centroidss)
+        self.sigma = self.reconstruct(self.sigmass)
+
+    def reconstruct(self, array, nans = False):
+        """Re-order an array to account for random parallel order"""
+        indices = [x[2] for x in self.indicess[0]]
+        data = np.array(array[0])[indices].reshape(self.NN)
+        #if not nans: data[np.isnan(data)] = 0
+        return data
+
+    def plot(self):
+
+
+        invert = True
+
+        plotInt = True      
+        plotpB = True    
+        plotStats = False   
+
+
+        ystring = 'The y direction'
+        zstring = 'The z direction'
+        #self.yax = self.axis[0]
+        #self.zax = self.axis[1]
+
+        #self.imageStats()
+        #self.reconstructAll()
+        #self.save()
+
+        #Process the variables
+        centroid = self.centroid
+        sigma = self.sigma
+
+        intensityRaw = self.intensity
+        intensityCor = self.coronagraph(intensityRaw)
+        intensityLog = np.log10(intensityRaw)
+
+        pBRaw = self.pB
+        pBCor = self.coronagraph(pBRaw)
+        pBLog = np.log10(pBRaw)
+
+
+        if invert:
+            #Invert if Desired
+            self.zax, self.yax = self.yax, self.zax
+            ystring, zstring = zstring, ystring
+            pBRaw, pBCor, pBLog = pBRaw.T, pBCor.T, pBLog.T
+            intensityRaw, intensityCor, intensityLog = intensityRaw.T, intensityCor.T, intensityLog.T
+            centroid = centroid.T
+            sigma = sigma.T
+
+        #Plot
+
+        if plotInt:
+            fig0, (ax0, ax1) = plt.subplots(1,2,True, True)
+            fig0.suptitle(self.batchName)
+            intensityLog = np.ma.masked_invalid(intensityLog)
+            intensityCor = np.ma.masked_invalid(intensityCor)
+            #pdb.set_trace()
+            p0 = ax0.pcolormesh(self.zax, self.yax, intensityCor, vmin = 0, vmax = 1)
+            ax0.patch.set(hatch='x', edgecolor='black')
+            ax0.set_title('Total Intensity - Coronagraph\nMIN:{!s:.2} MAX:{!s:.2}'.format(np.nanmin(intensityCor),np.nanmax(intensityCor)))
+
+            ax1.pcolormesh(self.zax, self.yax, intensityLog, vmin = np.nanmin(intensityLog), vmax = np.nanmax(intensityLog))
+            ax1.set_title('Total Intensity - Log')
+            ax1.patch.set(hatch='x', edgecolor='black')
+
+
+        if plotpB:
+            fig2, (ax4, ax5) = plt.subplots(1,2,True, True)
+            fig2.suptitle(self.batchName)
+            pBLog = np.ma.masked_invalid(pBLog)
+            pBCor = np.ma.masked_invalid(pBCor)
+
+            p0 = ax4.pcolormesh(self.zax, self.yax, pBCor, vmin = 0, vmax = 1)
+            ax4.patch.set(hatch='x', edgecolor='black')
+            ax4.set_title('Polarization Brightness - Coronagraph\nMIN:{!s:.2} MAX:{!s:.2}'.format(np.nanmin(pBCor),np.nanmax(pBCor)))
+
+            ax5.pcolormesh(self.zax, self.yax, pBLog, vmin = np.nanmin(pBLog), vmax = 6)
+            ax5.set_title('Polarization Brightness - Log')
+            ax5.patch.set(hatch='x', edgecolor='black')
+
+
+
+        if plotStats:
+            fig1, (ax2, ax3) = plt.subplots(1,2,True, True)
+
+            ax2.pcolormesh(self.zax, self.yax, centroid, cmap = 'RdBu')
+            ax2.set_title('Centroid')
+            ax2.set_ylabel(ystring)
+            ax2.set_xlabel(zstring)
+
+            ax3.pcolormesh(self.zax, self.yax, sigma)
+            ax3.set_title('Sigma')
+
+        plt.show()
+
+        return
+            #plt.colorbar(p0,cax=ax0)
 
     def coronagraph(self, array):
         """Normalize each radius so that there is better contrast"""
         #Set up impact bins
-        zaxis = self.axis[1].tolist()
-        yaxis = self.axis[0].tolist()
+        zaxis = self.zax.tolist()
+        yaxis = self.yax.tolist()
         mask = np.zeros_like(array, dtype=int)
-        rez = 500
-        self.graphEdges = np.linspace(np.amin(zaxis), 1.1*np.amax(zaxis), rez)
+        #self.rez = 50
+        self.graphEdges = np.linspace(0.7*np.amin(zaxis), 1.2*np.amax(zaxis), self.corRez)
         #self.graphBins = np.zeros_like(self.graphEdges)
-        self.graphList = [[] for x in np.arange(rez)]
+        self.graphList = [[] for x in np.arange(self.corRez)]
         self.graphList[0].append(0)
 
         yit = np.arange(len(yaxis))
@@ -3360,41 +3474,59 @@ class imagesim(batchjob):
                 ##TODO smooth these guys out
         for intensities in self.graphList:
             try:
-                min = np.log10(np.nanmin(intensities))
-                mid = np.log10(np.average(intensities))
-                max = np.log10(np.nanmax(intensities))
+                min = (np.nanmin(intensities))
+                mid = (np.average(intensities))
+                max = (np.nanmax(intensities))
             except:
                 min, mid, max = np.nan, np.nan, np.nan
             mins.append(min)
             mids.append(mid)
             maxs.append(max)
 
+            filt = 10
+            smins = ndimage.filters.gaussian_filter1d(mins, filt) #filters.gaussian_filter1d(mins, filt)
+            smids = ndimage.filters.gaussian_filter1d(mids, filt)
+            smaxs = ndimage.filters.gaussian_filter1d(maxs, filt)
+
+        plt.plot(self.graphEdges,mins, 'b:')
+        plt.plot(self.graphEdges,mids, 'g:')
+        plt.plot(self.graphEdges,maxs, 'r:')
+
+        plt.plot(self.graphEdges,smins, 'b')
+        plt.plot(self.graphEdges,smids, 'g')
+        plt.plot(self.graphEdges,smaxs, 'r')
+        
+        plt.show()
+        smooth = True
+        if smooth:
+            usemin = smins
+            usemax = smaxs
+        else:
+            usemin = mins
+            usemax = maxs
 
         #Create new scaled output array
         output = np.zeros_like(array)
         for yi in yit:
             for zi in zit:
                 intensity = array[yi,zi]
-                logint = np.log10(intensity)
+                logint = (intensity)
 
                 index = int(mask[yi,zi])
-                inte = (logint-mins[index]) / (maxs[index] - mins[index])
+                inte = (logint-usemin[index]) / (usemax[index] - usemin[index])
                 output[yi,zi] = inte
-        output[np.isnan(output)] = 0
+        #output[np.isnan(output)] = 0
 
-        plt.imshow(mask)
-        plt.show()
+        #plt.imshow(mask)
+        #plt.show()
+        
         return output
 
         #plt.pcolormesh(output)
         #plt.colorbar()
         #plt.show()
 
-        #plt.plot(self.graphEdges,mins)
-        #plt.plot(self.graphEdges,mids)
-        #plt.plot(self.graphEdges,maxs)
-        
-        #plt.show()
+
 
         #pdb.set_trace()
         #plt.plot(self.graphEdges, self.graphBins)
@@ -3405,51 +3537,7 @@ class imagesim(batchjob):
 
 
 
-    def plot(self):
-        #self.sims
-        #self.profiless
-        #self.makePSF()
-        #self.imageStats()
 
-        intensity = self.reconstruct(self.intensitiess)
-        pB = self.reconstruct(self.pBss)
-        centroid = self.reconstruct(self.centroidss)
-        sigma = self.reconstruct(self.sigmass)
-
-        intensity = self.coronagraph(intensity)
-        pB = self.coronagraph(pB)
-
-        #intensity[np.isnan(intensity)] = 0
-
-        #fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2,2,True, True)
-        fig, (ax0, ax1) = plt.subplots(1,2,True, True)
-
-        p0 = ax0.pcolormesh(self.axis[1], self.axis[0], intensity)
-        #plt.colorbar(p0,cax=ax0)
-        ax1.pcolormesh(self.axis[1], self.axis[0], pB)
-        ax0.set_ylabel('The y direction')
-        ax0.set_xlabel('The z direction')
-        ax0.set_title('Total Intensity')
-        ax1.set_title('Polarization Brightness')
-
-
-        #ax2.pcolormesh(self.axis[1], self.axis[0], centroid, cmap = 'RdBu')
-        #ax2.set_title('Centroid')
-
-        #ax3.pcolormesh(self.axis[1], self.axis[0], sigma)
-        #ax3.set_title('Sigma')
-        #axarray[0].colorbar()
-        #axarray[1].colorbar()
-        plt.show()
-
-        return
-
-    def reconstruct(self, array, nans = False):
-        """Re-order an array to account for random parallel order"""
-        indices = [x[2] for x in self.indicess[0]]
-        data = np.array(array[0])[indices].reshape(self.NN)
-        if not nans: data[np.isnan(data)] = 0
-        return data
 
 def pbRefinement(envsName, params, MIN, MAX, tol):
     #This function compares the pB at a height of zz with and without B, and finds the Bmin which minimizes the difference
