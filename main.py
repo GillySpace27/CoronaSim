@@ -30,7 +30,7 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Batch Name
-    batchName = '3DBig' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'noRand' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
@@ -39,32 +39,33 @@ if __name__ == '__main__':
 
     #3D Stuff - ImageSim Parameters
     compute3d = True
-    analyze3d = False
+    analyze3d = True
 
-    NN3D = [200,300]
+    NN3D = [80,80]
     sim.imagesim.N = (200, 2000)
-    rez3D =  [0.75,1]
+    rez3D =  [1,1]
     target3D = [0,1.5]
     len3D = 20
     envInd = 0
-    sim.imagesim.corRez = 5000
-    sim.imagesim.filt = 5
+    sim.imagesim.corRez = 2000
+    sim.imagesim.filt = 10
+    sim.imagesim.smooth = True
 
     #1D Stuff - ImpactSim Parameters
     compute = False
     analyze = False  
 
-    impactPoints = 2 
-    iterations = 1
+    impactPoints = 5 
+    iterations = 3
 
     b0 =  1.02
     b1 =  1.6#46
     spacing = 'lin'
 
-    N_line = (200,600)
+    N_line = (200,1000)
     rez = None #[3,3]
     size = [0.002, 0.01]
-    timeAx = np.arange(integration) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
+    timeAx = [0] #np.arange(integration) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
     sim.simulate.randTime = False
     length = 10
 

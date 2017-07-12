@@ -2001,7 +2001,7 @@ class multisim:
         profiles = []
 
         for grd, envInd in zip(self.gridList, self.envIndList):
-            self.envs[envInd].randomize()
+            #self.envs[envInd].randomize()
             simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim)
             #self.simList.append(simulation)
             profiles.append(simulation.getProfile())
@@ -2035,7 +2035,7 @@ class multisim:
             print('PoolSize = ' + str(self.size), end = '; ')
             #print('ChunkSize = ' + str(len(self.gridList)), end = '; ') 
             #print('Short Cores: ' + str(self.size * len(self.gridList) - len(self.batch)))#Print Stuff
-
+            print('')
             self.Bar = pb.ProgressBar(len(self.batch))
             self.Bar.display()
         else: self.Bar = None
@@ -2109,10 +2109,9 @@ class multisim:
 
     def mpi_sim(self, data):
         grd, envInd = data
-        self.envs[envInd].randomize()
+
         simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim, getProf = True)
-        #profile = simulation.lineProfile()
-        #pB = simulation.pB
+
         return simulation
 
     def getLineArray(self):
@@ -2151,11 +2150,10 @@ class multisim:
         self.Bar = pb.ProgressBar(len(work))
 
         for line in work:
-            self.sims.append(self.mpi_sim(line))
+            self.collectVars(self.mpi_sim(line))
             self.Bar.increment()
             self.Bar.display()
 
-        self.collectVars(self.sims)
 
     def plotLines(self):
         axes = self.oneBatch[0].quadAxOnly()
@@ -3344,15 +3342,38 @@ class imagesim(batchjob):
         self.centroid = self.reconstruct(self.centroidss)
         self.sigma = self.reconstruct(self.sigmass)
 
-    def reconstruct(self, array, nans = False):
+    def reconstruct(self, array):
         """Re-order an array to account for random parallel order"""
         indices = [x[2] for x in self.indicess[0]]
-        data = np.array(array[0])[indices].reshape(self.NN)
-        #if not nans: data[np.isnan(data)] = 0
-        return data
+        data = array[0]
+        out = np.zeros_like(data)
+        for ind, dat in zip(indices, data):
+            out[ind] = dat
+        return out.reshape(self.NN)
 
     def plot(self):
+        #self.indices = [np.array([x[2] for x in self.indicess[0]])]
+        #plt.imshow(self.reconstruct(self.indices))
+        #plt.show()
 
+
+        #profiles = self.profiless[0]
+        #i = 0
+        #for profile in profiles:
+        #    plt.plot(profile)
+        #    i += 1
+        #    #if i > 1000: continue
+        #plt.show()
+
+        #int = self.intensitiess[0]
+        #hist, edge = np.histogram(int, bins = 100, range = (np.nanmin(int), np.nanmax(int)) )
+        #plt.plot(edge[:-1], hist)
+        #plt.show()
+
+        #plt.imshow(np.log10(np.array(self.intensitiess[0]).reshape(self.NN)))
+        #plt.show()
+        self.reconstructAll()
+        self.save()
 
         invert = True
 
@@ -3365,10 +3386,8 @@ class imagesim(batchjob):
         zstring = 'The z direction'
         #self.yax = self.axis[0]
         #self.zax = self.axis[1]
-
-        #self.imageStats()
-        #self.reconstructAll()
-        #self.save()
+        try: self.centroid
+        except: self.imageStats()
 
         #Process the variables
         centroid = self.centroid
@@ -3381,7 +3400,6 @@ class imagesim(batchjob):
         pBRaw = self.pB
         pBCor = self.coronagraph(pBRaw)
         pBLog = np.log10(pBRaw)
-
 
         if invert:
             #Invert if Desired
@@ -3500,8 +3518,8 @@ class imagesim(batchjob):
         #plt.plot(self.graphEdges,smaxs, 'r')
         
         #plt.show()
-        smooth = True
-        if smooth:
+
+        if self.smooth:
             usemin = smins
             usemax = smaxs
         else:
