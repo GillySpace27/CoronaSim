@@ -738,15 +738,6 @@ class simpoint:
         #Inputs
         self.grid = grid
         self.env = env
-        self.cPos = cPos
-        self.pPos = self.cart2sph(self.cPos)
-        self.rx = self.r2rx(self.pPos[0])
-        self.zx = self.rx - 1
-        self.maxInt = 0
-        self.totalInt = 0
-
-        
-        
 
         if findT is None:
             self.findT = self.grid.findT
@@ -754,6 +745,20 @@ class simpoint:
 
         self.loadParams(copyPoint)
         
+        self.relocate(cPos)
+
+        if pbar is not None:
+            pbar.increment()
+            pbar.display()
+
+    def relocate(self, cPos, t = 0):
+        self.cPos = cPos
+        self.pPos = self.cart2sph(self.cPos)
+        self.rx = self.r2rx(self.pPos[0])
+        self.zx = self.rx - 1
+        self.maxInt = 0
+        self.totalInt = 0
+
         #Initialization
         self.findTemp()
         self.findFootB()
@@ -761,14 +766,13 @@ class simpoint:
         self.findDensity()
         self.findTwave()
         self.__streamInit()
-        self.findSpeeds()
+        self.findSpeeds(t)
         self.findQt()
         self.findUrProj()
         self.dPB()
 
-        if pbar is not None:
-            pbar.increment()
-            pbar.display()
+        return self
+
 
     def loadParams(self, copyPoint):
         if copyPoint is None:
@@ -1131,13 +1135,6 @@ class simpoint:
         np.abs(array, out = array)
         return array.argmin()
 
-    #def __find_nearest(self,array,value):
-    #    idx = np.searchsorted(array, value, side="left")
-    #    if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
-    #        return idx-1
-    #    else:
-    #        return idx
-
     def interp_rx_dat(self, array):
         #Interpolates an array(rx)
         if self.rx < self.env.rx_raw[0] : return math.nan
@@ -1204,7 +1201,7 @@ class simulate:
         self.env = envObj
         self.timeAx = timeAx
         try: self.index = gridObj.index
-        except: self.index = (0,0)
+        except: self.index = (0,0,0)
 
         self.profile = None
         self.adapt = False
@@ -1967,7 +1964,7 @@ class multisim:
         #self.findProfiles()
 
     def MPI_init_fixed(self):
-
+        #PRobably horribly depricated now
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
@@ -2023,7 +2020,6 @@ class multisim:
             print("Total Lines: " + str(len(self.profiles)))
 
     def MPI_init_masterslave(self):
-
 
         if self.root and self.print: 
             print('Running MultiSim: ' + time.asctime())

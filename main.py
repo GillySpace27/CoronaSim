@@ -30,7 +30,7 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Batch Name
-    batchName = 'noRand' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'test' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
@@ -38,11 +38,11 @@ if __name__ == '__main__':
     simOne = False  
 
     #3D Stuff - ImageSim Parameters
-    compute3d = True
-    analyze3d = True
+    compute3d = False
+    analyze3d = False
 
-    NN3D = [80,80]
-    sim.imagesim.N = (200, 2000)
+    NN3D = [200,200]
+    sim.imagesim.N = (200, 4000)
     rez3D =  [1,1]
     target3D = [0,1.5]
     len3D = 20
@@ -53,7 +53,7 @@ if __name__ == '__main__':
 
     #1D Stuff - ImpactSim Parameters
     compute = False
-    analyze = False  
+    analyze = True  
 
     impactPoints = 5 
     iterations = 3
@@ -74,8 +74,8 @@ if __name__ == '__main__':
     sim.simpoint.useB = True
     sim.simpoint.g_useWaves = True   
     sim.simpoint.g_useWind = True
-    sim.simpoint.useIonFrac = True
 
+    sim.simpoint.useIonFrac = True
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
     sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
