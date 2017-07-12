@@ -30,7 +30,7 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Batch Name
-    batchName = 'test' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'test2' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
@@ -52,11 +52,11 @@ if __name__ == '__main__':
     sim.imagesim.smooth = True
 
     #1D Stuff - ImpactSim Parameters
-    compute = False
-    analyze = True  
+    compute = True
+    analyze = False  
 
     impactPoints = 5 
-    iterations = 3
+    iterations = 10
 
     b0 =  1.02
     b1 =  1.6#46
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
     sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
 
-    printSim = True #This makes it show the generating profile progress bar
+    printSim = False #This makes it show the generating profile progress bar
     widthPlot = True #Plot just line width instead of all 5 moments
     firstRun = True  #Overwrite any existing batch with this name
 

@@ -758,7 +758,6 @@ class simpoint:
         self.zx = self.rx - 1
         self.maxInt = 0
         self.totalInt = 0
-
         #Initialization
         self.findTemp()
         self.findFootB()
@@ -769,7 +768,7 @@ class simpoint:
         self.findSpeeds(t)
         self.findQt()
         self.findUrProj()
-        self.dPB()
+        self.findDPB()
 
         return self
 
@@ -819,7 +818,7 @@ class simpoint:
         return self.env.fmax + (1.-self.env.fmax)*np.exp(-((r-1.)/Hfit)**1.1)
 
     def __findStreamIndex(self):
-        self.streamIndex = self.env.randOffset + self.env.label_im[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
+        self.streamIndex = self.env.label_im[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
                                             self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
 
   ## Density ##########################################################################
@@ -863,7 +862,7 @@ class simpoint:
 
   ## pB stuff ############################################################################
 
-    def dPB(self):
+    def findDPB(self):
         imp = self.cPos[2]
         r = self.pPos[0]
         u = 0.63
@@ -1194,26 +1193,20 @@ class simpoint:
 class simulate: 
     #Level 1: Initializes many Simpoints into a Simulation
     def __init__(self, gridObj, envObj, N = None, iL = None, findT = None, printOut = False, timeAx = [0], getProf = False):
-        self.print = printOut
-        #if self.print: print("Initializing Simulation...")
-        self.grid  = gridObj
-        self.findT = findT
-        self.env = envObj
-        self.timeAx = timeAx
-        try: self.index = gridObj.index
-        except: self.index = (0,0,0)
-
-        self.profile = None
-        self.adapt = False
-
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
-        self.randomizeTime()       
 
-        if findT is None:
-            self.findT = self.grid.findT
+        self.grid = gridObj
+        self.print = printOut
+        self.findT = findT
+        self.env = envObj
+        self.getProf = getProf
+        self.timeAx = timeAx
+        self.randomizeTime()  
+
+        if findT is None: self.findT = self.grid.findT #This line could cause a bug maybe so check it later if things are looking weird perhaps
         else: self.findT = findT
 
         if iL is None: self.iL = self.grid.iL
@@ -1221,18 +1214,17 @@ class simulate:
 
         if N is None: self.N = self.grid.default_N
         else: self.N = N
-        
+
         if type(self.N) is list or type(self.N) is tuple: 
             self.adapt = True
             self.grid.setMaxStep(1/self.N[0])
             self.grid.setMinStep(1/self.N[1])
-        else: self.grid.setN(self.N)
+        else: 
+            self.adapt = False
+            self.grid.setN(self.N)
+        self.sims = []
+        self.repoint(gridObj)
 
-        self.simulate_now()
-        if getProf: self.lineProfile()
-        #print(self.pB)
-        #sys.stdout.flush()
-        
 
     def simulate_now(self):
   
@@ -1243,7 +1235,9 @@ class simulate:
         else: doBar = False
         
         if doBar and self.print: bar = pb.ProgressBar(self.Npoints)
+        self.oldSims = self.sims
         self.sims = []
+
         self.steps = []
         self.pData = []
         #if self.print: print("\nBeginning Simulation...")
@@ -1252,10 +1246,14 @@ class simulate:
         stepInd = 0
         rhoSum = 0
         tol = 2500
+
         for cPos, step in self.grid: 
 
-            thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
-
+            if self.oldSims:
+                thisPoint = self.oldSims.pop().relocate(cPos)
+            else: 
+                thisPoint = simpoint(cPos, self.grid, self.env, self.findT) 
+                
             if self.adapt:
                 #Adaptive Mesh
                 thisDens = thisPoint.dPB
@@ -1271,7 +1269,7 @@ class simulate:
 
             stepInd += 1
             
-            self.sims.append(thisPoint)
+            self.sims.append(copy.copy(thisPoint))
             self.steps.append(step)
             self.pData.append(thisPoint.Vars())
             
@@ -1280,14 +1278,28 @@ class simulate:
                 bar.display()
         self.cumSteps = np.cumsum(self.steps)
         if doBar and self.print: bar.display(force = True)
-        #if self.print: print('Elapsed Time: ' + str(time.time() - t))
 
+        self.simFinish()
+
+    def simFinish(self):
         self.Npoints = len(self.sims)
         if type(self.grid) is grid.sightline:
             self.shape = [self.Npoints, 1] 
         else: 
             self.shape = self.grid.shape
         self.shape2 = [self.shape[0], self.shape[1], -1]
+
+    def repoint(self, gridObj):
+        self.grid  = gridObj
+        try: self.index = gridObj.index
+        except: self.index = (0,0,0)
+
+        self.profile = None
+
+        self.simulate_now()
+        if self.getProf: self.lineProfile()
+
+        return self
 
     def get(self, myProperty, dim = None, scaling = 'None', scale = 10):
         propp = np.array([x[myProperty] for x in self.pData])
