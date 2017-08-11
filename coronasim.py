@@ -31,7 +31,7 @@ import copy
 #with warnings.catch_warnings():
 #    warnings.simplefilter("ignore")
 #    import astropy.convolution as con
-
+from numba import jit
 
 from collections import defaultdict
 
@@ -83,6 +83,8 @@ class environment:
     def_f2File = os.path.join(datFolder, 'f2_fix.txt')
     def_ionpath = os.path.abspath('../chianti/chiantiData/')
     def_hahnFile = os.path.join(datFolder, 'hahnData.txt')
+    def_2DLOSFile = os.path.join(datFolder, 'vxlos_2D_gilly40401.sav')
+
 
     #For doing high level statistics
     fullMin = 0
@@ -143,6 +145,7 @@ class environment:
         self._chiantiLoad()
         self._fLoad(fFile)
         self._hahnLoad()
+        self._LOS2DLoad()
         self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
         self.rtPi = np.sqrt(np.pi)
 
@@ -311,6 +314,14 @@ class environment:
         self.hahnPoints = line1
         self.hahnError = line2-line1
 
+    def _LOS2DLoad(self):
+        x = io.readsav(self.def_2DLOSFile)
+        self.R_ntime = x.ntime
+        self.R_nzx = x.nzx
+        self.R_time = x.time
+        self.R_zx = x.zx
+        self.R_vlos = x.vxlos
+
   ## Magnets ##########################################################################
         
     def __processBMap(self, thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False):
@@ -474,6 +485,31 @@ class environment:
                         '\nMin: ' + str(environment.fullMin) + ', Max: ' + str(environment.fullMax))
             plt.legend()
             plt.show()
+
+    def plotBmap(self):
+        fig = plt.figure()
+
+        map = self.BMap_raw
+        map[map == 0] = np.nan
+        map = np.ma.masked_invalid(map)
+
+        p0 = plt.pcolormesh(self.BMap_x, self.BMap_y, map, cmap = 'binary')
+        ax = plt.gca()
+        #ax.patch.set(hatch='x', edgecolor='black')
+        ax.set_aspect('equal')
+        plt.show()
+
+    def plotXi(self):
+        fig, (ax0, ax1) = plt.subplots(2,1,True)
+
+        ax0.plot(self.xi1_t, self.xi1_raw)
+        ax1.plot(self.xi2_t, self.xi2_raw)
+        ax1.set_xlabel('Time (s)')
+        #ax0.set_ylabel()
+        fig.text(0.04, 0.5, 'Wave Velocity (km/s)', va='center', rotation='vertical')
+
+        plt.show()
+
 
   ## Light ############################################################################
 
@@ -949,6 +985,7 @@ class simpoint:
         pass
 
   ## Velocity ##########################################################################
+
     def findSpeeds(self, t = 0):
         #Find all of the static velocities
         self.uw = self.__findUw()
@@ -1086,6 +1123,8 @@ class simpoint:
         self.twave_fit = twave_min * self.densfac
         
         if self.findT:
+            #import pdb
+            #pdb.set_trace()
             #Real Version 
             radial = grid.sightline(self.foot_cPos, self.cPos)
             N = 10
@@ -1128,11 +1167,13 @@ class simpoint:
             return xi1+( (t%self.env.last_xi2_t) - t_int )*(xi2-xi1)
 
   ## Misc Methods ##########################################################################
+
     def __find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
         array = array-value
         np.abs(array, out = array)
         return array.argmin()
+
 
     def interp_rx_dat(self, array):
         #Interpolates an array(rx)
@@ -1198,6 +1239,10 @@ class simulate:
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
 
+        self.inFindT = findT
+        self.inIL = iL
+        self.inN = N
+
         self.grid = gridObj
         self.print = printOut
         self.findT = findT
@@ -1206,22 +1251,7 @@ class simulate:
         self.timeAx = timeAx
         self.randomizeTime()  
 
-        if findT is None: self.findT = self.grid.findT #This line could cause a bug maybe so check it later if things are looking weird perhaps
-        else: self.findT = findT
 
-        if iL is None: self.iL = self.grid.iL
-        else: self.iL = iL
-
-        if N is None: self.N = self.grid.default_N
-        else: self.N = N
-
-        if type(self.N) is list or type(self.N) is tuple: 
-            self.adapt = True
-            self.grid.setMaxStep(1/self.N[0])
-            self.grid.setMinStep(1/self.N[1])
-        else: 
-            self.adapt = False
-            self.grid.setN(self.N)
         self.sims = []
         self.repoint(gridObj)
 
@@ -1293,6 +1323,25 @@ class simulate:
         self.grid  = gridObj
         try: self.index = gridObj.index
         except: self.index = (0,0,0)
+
+        if self.inFindT is None: self.findT = self.grid.findT 
+        else: self.findT = self.inFindT
+        #print(self.findT)
+
+        if self.inIL is None: self.iL = self.grid.iL
+        else: self.iL = self.inIL
+
+        if self.inN is None: self.N = self.grid.default_N
+        else: self.N = self.inN 
+
+        if type(self.N) is list or type(self.N) is tuple: 
+            self.adapt = True
+            self.grid.setMaxStep(1/self.N[0])
+            self.grid.setMinStep(1/self.N[1])
+        else: 
+            self.adapt = False
+            self.grid.setN(self.N)
+
 
         self.profile = None
 
@@ -1497,7 +1546,7 @@ class simulate:
         temProj = 0
         rho2 = 0
         pB = 0
-        
+
         if self.print and self.root: 
             print('\nGenerating Profile...')
             bar = pb.ProgressBar(len(self.sims) * len(self.timeAx))
@@ -1506,7 +1555,7 @@ class simulate:
                 point.setTime(tt)
                 prof = point.getProfile() * step
                 profile += prof
-                #if self.plotSimProfs: pp.append(prof)
+                if self.plotSimProfs: pp.append(prof)
                 pB += point.dPB * step
                 urProj += point.urProj * step
                 rmsProj += point.rmsProj * step
@@ -1517,10 +1566,10 @@ class simulate:
                     bar.increment()
                     bar.display()
 
-                #if self.plotSimProfs: axarray[1].plot(self.env.lamAx, prof)
+                if self.plotSimProfs: axarray[1].plot(self.env.lamAx, prof)
         if self.plotSimProfs:
             axarray[1].plot(self.env.lamAx, profile, 'k')
-            #axarray[0].stackplot(self.env.lamAx, np.asarray(pp))
+            axarray[0].stackplot(self.env.lamAx, np.asarray(pp))
             grid.maximizePlot()
             plt.suptitle('Contributions to a single profile')
             plt.show()
@@ -1598,7 +1647,7 @@ class simulate:
         #self.plotLineArray_t()
 
     def timeStats(self):
-        self.mybatch = batch('analyze').loadBatch()
+        self.mybatch = batch('noRand').loadBatch()
         self.mybatch.makePSF()
         self.mybatch.II=0
         self.mybatch.impact = self.sims[0].cPos[2]
@@ -1737,10 +1786,10 @@ class simulate:
         
         #Create all the axes
         from matplotlib import gridspec
-        gs = gridspec.GridSpec(1,3, width_ratios=[1,4,1])
+        gs = gridspec.GridSpec(1,3, width_ratios=[3,3,1])
         fig = plt.figure()
         mAx = plt.subplot(gs[0])
-        slAx= plt.subplot(gs[1])
+        slAx= plt.subplot(gs[1], sharex = mAx)
         vAx = plt.subplot(gs[2], sharey = slAx)
 
         #fig, [mAx, slAx, vAx] = plt.subplots(1,3, sharey = True, gridspec_kw = {'width_ratios':[1, 4, 1]})
@@ -1748,7 +1797,11 @@ class simulate:
 
 
         #Just the regular time series with ticker line
-        mAx.pcolormesh(self.env.lamAx.astype('float32'), self.times, self.lineArray)
+        vmax = np.amax(self.lineArray) * 0.7
+        vmin = np.amin(self.lineArray) * 0.9
+        mAx.pcolormesh(self.env.lamAx.astype('float32'), self.times, self.lineArray, vmin = vmin, vmax = vmax)
+        slide = 0.2
+        mAx.set_xlim(self.env.lam0 - slide, self.env.lam0 + slide)
         mAx.set_ylabel('Time')
         mAx.set_title('Time Series')
         tickerLine = mAx.axhline(0)
@@ -1757,24 +1810,28 @@ class simulate:
         slAx.set_title('Integration View')
         slAx.set_xlabel("Wavelength")
         slAx.set_ylabel("Integration Time (S)")
+        slAx.set_ylim(0, np.amax(self.winAx))
         quad = slAx.pcolormesh(self.env.lamAx, self.winAx, self.slideArray[self.lastIndex])
 
         #The centroid line
         line1, = slAx.plot(self.slideCents[self.lastIndex], self.winAx, 'r')
-        slAx.axvline(self.env.lam0, color = 'y', ls= ":")
+        slAx.axvline(self.env.lam0, color = 'k', ls= ":")
 
         #THe sigma lines
         line2, = slAx.plot(self.slideCents[self.lastIndex] + self.slideSigs[self.lastIndex], self.winAx, 'm')
         line3, = slAx.plot(self.slideCents[self.lastIndex] - self.slideSigs[self.lastIndex], self.winAx, 'm')
 
         #Centroid Sigma
-        vAx.plot(self.cents, self.winAx)
-        vAx.axvline()
-        #line4, = vAx.plot(self.varCents[self.lastIndex], self.winAx)
+        vCents = self.mybatch.std2V(self.cents)
+        self.vSigs = self.mybatch.std2V(self.slideSigs)
+        vAx.plot(vCents, self.winAx)
+        vAx.axvline(color = 'k')
+        vAx.set_title("St. Dev. of the Centroid")
+        #line4, = vAx.plot(self.vSigs[self.lastIndex], self.winAx)
         #throw = np.nanmax(self.varCents)
         #vAx.set_xlim(0,throw)
         #vAx.set_title('Varience of the Centroid \nfor {}s'.format(self.centDt))
-        vAx.set_xlabel('Angstroms')
+        vAx.set_xlabel('km/s')
 
 
         def init():
@@ -1784,7 +1841,7 @@ class simulate:
             line1.set_xdata(self.slideCents[self.lastIndex])
             line2.set_xdata(self.slideCents[self.lastIndex] + self.slideSigs[self.lastIndex])
             line3.set_xdata(self.slideCents[self.lastIndex] - self.slideSigs[self.lastIndex])
-            #line4.set_xdata(self.varCents[self.lastIndex])
+            #line4.set_xdata(self.vSigs[self.lastIndex])
             return tickerLine, quad, line1, line2, line3, tit
 
         #Animate
@@ -1797,14 +1854,19 @@ class simulate:
             line1.set_xdata(self.slideCents[i])
             line2.set_xdata(self.slideCents[i] + self.slideSigs[i])
             line3.set_xdata(self.slideCents[i] - self.slideSigs[i])
-            #line4.set_xdata(self.varCents[i])
+            #line4.set_xdata(self.vSigs[i])
             return tickerLine, quad, line1, line2, line3
 
         anim = animation.FuncAnimation(fig, animate, init_func = init, frames = np.arange(self.firstIndex,self.lastIndex), 
-                                       repeat = True, interval = 25, blit=True)
-        #anim.save(filename = 'movie.mp4')
+                                       repeat = True, interval = 75, blit=True)
+        
         grid.maximizePlot()
-        plt.show()
+        plt.show(False)
+        plt.close()
+        anim.save(filename = self.movName, writer = 'ffmpeg', bitrate = 1000)
+        print('Save Complete')
+        #plt.tight_layout()
+        #plt.show()
 
 
         return     
@@ -1968,6 +2030,7 @@ class multisim:
         self.N = N
         self.findT = findT
 
+
         self.initLists()
 
         if self.comm.size > 1:
@@ -1976,7 +2039,7 @@ class multisim:
         #self.findProfiles()
 
     def MPI_init_fixed(self):
-        #PRobably horribly depricated now
+        #horribly depricated now
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
@@ -2031,6 +2094,16 @@ class multisim:
                     self.profiles.append(line)
             print("Total Lines: " + str(len(self.profiles)))
 
+    def init_Masterlines(self):
+        self.masterLine = []
+        ind = 0
+        grd=grid.defGrid().primeLineLong
+        for env in self.envs:
+            grd.reset()
+            #simulation = simulate(grd, self.envs[ind], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim, getProf = True)
+            self.masterLine.append(simulate(grd, self.envs[ind], self.N, findT = False, timeAx = self.timeAx, printOut = self.printSim, getProf = True)) 
+            ind += 1
+
     def MPI_init_masterslave(self):
 
         if self.root and self.print: 
@@ -2048,8 +2121,11 @@ class multisim:
             self.Bar.display()
         else: self.Bar = None
 
+        if self.useMasters: self.init_Masterlines()
+        
+
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
-        #self.sims = self.poolMPI(work, self.mpi_sim)
+
         self.poolMPI(work, self.mpi_sim)
 
         try: 
@@ -2057,13 +2133,8 @@ class multisim:
             sys.stdout.flush()
         except: pass
 
-        #self.collectVars(self.sims)
-
         if self.destroySims and self.root: self.sims = self.sims[0:1]
-        #if self.root:
-        #    #self.profiles, self.pBs = zip(*all_work)
 
-        #else: self.profiles, self.pBs = None, None
 
     def initLists(self):
         self.sims = []
@@ -2086,41 +2157,18 @@ class multisim:
         self.temProjs.append(simulation.temProj)
         self.indices.append(simulation.index)
 
-    #def collectVars(self, sims):
-    #    if self.root:
-    #        self.profiles = []
-    #        self.intensities = []
-    #        self.pBs = []
-    #        self.urProjs = []
-    #        self.rmsProjs = []
-    #        self.temProjs = []
-    #        self.indices = []
-    #        for simulation in sims:
-    #            self.profiles.append(simulation.profile)
-    #            self.intensities.append(np.sum(simulation.profile))
-    #            self.pBs.append(simulation.pB)
-    #            self.urProjs.append(simulation.urProj)
-    #            self.rmsProjs.append(simulation.rmsProj)
-    #            self.temProjs.append(simulation.temProj)
-    #            self.indices.append(simulation.index)
-    #        if self.print:
-    #            print("Total Lines: " + str(len(self.profiles)))
-    #    else:
-    #            self.profiles = None
-    #            self.intensities = None
-    #            self.pBs = None
-    #            self.urProjs = None
-    #            self.rmsProjs = None
-    #            self.temProjs = None
-    #            self.index = None
-
-
     def mpi_sim(self, data):
         grd, envInd = data
 
-        simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim, getProf = True)
+        if self.useMasters:
+            simulation = self.workrepoint(grd, envInd)
+        else:
+            simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim, getProf = True)
 
         return simulation
+
+    def workrepoint(self, grd, envInd):
+        return self.masterLine[envInd].repoint(grd)
 
     def getLineArray(self):
         return np.asarray(self.profiles)
@@ -2152,7 +2200,7 @@ class multisim:
 
     def init_serial(self):
         #Serial Version
-
+        self.init_Masterlines()
         work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
         self.sims = []
         self.Bar = pb.ProgressBar(len(work))
@@ -2161,7 +2209,6 @@ class multisim:
             self.collectVars(self.mpi_sim(line))
             self.Bar.increment()
             self.Bar.display()
-
 
     def plotLines(self):
         axes = self.oneBatch[0].quadAxOnly()
@@ -2187,7 +2234,6 @@ class multisim:
         self.profiles = profiles
         print(vars(self))
         return self
-
  
     def master(self, wi):
         WORKTAG = 0
@@ -2343,8 +2389,7 @@ class batchjob:
                 #print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']--') 
                 print('\n\n\n--{} = {}: [{}/{}]--'.format(self.xlabel, ind, self.count, self.Nb))
 
-            
-            
+
             thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti, printSim = self.printSim, timeAx = self.timeAx)
             comm.barrier()
 
@@ -2467,20 +2512,20 @@ class batchjob:
             plt.figure()
             plt.plot(self.lamAx, profile, "g", label = "Raw")
             plt.plot(self.lamAx, gauss_function(self.lamAx, ampRaw, muRaw, sigmaRaw, bRaw), 'g.:', label = 
-                     "Raw Fit: {:.4} km/s".format(self.__std2V(sigmaRaw)))
+                     "Raw Fit: {:.4} km/s".format(self.std2V(sigmaRaw)))
 
-            plt.plot(self.lamAx, profileCon, "b", label = "Convolved")
-            plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaCon, bCon), 'b.:', label =
-                     "Conv Fit: {:.4} km/s".format(self.__std2V(sigmaCon)))
+            #plt.plot(self.lamAx, profileCon, "b", label = "Convolved")
+            #plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaCon, bCon), 'b.:', label =
+            #         "Conv Fit: {:.4} km/s".format(self.std2V(sigmaCon)))
 
             #plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaSubtract, bCon), 'c.:', label = 
-            #         "Subtraction: {:.4} km/s".format(self.__std2V(np.abs(sigmaSubtract))))
+            #         "Subtraction: {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract))))
             plt.plot(self.lamAx, gauss_function(self.lamAx, ampRaw, muCon, sigmaSubtract, bRaw), 'm.:', label = 
-                     "Subtraction {:.4} km/s".format(self.__std2V(np.abs(sigmaSubtract))))
+                     "Subtraction {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract))))
  
             #plt.plot(self.lamAx, profileDecon, "r--", label = "Deconvolved")
             #plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.:', label = 
-            #         "Deconvolved Fit: {:.4} km/s".format(self.__std2V(sigmaDecon)))
+            #         "Deconvolved Fit: {:.4} km/s".format(self.std2V(sigmaDecon)))
 
             grid.maximizePlot()
             #plt.yscale('log')
@@ -2505,7 +2550,7 @@ class batchjob:
             ampOut, muOut, sigOut, perrOut = ampRaw, muRaw, sigmaRaw, perrRaw
 
         #Check the reconstruction against the raw fit
-        ratio = self.__std2V(sigOut) / self.__std2V(sigmaRaw) 
+        ratio = self.std2V(sigOut) / self.std2V(sigmaRaw) 
 
 
         return [ampOut, muOut, sigOut, 0, 0, perrOut, ratio]
@@ -2651,14 +2696,14 @@ class batchjob:
             std1 = np.std([self.__mean2V(x) for x in allMean])
             self.assignStatV2(1, mean1, std1)
 
-            self.allStd.append([self.__std2V(x) for x in allStd])
-            mean2= self.__std2V(np.mean(allStd))
-            std2 = self.__std2V(np.std(allStd))
+            self.allStd.append([self.std2V(x) for x in allStd])
+            mean2= self.std2V(np.mean(allStd))
+            std2 = self.std2V(np.std(allStd))
             self.assignStatV2(2, mean2, std2)
 
             #Collect the binned version of the profile stats
-            self.binStdV.append(self.__std2V(binStats[2])) 
-            self.binStdVsig.append(self.__std2V(binStats[5][2]))
+            self.binStdV.append(self.std2V(binStats[2])) 
+            self.binStdVsig.append(self.std2V(binStats[5][2]))
 
             self.allRatio.append(allRatio)
             self.assignStat(5, allRatio)
@@ -2681,7 +2726,7 @@ class batchjob:
         return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
                 (self.env.ang2cm(self.env.lam0)))
 
-    def __std2V(self, std):
+    def std2V(self, std):
         return np.sqrt(2) * self.env.cm2km(self.env.c) * (std / self.env.lam0)
 
     def __findBatchStats(self):
@@ -2968,8 +3013,8 @@ class batchjob:
 
         #Plot Resolution Limit
         diff = self.env.lamAx[1] - self.env.lamAx[0]
-        minrez = self.__std2V(diff)
-        psfrez = self.__std2V(self.psfSig_e)
+        minrez = self.std2V(diff)
+        psfrez = self.std2V(self.psfSig_e)
 
 
         #flr = np.ones_like(self.doneLabels)*minrez
@@ -3274,7 +3319,7 @@ class impactsim(batchjob):
         self.xlabel = 'Impact Parameter'    
         self.fullBatch = []
         for ind in self.impacts:
-            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size, x0 = length)) 
+            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size, x0 = length, findT = False)) 
 
         super().__init__(envs)
         
@@ -3285,6 +3330,65 @@ class impactsim(batchjob):
     def hahnFit(self, r, r0 = 1.05, vth = 25.8, vnt = 32.2, H = 0.0657):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))
         return veff
+
+class impactsim(batchjob):
+    def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
+            rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None, qcuts = [16,50,84], spacing = 'lin'):
+        comm = MPI.COMM_WORLD
+        self.size = comm.Get_size()
+        self.root = comm.Get_rank() == 0
+        self.count = 0
+        self.fName = fName
+        self.Nb = Nb
+        self.batchName = batchName
+        self.timeAx = timeAx
+        self.qcuts = qcuts 
+        try: self.Nenv = len(envs)
+        except: self.Nenv = 1
+
+        #Lines per environment
+        if self.root and self.size < self.Nenv:
+            print('**Warning: More envs than PEs, will take additional time**')
+        self.Nrot = np.floor(iter * max(1, self.size / self.Nenv))
+
+        #Lines per impact
+        self.Npt = self.Nrot * self.Nenv 
+        #print("{} lines per run".format(self.Npt))
+        #Total Lines
+        self.Ntot = self.Npt * self.Nb
+
+        self.print = printOut
+        self.printMulti = printMulti
+        self.printSim = printSim
+
+        self.N = N
+
+        #base = 200
+
+        ##if b1 is not None: 
+        #if b1 is not None: 
+        #    if spacing.casefold() in 'log'.casefold():
+        #        steps = np.linspace(b0,b1,Nb)
+        #        logsteps = base**steps
+        #        logsteps = logsteps - np.amin(logsteps)
+        #        logsteps = logsteps / np.amax(logsteps) * (b1-b0) + b0
+        #        self.labels = logsteps
+
+        #        #self.labels = np.round(np.logspace(np.log(b0)/np.log(base),np.log(b1)/np.log(base), Nb, base = base), 4)
+        #    else: self.labels = np.round(np.linspace(b0,b1,Nb), 4)
+        #else: self.labels = np.round([b0], 4)
+        
+        self.impacts = self.labels
+        self.xlabel = 'Impact Parameter'    
+        self.fullBatch = []
+        for ind in self.impacts:
+            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size, x0 = length, findT = False)) 
+
+        super().__init__(envs)
+        
+        return
+
+
 
 class imagesim(batchjob):
     def __init__(self, batchName, env, NN = [5,5], rez=[0.5,0.5], target = [0,1.5], len = 10):
@@ -3304,7 +3408,7 @@ class imagesim(batchjob):
         self.Nb = 1
         #self.N = (200,600)
         self.NN = NN
-        self.timeAx = [0]
+        self.timeAx = self.timeAx3D #[0]
         self.fName = None
 
         self.impacts = self.labels
@@ -3380,18 +3484,19 @@ class imagesim(batchjob):
 
         #plt.imshow(np.log10(np.array(self.intensitiess[0]).reshape(self.NN)))
         #plt.show()
-        self.reconstructAll()
-        self.save()
+        #self.reconstructAll()
+        #self.save()
+        print(self.NN)
 
         invert = True
 
         plotInt = True      
-        plotpB = True    
-        plotStats = True   
+        plotpB = False    
+        plotStats = False   
 
 
-        ystring = 'The y direction'
-        zstring = 'The z direction'
+        ystring = 'Solar Y ($R_\odot$)'
+        zstring = 'Solar Z ($R_\odot$)'
         #self.yax = self.axis[0]
         #self.zax = self.axis[1]
         try: self.centroid
@@ -3422,17 +3527,24 @@ class imagesim(batchjob):
 
         if plotInt:
             fig0, (ax0, ax1) = plt.subplots(1,2,True, True)
+            fig0.set_size_inches(12,9)
             fig0.suptitle(self.batchName)
             intensityLog = np.ma.masked_invalid(intensityLog)
             intensityCor = np.ma.masked_invalid(intensityCor)
             #pdb.set_trace()
             p0 = ax0.pcolormesh(self.zax, self.yax, intensityCor, vmin = 0, vmax = 1)
             ax0.patch.set(hatch='x', edgecolor='black')
-            ax0.set_title('Total Intensity - Coronagraph\nMIN:{!s:.2} MAX:{!s:.2}'.format(np.nanmin(intensityCor),np.nanmax(intensityCor)))
+            ax0.set_title('Total Intensity - Coronagraph')#\nMIN:{!s:.2} MAX:{!s:.2}'.format(np.nanmin(intensityCor),np.nanmax(intensityCor)))
+            ax0.set_ylabel(ystring)
+            ax0.set_xlabel(zstring)
+            plt.colorbar(p0, ax = ax0)
 
-            ax1.pcolormesh(self.zax, self.yax, intensityLog, vmin = np.nanmin(intensityLog), vmax = np.nanmax(intensityLog))
+            p1 = ax1.pcolormesh(self.zax, self.yax, intensityLog, vmin = np.nanmin(intensityLog), vmax = np.nanmax(intensityLog)*0.9)
             ax1.set_title('Total Intensity - Log')
             ax1.patch.set(hatch='x', edgecolor='black')
+            ax1.set_xlabel(zstring)
+            plt.colorbar(p1, ax = ax1)
+            plt.tight_layout()
 
         if plotpB:
             fig2, (ax4, ax5) = plt.subplots(1,2,True, True)
@@ -3447,23 +3559,38 @@ class imagesim(batchjob):
             ax5.pcolormesh(self.zax, self.yax, pBLog, vmin = np.nanmin(pBLog), vmax = 6)
             ax5.set_title('Polarization Brightness - Log')
             ax5.patch.set(hatch='x', edgecolor='black')
+            plt.tight_layout()
 
         if plotStats:
             fig1, (ax2, ax3) = plt.subplots(1,2,True, True)
+            fig1.suptitle(self.batchName, verticalalignment = 'bottom')
+            #import pdb
+            #pdb.set_trace()
+            fig1.set_size_inches(12,9)
+            centroid = np.multiply(centroid, 3e5/self.env.lam0)
+            sigma = self.std2V(sigma)
+            
 
             centroid = np.ma.masked_invalid(centroid)
-            throw = np.amax(np.abs(np.nanmin(centroid)), np.abs(np.nanmax(centroid)))
-            ax2.pcolormesh(self.zax, self.yax, centroid, cmap = 'RdBu', vmin = -throw, vmax = throw)
+            throw = max(np.abs(np.nanmin(centroid)), np.abs(np.nanmax(centroid)))
+            p2 = ax2.pcolormesh(self.zax, self.yax, centroid, cmap = 'RdBu', vmin = -throw, vmax = throw)
             ax2.patch.set(hatch='x', edgecolor='black')
 
             ax2.set_title('Centroid')
             ax2.set_ylabel(ystring)
             ax2.set_xlabel(zstring)
+            cax1 = plt.colorbar(p2, ax = ax2)
+            cax1.ax.set_title('km/s')
 
             sigma = np.ma.masked_invalid(sigma)
-            ax3.pcolormesh(self.zax, self.yax, sigma, vmin = np.nanmin(sigma), vmax = np.nanmax(sigma))
+            p3 = ax3.pcolormesh(self.zax, self.yax, sigma, vmin = 25, vmax = 200)#, vmin = np.nanmin(sigma), vmax = np.nanmax(sigma)*0.8)
             ax3.patch.set(hatch='x', edgecolor='black')
-            ax3.set_title('Sigma')
+            ax3.set_title('Line Width')
+            ax3.set_xlabel(zstring)
+            cax2 = plt.colorbar(p3, ax = ax3)
+            cax2.ax.set_title('km/s')
+
+            plt.tight_layout()
 
         plt.show()
 
@@ -3513,19 +3640,22 @@ class imagesim(batchjob):
             maxs.append(max)
 
 
-            smins = ndimage.filters.gaussian_filter1d(mins, self.filt) #filters.gaussian_filter1d(mins, filt)
+            smins = ndimage.filters.gaussian_filter1d(mins, self.filt)
             smids = ndimage.filters.gaussian_filter1d(mids, self.filt)
             smaxs = ndimage.filters.gaussian_filter1d(maxs, self.filt)
+            smins = ndimage.filters.gaussian_filter1d(smins, self.filt)
+            smids = ndimage.filters.gaussian_filter1d(smids, self.filt)
+            smaxs = ndimage.filters.gaussian_filter1d(smaxs, self.filt)
 
-        #plt.plot(self.graphEdges,mins, 'b:')
-        #plt.plot(self.graphEdges,mids, 'g:')
-        #plt.plot(self.graphEdges,maxs, 'r:')
+        plt.plot(self.graphEdges,mins, 'b:')
+        plt.plot(self.graphEdges,mids, 'g:')
+        plt.plot(self.graphEdges,maxs, 'r:')
 
-        #plt.plot(self.graphEdges,smins, 'b')
-        #plt.plot(self.graphEdges,smids, 'g')
-        #plt.plot(self.graphEdges,smaxs, 'r')
+        plt.plot(self.graphEdges,smins, 'b')
+        plt.plot(self.graphEdges,smids, 'g')
+        plt.plot(self.graphEdges,smaxs, 'r')
         
-        #plt.show()
+        plt.show()
 
         if self.smooth:
             usemin = smins
@@ -3550,6 +3680,9 @@ class imagesim(batchjob):
         #plt.show()
         
         return output
+
+
+
 
         #plt.pcolormesh(output)
         #plt.colorbar()

@@ -1,0 +1,15 @@
+import masterslave as ms
+import numpy as np
+
+
+a = np.arange(4).tolist()
+
+def mainFunc(N):
+    return N + 1
+
+def otherFunc(data):
+    print('This is totally different')
+
+    
+ms.set_response(otherFunc)
+ans = ms.poolMPI(a, mainFunc)

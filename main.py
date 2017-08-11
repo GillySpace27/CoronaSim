@@ -27,10 +27,10 @@ if __name__ == '__main__':
     maxEnvs = 6
     refineBmin = False
     calcFFiles = False
-    processEnvironments = False
+    processEnvironments = True
 
     #Batch Name
-    batchName = 'test2' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'int120' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
@@ -43,6 +43,7 @@ if __name__ == '__main__':
 
     NN3D = [200,200]
     sim.imagesim.N = (200, 4000)
+    sim.imagesim.timeAx3D = np.arange(0, 120, 2)
     rez3D =  [1,1]
     target3D = [0,1.5]
     len3D = 20
@@ -52,11 +53,11 @@ if __name__ == '__main__':
     sim.imagesim.smooth = True
 
     #1D Stuff - ImpactSim Parameters
-    compute = True
+    compute = False  
     analyze = False  
 
     impactPoints = 5 
-    iterations = 10
+    iterations = 1
 
     b0 =  1.02
     b1 =  1.6#46
@@ -65,7 +66,7 @@ if __name__ == '__main__':
     N_line = (200,1000)
     rez = None #[3,3]
     size = [0.002, 0.01]
-    timeAx = [0] #np.arange(integration) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
+    timeAx = np.arange(0, integration, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
     sim.simulate.randTime = False
     length = 10
 
@@ -80,6 +81,7 @@ if __name__ == '__main__':
     sim.simpoint.g_Bmin = 3.8905410
     sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
     sim.multisim.keepAll = False
+    sim.multisim.useMasters = False
     sim.batchjob.qcuts = [16,50,84]
     
     sim.batchjob.usePsf = True
@@ -91,17 +93,18 @@ if __name__ == '__main__':
     firstRun = True  #Overwrite any existing batch with this name
 
     #Run in parallel?
+
     parallel = True
-    cores = 7
+    cores = 8
 
     ##Plotting Flags
     sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
     
-    sim.batchjob.plotFits = False #Plots the Different fits to the line w/ the raw line
-    sim.batchjob.maxFitPlot = 3    
+    sim.batchjob.plotFits = True #Plots the Different fits to the line w/ the raw line
+    sim.batchjob.maxFitPlot = 1    
 
     sim.batchjob.hahnPlot = False #Plot the green Hahn Data on the primary plot
-    sim.batchjob.plotRatio = False #Plot the ratio of the reconstruction/raw fits
+    sim.batchjob.plotRatio = True #Plot the ratio of the reconstruction/raw fits
 
     #Examine Batch Line Profiles
     showProfiles = False #Plot some number of line profiles at each impact parameter
@@ -190,18 +193,19 @@ if __name__ == '__main__':
             #env.plot('ur_raw', 'rx_raw')
             x = 10
             y = 0.001
-            z = 1.2
+            z = 1.3
 
             position, target = [x, y, z], [-x, y, z]
             myLine = grid.sightline(position, target, coords = 'cart')
-            #lineSim = sim.simulate(df.polePlane, env, N = 500, findT = False, getProf = False, printOut = True)
-            lineSim = sim.simulate(myLine, env, N = (200,2000), findT = True, getProf = True)
+            #env.plotXi()
+            lineSim = sim.simulate(myLine, env, N = (200,4000), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
-            lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
-
+            #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
+            #lineSim = sim.simulate(df.polePlane, env, N = 500, findT = False, getProf = False, printOut = True)
             #The cool new time evolution plots
-            #T = 4000
-            #lineSim.evolveLine(T,0,T)
+            T = 800
+            sim.simulate.movName = 'windowPlot.mp4'
+            lineSim.evolveLine(T,0,T)
 
 
             #lineSim.plot('pPos', 1)
