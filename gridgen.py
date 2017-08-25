@@ -370,6 +370,9 @@ class defGrid:
         #Slice of the Pole
         self.polePlane = plane()
 
+        #Smaller slice of the Pole
+        self.spolePlane = plane(offset = [0,1,-1], iL = 2)
+
         #Bigger Slice of the Pole
         self.bpolePlane = plane(iL = 8)
 

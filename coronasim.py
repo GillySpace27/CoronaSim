@@ -31,7 +31,7 @@ import copy
 #with warnings.catch_warnings():
 #    warnings.simplefilter("ignore")
 #    import astropy.convolution as con
-from numba import jit
+#from numba import jit
 
 from collections import defaultdict
 
@@ -322,6 +322,21 @@ class environment:
         self.R_zx = x.zx
         self.R_vlos = x.vxlos
 
+    def plot2DV(self):
+        fig, ax = plt.subplots()
+        mean = np.mean(self.R_vlos.flatten())
+        std = np.std(self.R_vlos.flatten())
+        sp = 4
+        vmin = mean - sp*std
+        vmax = mean + sp*std
+        im = ax.pcolormesh(self.R_time, self.R_zx, self.R_vlos, vmin = vmin, vmax = vmax, cmap = 'RdBu')
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label('km/s')
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('$R_{sun}$')
+        fig.suptitle('Alfven Waves from Braid Code')
+        plt.show()
+
   ## Magnets ##########################################################################
         
     def __processBMap(self, thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False):
@@ -607,7 +622,7 @@ class environment:
         #Takes in X and Y and returns linearly interpolated Y at K
         if K >= np.amax(X) or K < np.amin(X) or np.isnan(K): return np.nan
         TInd = int(np.searchsorted(X, K))
-        #if TInd == 101: pdb.set_trace()
+        if TInd + 1 >= len(Y): return np.nan
         val1 = Y[TInd]
         val2 = Y[TInd+1]
         slope = val2 - val1
@@ -896,7 +911,7 @@ class simpoint:
     def __findRho(self, densfac): 
         return self.interp_rx_dat_log(self.env.rho_raw) * densfac  
 
-  ## pB stuff ############################################################################
+  ## pB stuff ##########################################################################
 
     def findDPB(self):
         imp = self.cPos[2]
@@ -915,7 +930,7 @@ class simpoint:
 
 
 
-  ## Radiative Transfer ##################################################################
+  ## Radiative Transfer ################################################################
     def findQt(self):
         #Chianti Stuff
         Iinf = 2.18056334613e-11 #ergs, equal to 13.61eV
@@ -998,10 +1013,29 @@ class simpoint:
 
     def findWaveSpeeds(self, t = 0):
         #Find all of the wave velocities
-        self.t1 = t - self.twave + self.alfT1
-        self.t2 = t - self.twave + self.alfT2
-        self.alfU1 = self.vRms*self.xi1(self.t1) 
-        self.alfU2 = self.vRms*self.xi2(self.t2)
+
+        if self.wavesVsR: 
+            #Set the wave time
+            self.t1 = t + self.alfT1
+            self.t2 = t + self.alfT2
+            #Get the wave profile at that time
+            self.alfU1 = self.interp_R_wave(self.t1)
+            self.alfU2 = self.interp_R_wave(self.t2)
+            #Match the boundary of Braid with the time method
+            self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else self.vRms*self.xi1(self.t1- self.twave)].pop()   #0].pop() #
+            self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else 0].pop() #self.vRms*self.xi2(self.t2- self.twave)].pop()
+            #Modify the waves based on density
+            self.alfU1 = self.alfU1/self.densfac**0.25
+            self.alfU2 = self.alfU2/self.densfac**0.25
+            
+            
+        else:
+            self.t1 = t - self.twave + self.alfT1
+            self.t2 = t - self.twave + self.alfT2
+            self.alfU1 = self.vRms*self.xi1(self.t1) 
+            self.alfU2 = self.vRms*self.xi2(self.t2)
+
+        #Rotate the waves and place them in correct coordinates
         uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
         uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
         pU = [self.uw, uTheta, uPhi]
@@ -1017,6 +1051,14 @@ class simpoint:
         self.cU = self.__findCU(pU) 
         self.ux, self.uy, self.uz = self.cU
         self.vLOS = self.__findVLOS()  
+
+    def interp_R_wave(self, t):
+        t_int = int(t%self.env.R_ntime)
+        R_Array = self.env.R_vlos[:,t_int]
+        V = self.env.interp(self.env.R_zx, R_Array, self.zx)
+        return V * 1e5
+
+
 
     def __findFluxAngle(self):
         dr = 1e-4
@@ -1057,8 +1099,16 @@ class simpoint:
         self.__findStreamIndex()
         self.env.streamRand.seed(int(self.streamIndex))
         thisRand = self.env.streamRand.random_sample(3)
-        self.alfT1 =  thisRand[0] * self.env.last_xi1_t
-        self.alfT2 =  thisRand[1] * self.env.last_xi2_t
+
+        if self.wavesVsR:
+            last1 = self.env.R_ntime
+            last2 = last1
+        else:
+            last1 = self.env.last_xi1_t
+            last2 = self.env.last_xi2_t
+
+        self.alfT1 =  int(thisRand[0] * last1)
+        self.alfT2 =  int(thisRand[1] * last2)
         self.alfAngle = thisRand[2] * 2 * np.pi
         self.omega = 0.01
 
@@ -1082,9 +1132,12 @@ class simpoint:
     
     def __findvRms(self):
         #RMS Velocity
-        S0 = 7.0e5 #* np.sqrt(1/2)
-        return np.sqrt(S0*self.vAlf/((self.vPh)**2 * 
-            self.rx**2*self.f*self.rho))
+        #S0 = 7.0e5 #* np.sqrt(1/2)
+        #return np.sqrt(S0*self.vAlf/((self.vPh)**2 * 
+        #    self.rx**2*self.f*self.rho))
+        vTop = 6090764.71206
+        rTop = 2.98888888889
+        return vTop*(self.rx/rTop)**-0.3
 
     def __findVLOS(self, nGrad = None):
         if nGrad is not None: self.nGrad = nGrad
@@ -1122,9 +1175,7 @@ class simpoint:
         twave_min = 161.4 * (self.rx**1.423 - 1.0)**0.702741
         self.twave_fit = twave_min * self.densfac
         
-        if self.findT:
-            #import pdb
-            #pdb.set_trace()
+        if self.findT and not self.wavesVsR:
             #Real Version 
             radial = grid.sightline(self.foot_cPos, self.cPos)
             N = 10
@@ -1140,7 +1191,7 @@ class simpoint:
         if not self.twave_fit == 0:
             self.twave_rat = self.twave/self.twave_fit
         else: self.twave_rat = np.nan
-        
+
     def setTime(self,t = 0):
         #Updates velocities to input time
         self.findWaveSpeeds(t)
@@ -1373,6 +1424,7 @@ class simulate:
 
     def plot(self, property, dim = None, scaling = 'None', scale = 10, cmap = 'jet', axes = True, center = False, linestyle = 'b'):
         scaleProp, datSum = self.get(property, dim, scaling, scale)
+        scaleProp = np.ma.masked_invalid(scaleProp)
         self.fig, ax = self.grid.plot(iL = self.iL)
         if type(self.grid) is grid.sightline:
             #Line Plot
@@ -1390,6 +1442,7 @@ class simulate:
                 im = ax.imshow(scaleProp, interpolation='none', cmap = cmap, vmin = -v, vmax = v)
             else:
                 im = ax.imshow(scaleProp, interpolation='none', cmap = cmap)
+            ax.patch.set(hatch='x', edgecolor='black')
             self.fig.subplots_adjust(right=0.89)
             cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
             self.fig.colorbar(im, cax=cbar_ax)
@@ -2336,7 +2389,7 @@ class batch:
 
 class batchjob:
 
-    #Requires labels, xlabel, batch, N
+    ## Run the Simulation ######################################################
     def __init__(self, envs):
     
         if type(envs) is list or type(envs) is tuple: 
@@ -2349,10 +2402,15 @@ class batchjob:
         self.completeTime = "Incomplete Job"
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
+        try: self.intTime = len(self.timeAx)
+        except: self.intTime = np.nan
 
+
+        #self.rmsPlot()
+        #return
         self.simulate_now()
         
-        if self.root: self.finish()
+        self.finish()
 
     def simulate_now(self):
         comm = MPI.COMM_WORLD
@@ -2391,6 +2449,7 @@ class batchjob:
 
 
             thisSim = multisim(thisBatch, self.envs, self.N, printOut = self.printMulti, printSim = self.printSim, timeAx = self.timeAx)
+            
             comm.barrier()
 
             if self.root:
@@ -2408,6 +2467,7 @@ class batchjob:
             comm.barrier()
 
     def finish(self):
+        #del self.env.R_vlos
         if self.root:
             #self.__findBatchStats()
             #self.makeVrms()
@@ -2455,7 +2515,7 @@ class batchjob:
         self.root = self.rank == 0
 
 
-    ###################################################################################
+    ##  Statistics  ##############################################################
 
     def doStats(self, width):
         """Do the statistics for the whole batch and plot."""
@@ -2573,6 +2633,7 @@ class batchjob:
         #plt.plot(self.sincPsf)
         #plt.plot(self.psf)
         #plt.show()
+        pass
 
     def FWHM_to_e(self, sig): return sig / 2*np.sqrt(np.log(2))
     def e_to_FWHM(self, sig): return sig * 2*np.sqrt(np.log(2))
@@ -2817,7 +2878,7 @@ class batchjob:
         ax.set_xlabel(self.xlabel)
         plt.show(False)
 
-    #Main Plots ########################################################################
+    ## Main Plots ########################################################################
     def plot(self, width):
         if width:
             self.plotWidth()
@@ -2861,7 +2922,41 @@ class batchjob:
         grid.maximizePlot()
         plt.show()
 
+    def rmsPlot(self):
 
+        #Get the RMS values out of the braid model
+        braidRMS = []
+        braidImpacts = np.linspace(0.9,3.1,100)
+        for b in braidImpacts:
+            braidRMS.append(self.extractVrms(b))
+
+        #Get the RMS values out of coronasim
+        maxImpact = 4.0
+        rez = 200
+        line = simulate(grid.sightline([2.98,0,0],[maxImpact,0,0], coords = 'Sphere'), self.env, rez, timeAx = [0])
+        modelRMS, _ = line.get('vRms')
+        modelImpacts, _ = line.get('pPos', 0)
+
+        plt.plot(braidImpacts, braidRMS, label = 'Braid')
+        #print(braidRMS[-6])
+        #print(braidImpacts[-6])
+        plt.plot(modelImpacts, modelRMS, label = 'Model')
+        plt.legend()
+        plt.xlabel('Impact Parameter')
+        plt.ylabel('RMS Amplitude')
+        plt.title('Extrapolating the Vrms above the BRAID height')
+        #plt.yscale('log')
+        plt.show()
+
+
+    def extractVrms(self, b):
+        try:
+            bInd = np.searchsorted(self.env.R_zx + 1, b)
+            R_Array = self.env.R_vlos[bInd,:].flatten()
+            V = np.std(R_Array)
+            #V = self.e_to_FWHM(V)
+            return V * 1e5
+        except: return np.nan
 
     def makeVrms(self):
         self.env._fLoad(self.env.fFileName)
@@ -2869,31 +2964,35 @@ class batchjob:
         self.hahnV = []
 
         for impact in self.doneLabels:
-            #Get average values for wind, rms, and temperature in plane of sky at this impact
-            ptUr = []
-            ptRms = []
-            ptTem = []
-            for env in self.envs:
-                point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env, copyPoint = self.copyPoint)
-                ptUr.append(point.ur)
-                ptRms.append(point.vRms)
-                ptTem.append(point.T)
+            if not self.useModelVrms:
+                ##Get average values for wind, rms, and temperature in plane of sky at this impact
+                ptUr = []
+                ptRms = []
+                ptTem = []
+                for env in self.envs:
+                    point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env, copyPoint = self.copyPoint)
+                    ptUr.append(point.ur)
+                    ptRms.append(point.vRms)
+                    ptTem.append(point.T)
 
-            pUr = [np.average(ptUr) if self.copyPoint.windWasOn else 0].pop()
-            #print("The ur is {} at impact {}, with f1 = {}".format(pUr, impact, self.env.interp_f1(impact)))
-            pRms = [np.average(ptRms) if self.copyPoint.waveWasOn else 0].pop()
-            pTem = np.average(ptTem)
-
+                pUr = [np.average(ptUr) if self.copyPoint.windWasOn else 0].pop()
+                #print("The ur is {} at impact {}, with f1 = {}".format(pUr, impact, self.env.interp_f1(impact)))
+                pRms = [np.average(ptRms) if self.copyPoint.waveWasOn else 0].pop()
+                pTem = np.average(ptTem)
+            else:
+                ##Get model values for wind, rms, and temperature in plane of sky at this impact
+                pTem = self.env.interp_rx_dat(impact, self.env.T_raw) 
+                pUr = self.env.interp_rx_dat(impact, self.env.ur_raw) if self.copyPoint.windWasOn else 0
+                pRms = self.extractVrms(impact) if self.copyPoint.waveWasOn else 0
 
             vTh = 2 * self.env.KB * pTem / self.env.mI
+            thermal = (self.env.interp_f3(impact) * vTh)**1
 
             wind =   (self.env.interp_f1(impact) * pUr)**2 
             rms =    (self.env.interp_f2(impact) * pRms)**2
-            #Plot these components seperately. 
-            thermal = (self.env.interp_f3(impact) * vTh)**1
+
             V = np.sqrt( (thermal + wind + rms) )
 
-            #print(self.env.cm2km(V))
             self.thisV.append(self.env.cm2km(V))
             self.hahnV.append(self.hahnFit(impact))
 
@@ -2924,7 +3023,9 @@ class batchjob:
         height = 0.9
         left = 0.09
         shift = 0.1
-
+        try: self.intTime
+        except: self.intTime = np.nan
+        plt.figtext(left, height + 0.06, "Seconds: {}".format(self.intTime))
         plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.windWasOn))
         plt.figtext(left, height + 0.02, "Waves: {}".format(self.copyPoint.waveWasOn))
         plt.figtext(left, height, "B: {}".format(self.copyPoint.bWasOn))
@@ -2993,9 +3094,9 @@ class batchjob:
         height = 0.9
         left = 0.65 + 0.09
         shift = 0.1
-        #plt.figtext(left, height + 0.04, "Fit to the Median")
-        #plt.figtext(left, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mid))
-        #plt.figtext(left, height, "Chi2_R = {:0.3f}".format(self.rChi_mid))
+        #plt.figtext(left, height + 0.04, "Fit to the Binned Prof")
+        #plt.figtext(left, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_bin))
+        #plt.figtext(left, height, "Chi2_R = {:0.3f}".format(self.rChi_bin))
         plt.figtext(left + shift, height + 0.04, "Fit to the Mean")
         plt.figtext(left + shift, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mean))
         plt.figtext(left + shift, height, "Chi2_R = {:0.3f}".format(self.rChi_mean))
@@ -3117,19 +3218,20 @@ class batchjob:
 
     def chiTest(self):
                 
-        self.hahnMids = np.interp(self.env.hahnAbs, self.histlabels, self.medians)
-        self.hahnMeans = np.interp(self.env.hahnAbs, self.histlabels, self.lineWidths)
-        self.hahnMidErrors = np.interp(self.env.hahnAbs, self.histlabels, self.lineWidthErrors)
+        #self.hahnMids = np.interp(self.env.hahnAbs, self.histlabels, self.medians)
+        #self.hahnMeans = np.interp(self.env.hahnAbs, self.histlabels, self.lineWidths)
+        #self.hahnMidErrors = np.interp(self.env.hahnAbs, self.histlabels, self.lineWidthErrors)
 
+        self.chi_bin = 0
         self.chi_mean = 0
-        self.chi_mid = 0
-        N = 0
-        for hWidth, hError, miWidth, meWidth, mError in zip(self.env.hahnPoints, self.env.hahnError, self.hahnMids, self.hahnMeans, self.hahnMidErrors):
-            N += 1
-            self.chi_mid += (hWidth - miWidth)**2 / (hError * mError)
-            self.chi_mean += (hWidth - meWidth)**2 / (hError * mError)
         
-        self.rChi_mid = self.chi_mid / N
+        N = 0
+        for expectedWidth, binWidth, binError, meanWidth, meanError in zip(self.thisV, self.binStdV, self.binStdVsig, self.lineWidths, self.lineWidthErrors):
+            N += 1
+            self.chi_bin += (binWidth - expectedWidth)**2 / (binError * binError)
+            self.chi_mean += (meanWidth - expectedWidth)**2 / (meanError * meanError)
+        
+        self.rChi_bin = self.chi_bin / N
         self.rChi_mean = self.chi_mean / N
 
     def getLabels(self):
@@ -3331,7 +3433,7 @@ class impactsim(batchjob):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))
         return veff
 
-class impactsim(batchjob):
+class timesim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
             rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None, qcuts = [16,50,84], spacing = 'lin'):
         comm = MPI.COMM_WORLD
@@ -3387,8 +3489,6 @@ class impactsim(batchjob):
         super().__init__(envs)
         
         return
-
-
 
 class imagesim(batchjob):
     def __init__(self, batchName, env, NN = [5,5], rez=[0.5,0.5], target = [0,1.5], len = 10):

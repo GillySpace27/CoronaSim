@@ -27,15 +27,15 @@ if __name__ == '__main__':
     maxEnvs = 6
     refineBmin = False
     calcFFiles = False
-    processEnvironments = True
+    processEnvironments = False
 
     #Batch Name
-    batchName = 'int120' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'test' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
-    simOne = False  
+    simOne = True  
 
     #3D Stuff - ImageSim Parameters
     compute3d = False
@@ -56,26 +56,27 @@ if __name__ == '__main__':
     compute = False  
     analyze = False  
 
-    impactPoints = 5 
-    iterations = 1
+    impactPoints = 10 
+    iterations = 2
 
     b0 =  1.02
-    b1 =  1.6#46
+    b1 =  4#1.6#46
     spacing = 'lin'
 
     N_line = (200,1000)
     rez = None #[3,3]
     size = [0.002, 0.01]
-    timeAx = np.arange(0, integration, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
+    timeAx = [0] #np.arange(0, 400, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
     sim.simulate.randTime = False
     length = 10
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     #Simulation Properties
-    sim.simpoint.useB = True
+    sim.simpoint.useB = False
     sim.simpoint.g_useWaves = True   
     sim.simpoint.g_useWind = True
 
+    sim.simpoint.wavesVsR = True
     sim.simpoint.useIonFrac = True
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
@@ -87,6 +88,7 @@ if __name__ == '__main__':
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
     sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
+    sim.batchjob.useModelVrms = True
 
     printSim = False #This makes it show the generating profile progress bar
     widthPlot = True #Plot just line width instead of all 5 moments
@@ -95,16 +97,16 @@ if __name__ == '__main__':
     #Run in parallel?
 
     parallel = True
-    cores = 8
+    cores = 7
 
     ##Plotting Flags
     sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
     
-    sim.batchjob.plotFits = True #Plots the Different fits to the line w/ the raw line
+    sim.batchjob.plotFits = False #Plots the Different fits to the line w/ the raw line
     sim.batchjob.maxFitPlot = 1    
 
     sim.batchjob.hahnPlot = False #Plot the green Hahn Data on the primary plot
-    sim.batchjob.plotRatio = True #Plot the ratio of the reconstruction/raw fits
+    sim.batchjob.plotRatio = False #Plot the ratio of the reconstruction/raw fits
 
     #Examine Batch Line Profiles
     showProfiles = False #Plot some number of line profiles at each impact parameter
@@ -184,7 +186,7 @@ if __name__ == '__main__':
             env = sim.envrs(envsName).loadEnvs(100)[0]
             #sim.plotpB()
 
-
+            #env.plot2DV()
             #if self.root: 
             #    import pdb 
             #    pdb.set_trace()
@@ -198,17 +200,18 @@ if __name__ == '__main__':
             position, target = [x, y, z], [-x, y, z]
             myLine = grid.sightline(position, target, coords = 'cart')
             #env.plotXi()
-            lineSim = sim.simulate(myLine, env, N = (200,4000), findT = True, getProf = True)
+            #lineSim = sim.simulate(myLine, env, N = (200,4000), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
-            #lineSim = sim.simulate(df.polePlane, env, N = 500, findT = False, getProf = False, printOut = True)
+            lineSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, getProf = False, printOut = True)
             #The cool new time evolution plots
-            T = 800
-            sim.simulate.movName = 'windowPlot.mp4'
-            lineSim.evolveLine(T,0,T)
+            #T = 800
+            #sim.simulate.movName = 'windowPlot.mp4'
+            #lineSim.evolveLine(T,0,T)
 
 
-            #lineSim.plot('pPos', 1)
+            lineSim.plot('alfU1', cmap = 'RdBu', center = True)
+            lineSim.plot('alfU2', cmap = 'RdBu', center = True)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()
 
