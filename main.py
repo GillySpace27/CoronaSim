@@ -30,12 +30,12 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Batch Name
-    batchName = 'test' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'extrapolate' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
-    simOne = True  
+    simOne = False  
 
     #3D Stuff - ImageSim Parameters
     compute3d = False
@@ -54,19 +54,19 @@ if __name__ == '__main__':
 
     #1D Stuff - ImpactSim Parameters
     compute = False  
-    analyze = False  
+    analyze = True  
 
-    impactPoints = 10 
+    impactPoints = 15 
     iterations = 2
 
     b0 =  1.02
-    b1 =  4#1.6#46
+    b1 =  3#1.6 #46
     spacing = 'lin'
 
     N_line = (200,1000)
     rez = None #[3,3]
     size = [0.002, 0.01]
-    timeAx = [0] #np.arange(0, 400, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
+    timeAx = np.arange(0, 200, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
     sim.simulate.randTime = False
     length = 10
 
@@ -76,6 +76,7 @@ if __name__ == '__main__':
     sim.simpoint.g_useWaves = True   
     sim.simpoint.g_useWind = True
 
+    sim.simpoint.matchExtrap = False
     sim.simpoint.wavesVsR = True
     sim.simpoint.useIonFrac = True
     sim.simpoint.g_useFluxAngle = True
@@ -203,15 +204,15 @@ if __name__ == '__main__':
             #lineSim = sim.simulate(myLine, env, N = (200,4000), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
-            lineSim = sim.simulate(df.bpolePlane, env, N = 500, findT = False, getProf = False, printOut = True)
+            lineSim = sim.simulate(df.poleLine, env, N = 500, findT = False, getProf = False, printOut = True)
             #The cool new time evolution plots
             #T = 800
             #sim.simulate.movName = 'windowPlot.mp4'
             #lineSim.evolveLine(T,0,T)
 
 
-            lineSim.plot('alfU1', cmap = 'RdBu', center = True)
-            lineSim.plot('alfU2', cmap = 'RdBu', center = True)
+            lineSim.plot('alfU1', cmap = 'RdBu', center = True, abscissa = 'pPos', absdim = 0)
+            lineSim.plot('alfU2', cmap = 'RdBu', center = True, abscissa = 'pPos', absdim = 0)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()
 

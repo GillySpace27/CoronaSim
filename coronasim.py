@@ -848,7 +848,7 @@ class simpoint:
     def findFootB(self):
         #Find B
         self.__findfoot_Pos()
-        #self.footB = self.env.BMap(self.foot_cPos[0], self.foot_cPos[1])[0][0]
+        
         if self.useB:
             self.footB = self.env.BMap[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
                                             self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
@@ -1022,8 +1022,12 @@ class simpoint:
             self.alfU1 = self.interp_R_wave(self.t1)
             self.alfU2 = self.interp_R_wave(self.t2)
             #Match the boundary of Braid with the time method
-            self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else self.vRms*self.xi1(self.t1- self.twave)].pop()   #0].pop() #
-            self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else 0].pop() #self.vRms*self.xi2(self.t2- self.twave)].pop()
+            if self.matchExtrap:
+                self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else self.vRms*self.xi1(self.t1- self.twave)].pop()
+                self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else self.vRms*self.xi2(self.t2- self.twave)].pop()
+            else:
+                self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else 0].pop() #self.vRms*self.xi1(self.t1- self.twave)].pop()   #0].pop() #
+                self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else 0].pop() #self.vRms*self.xi2(self.t2- self.twave)].pop()
             #Modify the waves based on density
             self.alfU1 = self.alfU1/self.densfac**0.25
             self.alfU2 = self.alfU2/self.densfac**0.25
@@ -1422,17 +1426,22 @@ class simulate:
         datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
         return scaleProp, datSum
 
-    def plot(self, property, dim = None, scaling = 'None', scale = 10, cmap = 'jet', axes = True, center = False, linestyle = 'b'):
+    def plot(self, property, dim = None, scaling = 'None', scale = 10, cmap = 'jet', axes = True, center = False, linestyle = 'b', abscissa = None, absdim = 0):
         scaleProp, datSum = self.get(property, dim, scaling, scale)
+        if abscissa is not None:
+            absc, _ = self.get(abscissa, absdim)
+        else: absc = self.cumSteps
         scaleProp = np.ma.masked_invalid(scaleProp)
         self.fig, ax = self.grid.plot(iL = self.iL)
         if type(self.grid) is grid.sightline:
             #Line Plot
-            im = ax.plot(self.cumSteps, scaleProp, linestyle)
+            im = ax.plot(absc, scaleProp, linestyle)
+            ax.set_xlabel(abscissa)
+            ax.set_ylabel(property)
             if axes:
                 ax.axhline(0, color = 'k')
                 ax.axvline(0.5, color = 'k')
-                ax.set_xlim([0,1])
+                #ax.set_xlim([0,1])
             datSum = datSum / self.N
 
         elif type(self.grid) is grid.plane:
@@ -3047,7 +3056,7 @@ class batchjob:
             small = int(min(small, newSmall))
             big = int(max(big, newBig))
         throw = int(np.abs(np.ceil(big-small))) / 5
-        throw = np.arange(0,250,5)
+        throw = np.arange(0,400,5)
         spread = 2
         vmax = 0
         for stdlist, label in zip(self.allStd, self.doneLabels):
@@ -3137,7 +3146,7 @@ class batchjob:
         plt.ylabel('Km/s')
         spread = 0.02
         plt.xlim([self.histlabels[0]-spread, self.histlabels[-1]+spread]) #Get away from the edges
-        plt.ylim([0,250])
+        plt.ylim([0,400])
         plt.xlabel(self.xlabel)
         grid.maximizePlot()
         plt.show(False)
