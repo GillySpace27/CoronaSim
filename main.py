@@ -54,10 +54,10 @@ if __name__ == '__main__':
 
     #1D Stuff - ImpactSim Parameters
     compute = True  
-    analyze = True  
+    analyze = False  
 
-    impactPoints = 15 
-    iterations = 5
+    impactPoints = 3 
+    iterations = 1
 
     b0 =  1.02
     b1 =  5#1.6 #46
@@ -156,11 +156,11 @@ if __name__ == '__main__':
         ########################
 
         if compute:
-            if firstRun:       
-                envs = sim.envrs(envsName).loadEnvs(maxEnvs)                
+            envs = sim.envrs(envsName).loadEnvs(maxEnvs) 
+            if firstRun:                   
                 myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim, fName = fFileName, spacing = spacing)
             else:
-                myBatch = sim.batch(batchName).restartBatch()  
+                myBatch = sim.batch(batchName).restartBatch(envs)  
         if root:      
             if analyze:
                 myBatch = sim.batch(batchName).analyzeBatch(widthPlot)

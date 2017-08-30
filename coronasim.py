@@ -2405,8 +2405,9 @@ class batch:
         except:
             sys.exit('Batch Not found')
 
-    def restartBatch(self):
+    def restartBatch(self, envs):
         myBatch = self.loadBatch()
+        myBatch.reloadEnvs(envs)
         myBatch.findRank()
         myBatch.simulate_now()
         return myBatch
@@ -3254,7 +3255,7 @@ class batchjob:
             doRms = False
         return labels
 
-    def save(self, batchName = None, keep = False, printout = False, dumpEnvs = False):
+    def save(self, batchName = None, keep = False, printout = False, dumpEnvs = True):
 
         if batchName is None: batchName = self.batchName
     
@@ -3288,6 +3289,9 @@ class batchjob:
             self.envs = envs
         #self.env = env
         if printout: print('\nFile Saved')
+
+    def reloadEnvs(self, envs):
+        self.envs = envs
             
     def show(self):
         """Print all properties and values except statistics"""
