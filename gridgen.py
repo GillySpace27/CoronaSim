@@ -389,7 +389,7 @@ class defGrid:
         self.primeLineVLong = sightline(position, target, coords = 'cart')
 
         #This line starts from north pole and goes out radially
-        self.poleLine = sightline([1.1,0,0],[4.0,0,0], coords = 'Sphere')
+        self.poleLine = sightline([1.1,0,0],[6.0,0,0], coords = 'Sphere')
 
         b = 1.03
         self.impLine = sightline([5,1e-8,b],[-5,1e-8,b], findT = True)

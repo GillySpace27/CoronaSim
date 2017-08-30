@@ -572,6 +572,14 @@ class environment:
     #    else:
     #        return idx
 
+    def extractVrms(self, b):
+        try:
+            bInd = np.searchsorted(self.R_zx + 1, b) -1
+            R_Array = self.R_vlos[bInd,:].flatten()
+            V = np.std(R_Array)
+            return V * 1e5
+        except: return np.nan
+
     def interp_rx_dat(self, rx, array):
         #Interpolates an array(rx)
         if rx < 1. : return math.nan
@@ -583,8 +591,10 @@ class environment:
         locs = self.chTemps
         func = np.log10(self.chFracs)
         temp = np.log10(T)
-        #print(temp)
+
         #plt.plot(locs, func)
+        #plt.xlabel('Temperature')
+        #plt.ylabel('Fraction')
         #plt.show()
         return 10**self.interp(locs, func, temp)
 
@@ -621,7 +631,7 @@ class environment:
     def interp(self, X, Y, K):
         #Takes in X and Y and returns linearly interpolated Y at K
         if K >= np.amax(X) or K < np.amin(X) or np.isnan(K): return np.nan
-        TInd = int(np.searchsorted(X, K))
+        TInd = int(np.searchsorted(X, K)) - 1
         if TInd + 1 >= len(Y): return np.nan
         val1 = Y[TInd]
         val2 = Y[TInd+1]
@@ -632,6 +642,8 @@ class environment:
         diffstep = diff / step
         return val1 + diffstep*(slope)
 
+    def interp_map(self, map, x, y):
+        return map[self.__find_nearest(self.BMap_x, x)][self.__find_nearest(self.BMap_y, y)]
 
     def cm2km(self, var):
         return var * 1e-5
@@ -818,7 +830,7 @@ class simpoint:
         self.__streamInit()
         self.findSpeeds(t)
         self.findQt()
-        self.findUrProj()
+        self.findUrProj()       
         self.findDPB()
 
         return self
@@ -848,10 +860,12 @@ class simpoint:
     def findFootB(self):
         #Find B
         self.__findfoot_Pos()
-        
+        x = self.foot_cPos[0]
+        y = self.foot_cPos[1]
         if self.useB:
-            self.footB = self.env.BMap[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
-                                            self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
+            self.footB = self.env.interp_map(self.env.BMap, x, y)
+            #self.footB = self.env.BMap[self.__find_nearest(self.env.BMap_x, x)][self.__find_nearest(self.env.BMap_y, y)]
+
         else: self.footB = 0
 
     def __findfoot_Pos(self):
@@ -869,8 +883,10 @@ class simpoint:
         return self.env.fmax + (1.-self.env.fmax)*np.exp(-((r-1.)/Hfit)**1.1)
 
     def __findStreamIndex(self):
-        self.streamIndex = self.env.label_im[self.__find_nearest(self.env.BMap_x, self.foot_cPos[0])][
-                                            self.__find_nearest(self.env.BMap_y, self.foot_cPos[1])]
+        x = self.foot_cPos[0]
+        y = self.foot_cPos[1]
+        self.streamIndex = self.env.interp_map(self.env.label_im, x, y)
+        #self.streamIndex = self.env.label_im[self.__find_nearest(self.env.BMap_x, x)][self.__find_nearest(self.env.BMap_y, y)]
 
   ## Density ##########################################################################
     def findDensity(self):
@@ -1003,7 +1019,9 @@ class simpoint:
 
     def findSpeeds(self, t = 0):
         #Find all of the static velocities
-        self.uw = self.__findUw()
+        
+        if self.useWind: self.uw = self.__findUw()
+        else: self.uw = 0
         self.vAlf = self.__findAlf()
         self.vPh = self.__findVPh()
         if self.useWaves: self.vRms = self.__findvRms()
@@ -1014,7 +1032,7 @@ class simpoint:
     def findWaveSpeeds(self, t = 0):
         #Find all of the wave velocities
 
-        if self.wavesVsR: 
+        if self.wavesVsR and self.useWaves: 
             #Set the wave time
             self.t1 = t + self.alfT1
             self.t2 = t + self.alfT2
@@ -1026,14 +1044,14 @@ class simpoint:
                 self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else self.vRms*self.xi1(self.t1- self.twave)].pop()
                 self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else self.vRms*self.xi2(self.t2- self.twave)].pop()
             else:
-                self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else 0].pop() #self.vRms*self.xi1(self.t1- self.twave)].pop()   #0].pop() #
-                self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else 0].pop() #self.vRms*self.xi2(self.t2- self.twave)].pop()
+                self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else 0].pop() 
+                self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else 0].pop()
             #Modify the waves based on density
             self.alfU1 = self.alfU1/self.densfac**0.25
             self.alfU2 = self.alfU2/self.densfac**0.25
-            
-            
+
         else:
+            #Just the time method
             self.t1 = t - self.twave + self.alfT1
             self.t2 = t - self.twave + self.alfT2
             self.alfU1 = self.vRms*self.xi1(self.t1) 
@@ -1095,9 +1113,16 @@ class simpoint:
             delta = self.delta
         else: delta = 0
 
-        self.urProj =  0.5*(np.sin(theta + delta) * self.uw)**2 * self.rho**2
-        self.rmsProj = (np.cos(theta + delta) * self.vRms)**2 * self.rho**2
-        self.temProj = self.T * self.rho**2
+        uw = self.interp_rx_dat(self.env.ur_raw)
+
+        if self.rx < 3:
+            vRms = self.env.extractVrms(self.rx)
+        else:
+            vRms = self.__findvRms()
+
+        self.urProj =  (np.sin(theta + delta) *  uw )**2 * self.rho**2
+        self.rmsProj = (np.cos(theta + delta) * vRms)**2 * self.rho**2
+        self.temProj =                            self.T * self.rho**2
 
     def __streamInit(self):
         self.__findStreamIndex()
@@ -1114,16 +1139,12 @@ class simpoint:
         self.alfT1 =  int(thisRand[0] * last1)
         self.alfT2 =  int(thisRand[1] * last2)
         self.alfAngle = thisRand[2] * 2 * np.pi
-        self.omega = 0.01
+
 
     def __findUw(self):
         #Wind Velocity
         #return (1.7798e13) * self.fmax / (self.num_den * self.rx * self.rx * self.f)
-        if self.useWind:
-            uw = self.interp_rx_dat(self.env.ur_raw) / self.densfac
-        else:
-            uw = 0
-        return uw
+        return self.interp_rx_dat(self.env.ur_raw) / self.densfac
 
     def __findAlf(self):
         #Alfven Velocity
@@ -1233,7 +1254,7 @@ class simpoint:
     def interp_rx_dat(self, array):
         #Interpolates an array(rx)
         if self.rx < self.env.rx_raw[0] : return math.nan
-        rxInd = np.int(np.floor(np.searchsorted(self.env.rx_raw, self.rx)))
+        rxInd = np.int(np.searchsorted(self.env.rx_raw, self.rx) -1)
         val1 = array[rxInd]
         val2 = array[rxInd+1]
         slope = val2 - val1
@@ -2226,6 +2247,7 @@ class multisim:
             simulation = self.workrepoint(grd, envInd)
         else:
             simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim, getProf = True)
+            #simulation.plot('nion', cmap = 'RdBu', center = True, abscissa = 'pPos')
 
         return simulation
 
@@ -2493,6 +2515,7 @@ class batchjob:
             if self.fName is not None: 
                 self.calcFfiles()
             self.save(printout = self.print)
+            
 
     def setFirstPoint(self):
         self.copyPoint = self.sims[0].sims[0].sims[0]
@@ -2958,14 +2981,7 @@ class batchjob:
         plt.show()
 
 
-    def extractVrms(self, b):
-        try:
-            bInd = np.searchsorted(self.env.R_zx + 1, b)
-            R_Array = self.env.R_vlos[bInd,:].flatten()
-            V = np.std(R_Array)
-            #V = self.e_to_FWHM(V)
-            return V * 1e5
-        except: return np.nan
+
 
     def makeVrms(self):
         self.env._fLoad(self.env.fFileName)
@@ -2973,37 +2989,24 @@ class batchjob:
         self.hahnV = []
 
         for impact in self.doneLabels:
-            if not self.useModelVrms:
-                ##Get average values for wind, rms, and temperature in plane of sky at this impact
-                ptUr = []
-                ptRms = []
-                ptTem = []
-                for env in self.envs:
-                    point = simpoint([0,0,impact], grid = grid.defGrid().impLine, env = env, copyPoint = self.copyPoint)
-                    ptUr.append(point.ur)
-                    ptRms.append(point.vRms)
-                    ptTem.append(point.T)
 
-                pUr = [np.average(ptUr) if self.copyPoint.windWasOn else 0].pop()
-                #print("The ur is {} at impact {}, with f1 = {}".format(pUr, impact, self.env.interp_f1(impact)))
-                pRms = [np.average(ptRms) if self.copyPoint.waveWasOn else 0].pop()
-                pTem = np.average(ptTem)
-            else:
-                ##Get model values for wind, rms, and temperature in plane of sky at this impact
-                pTem = self.env.interp_rx_dat(impact, self.env.T_raw) 
-                pUr = self.env.interp_rx_dat(impact, self.env.ur_raw) if self.copyPoint.windWasOn else 0
-                pRms = self.extractVrms(impact) if self.copyPoint.waveWasOn else 0
+            ##Get model values for wind, rms, and temperature in plane of sky at this impact
+            pTem = self.env.interp_rx_dat(impact, self.env.T_raw) 
+            pUr = self.env.interp_rx_dat(impact, self.env.ur_raw) if self.copyPoint.windWasOn else 0
+            pRms = self.env.extractVrms(impact) if self.copyPoint.waveWasOn else 0
 
             vTh = 2 * self.env.KB * pTem / self.env.mI
-            thermal = (self.env.interp_f3(impact) * vTh)**1
 
-            wind =   (self.env.interp_f1(impact) * pUr)**2 
-            rms =    (self.env.interp_f2(impact) * pRms)**2
+            wind =  2 * (self.env.interp_f1(impact) * pUr)**2 
+            rms =   (self.env.interp_f2(impact) * pRms)**2
+            thermal = (self.env.interp_f3(impact) * vTh)**1
 
             V = np.sqrt( (thermal + wind + rms) )
 
             self.thisV.append(self.env.cm2km(V))
             self.hahnV.append(self.hahnFit(impact))
+
+
 
     def getLabels(self):
         try:
@@ -3308,7 +3311,7 @@ class batchjob:
 
     def calcFfiles(self):
         #Calculate the f parameters 
-        #Make sure to have the B field and waves and wind on if you want this to work
+        #Make sure to have the B field off and waves and wind on if you want this to work
         print("\nCalculating f Files:")
         sys.stdout.flush()
         name = self.fName
@@ -3326,30 +3329,18 @@ class batchjob:
                 with open(file3, 'w') as f3out:
 
                     for urProjs, rmsProjs, temProjs, b in zip(self.urProjss, self.rmsProjss, self.temProjss, self.doneLabels):
-                        #Simulate one line across the top of the sun
-                        #lineSim = simulate(grd, env, N = rez, findT = True, getProf = True)
 
+                        #Get the Average Projected Values
                         urProj = np.average(urProjs)
                         rmsProj = np.average(rmsProjs)
                         temProj = np.average(temProjs)
-                        #print(rmsProj)
-                        #sys.stdout.flush()
-                        #Simulate a point directly over the pole and average
-                        ptUr = []
-                        ptRms = []
-                        ptTem = []
-                        for env in self.envs:
-                            point = simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
-                            ptUr.append(point.ur)
-                            ptRms.append(point.vRms)
-                            ptTem.append(point.T)
-                        #print(ptRms)
-                        #sys.stdout.flush()
-                        pUr = np.average(ptUr)
-                        pRms = np.average(ptRms)
-                        pTem = np.average(ptTem)
-                        #print(pRms)
-                        #sys.stdout.flush()
+
+                        #Get the Plane of the Sky Values
+                        pTem = self.env.interp_rx_dat(b, self.env.T_raw) 
+                        pUr = self.env.interp_rx_dat(b, self.env.ur_raw)
+                        pRms = self.env.extractVrms(b)
+
+                        #Take the Quotient
                         urProjA = urProj/pUr
                         rmsProjA = rmsProj/pRms
                         temProjA = temProj/pTem
@@ -3377,6 +3368,25 @@ class batchjob:
                     plt.axhline(1, color = 'k')
                     plt.show()
 
+                    ##print(rmsProj)
+                    ##sys.stdout.flush()
+                    ##Simulate a point directly over the pole and average
+                    #ptUr = []
+                    #ptRms = []
+                    #ptTem = []
+                    #for env in self.envs:
+                    #    point = simpoint([0,0,b], grid = grid.defGrid().impLine, env = env)
+                    #    ptUr.append(point.ur)
+                    #    ptRms.append(point.vRms)
+                    #    ptTem.append(point.T)
+                    ##print(ptRms)
+                    ##sys.stdout.flush()
+                    #pUr = np.average(ptUr)
+                    #pRms = np.average(ptRms)
+                    #pTem = np.average(ptTem)
+                    ##print(pRms)
+                    ##sys.stdout.flush()
+                    pass
 
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
@@ -3433,8 +3443,10 @@ class impactsim(batchjob):
             self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size, x0 = length, findT = False)) 
 
         super().__init__(envs)
+
+        return  
         
-        return
+        
         
 
 

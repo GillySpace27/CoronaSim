@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     #Environment Parameters
     envsName = 'Modern'
-    fFileName = 'logFiles'
+    fFileName = 'longfile'
     sim.environment.fFileName = fFileName
     maxEnvs = 6
     refineBmin = False
@@ -30,7 +30,7 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Batch Name
-    batchName = 'extrapolate' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'nothing1' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
@@ -53,17 +53,17 @@ if __name__ == '__main__':
     sim.imagesim.smooth = True
 
     #1D Stuff - ImpactSim Parameters
-    compute = False  
+    compute = True  
     analyze = True  
 
     impactPoints = 15 
-    iterations = 2
+    iterations = 5
 
     b0 =  1.02
-    b1 =  3#1.6 #46
+    b1 =  5#1.6 #46
     spacing = 'lin'
 
-    N_line = (200,1000)
+    N_line = (200,3000)
     rez = None #[3,3]
     size = [0.002, 0.01]
     timeAx = np.arange(0, 200, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
     sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
-    sim.batchjob.useModelVrms = True
+
 
     printSim = False #This makes it show the generating profile progress bar
     widthPlot = True #Plot just line width instead of all 5 moments
@@ -118,7 +118,6 @@ if __name__ == '__main__':
 
 ##################################################################################
 ##################################################################################
-    
 
     #This header handles calling the program in parallel
     try: go = int(sys.argv[1])
@@ -158,13 +157,15 @@ if __name__ == '__main__':
 
         if compute:
             if firstRun:       
-                envs = sim.envrs(envsName).loadEnvs(maxEnvs)
+                envs = sim.envrs(envsName).loadEnvs(maxEnvs)                
                 myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim, fName = fFileName, spacing = spacing)
             else:
                 myBatch = sim.batch(batchName).restartBatch()  
         if root:      
             if analyze:
                 myBatch = sim.batch(batchName).analyzeBatch(widthPlot)
+                #myBatch.fName='longfile'
+                #myBatch.calcFfiles()
             if showProfiles: 
                 try: myBatch
                 except: myBatch = sim.batch(batchName).loadBatch()
@@ -178,13 +179,15 @@ if __name__ == '__main__':
             try: myBatch
             except: myBatch = sim.batch(batchName).loadBatch()
             myBatch.plot()
-        #### Level 1 ### Simulate
+        #### Level 1 ### Simulate ################################################################################################################################
         ################
 
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(100)[0]
+
+
             #sim.plotpB()
 
             #env.plot2DV()
@@ -204,15 +207,33 @@ if __name__ == '__main__':
             #lineSim = sim.simulate(myLine, env, N = (200,4000), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
-            lineSim = sim.simulate(df.poleLine, env, N = 500, findT = False, getProf = False, printOut = True)
+            lineSim = sim.simulate(df.poleLine, env, N = 400, findT = False, getProf = False, printOut = True)
+            
+            #temps, _ = lineSim.get('T')
+            #rad, _ = lineSim.get('pPos', dim = 0)
+            #F = []
+            ##temps = np.logspace(4,8,500)
+            #for T in temps:
+            #    #print(T)
+            #    F.append(env.interp_frac(T))
+            ##plt.plot(temps)
+            #plt.plot(rad, F, label = 'Frac')
+            ##plt.plot(rad, np.log10(temps)/18, label = 'Temp')
+
+            #plt.yscale('log')
+            ##plt.plot(10**env.chTemps,env.chFracs, label = 'Raw')
+            #plt.legend()
+            #plt.show()   
+
             #The cool new time evolution plots
             #T = 800
             #sim.simulate.movName = 'windowPlot.mp4'
             #lineSim.evolveLine(T,0,T)
 
 
-            lineSim.plot('alfU1', cmap = 'RdBu', center = True, abscissa = 'pPos', absdim = 0)
-            lineSim.plot('alfU2', cmap = 'RdBu', center = True, abscissa = 'pPos', absdim = 0)
+            lineSim.plot('T', scaling = 'log', abscissa='pPos')
+            lineSim.plot('frac', abscissa = 'pPos')
+            #lineSim.plot('alfU2', cmap = 'RdBu', center = True, abscissa = 'pPos', absdim = 0)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()
 
