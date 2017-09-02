@@ -21,7 +21,7 @@ if __name__ == '__main__':
     integration = 240
 
     #Environment Parameters
-    envsName = 'Modern'
+    envsName = 'multiIon'
     fFileName = 'longfile'
     sim.environment.fFileName = fFileName
     maxEnvs = 6
@@ -30,12 +30,12 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Batch Name
-    batchName = 'nothing1' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'multitestWide' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
-    simOne = False  
+    simOne = True  
 
     #3D Stuff - ImageSim Parameters
     compute3d = False
@@ -53,11 +53,14 @@ if __name__ == '__main__':
     sim.imagesim.smooth = True
 
     #1D Stuff - ImpactSim Parameters
-    compute = True  
+    compute = False  
     analyze = False  
 
-    impactPoints = 3 
-    iterations = 1
+    impactPoints = 15
+    iterations = 2
+
+    timeAx = np.arange(0, 200, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
+
 
     b0 =  1.02
     b1 =  5#1.6 #46
@@ -66,9 +69,9 @@ if __name__ == '__main__':
     N_line = (200,3000)
     rez = None #[3,3]
     size = [0.002, 0.01]
-    timeAx = np.arange(0, 200, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
     sim.simulate.randTime = False
     length = 10
+    sim.environment.maxIons = 100
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     #Simulation Properties
@@ -76,8 +79,8 @@ if __name__ == '__main__':
     sim.simpoint.g_useWaves = True   
     sim.simpoint.g_useWind = True
 
-    sim.simpoint.matchExtrap = False
-    sim.simpoint.wavesVsR = True
+    sim.simpoint.matchExtrap = True
+    sim.simpoint.wavesVsR = False
     sim.simpoint.useIonFrac = True
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.g_Bmin = 3.8905410
@@ -88,7 +91,8 @@ if __name__ == '__main__':
     
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
-    sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
+    #sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
+    sim.batchjob.redoStats = True
 
 
     printSim = False #This makes it show the generating profile progress bar
@@ -103,7 +107,7 @@ if __name__ == '__main__':
     ##Plotting Flags
     sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
     
-    sim.batchjob.plotFits = False #Plots the Different fits to the line w/ the raw line
+    sim.batchjob.plotFits = True #Plots the Different fits to the line w/ the raw line
     sim.batchjob.maxFitPlot = 1    
 
     sim.batchjob.hahnPlot = False #Plot the green Hahn Data on the primary plot
@@ -207,7 +211,8 @@ if __name__ == '__main__':
             #lineSim = sim.simulate(myLine, env, N = (200,4000), findT = True, getProf = True)
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
-            lineSim = sim.simulate(df.poleLine, env, N = 400, findT = False, getProf = False, printOut = True)
+            lineSim = sim.simulate(df.primeLineVLong, env, N = 3000, findT = False, getProf = True, printOut = True)
+            lineSim.plot('totalInt', ion = -1, yscale = 'log')
             
             #temps, _ = lineSim.get('T')
             #rad, _ = lineSim.get('pPos', dim = 0)
@@ -231,8 +236,8 @@ if __name__ == '__main__':
             #lineSim.evolveLine(T,0,T)
 
 
-            lineSim.plot('T', scaling = 'log', abscissa='pPos')
-            lineSim.plot('frac', abscissa = 'pPos')
+            #lineSim.plot('T', scaling = 'log', abscissa='pPos')
+            #lineSim.plot('frac', abscissa = 'pPos')
             #lineSim.plot('alfU2', cmap = 'RdBu', center = True, abscissa = 'pPos', absdim = 0)
             #lineSim.compare('uTheta', 'pU', p2Dim = 1, center = True)
             #lineSim.quiverPlot()

@@ -84,6 +84,7 @@ class environment:
     def_ionpath = os.path.abspath('../chianti/chiantiData/')
     def_hahnFile = os.path.join(datFolder, 'hahnData.txt')
     def_2DLOSFile = os.path.join(datFolder, 'vxlos_2D_gilly40401.sav')
+    def_ionFile = os.path.join(datFolder, 'useIons.csv')
 
 
     #For doing high level statistics
@@ -118,18 +119,18 @@ class environment:
     theta0 = 28
     S0 = 7.0e5
 
-    #Element Being Observed
-    mI = 9.2732796e-23 #grams per Iron
-    ionString = 'fe'
-    element = 26
-    ion = 11
-    lower = 1 #lower energy level
-    upper = 38 #upper energy level
+    ##Element Being Observed
+    #mI = 9.2732796e-23 #grams per Iron
+    #ionString = 'fe'
+    #element = 26
+    #ion = 11
+    #lower = 1 #lower energy level
+    #upper = 38 #upper energy level
 
-    #LamAxis Stuff   #######################
-    Ln = 600
-    lam0 = 188.217
-    lamPm = 0.35
+    ##LamAxis Stuff   #######################
+    #Ln = 600
+    #lam0 = 188.217
+    #lamPm = 0.35
 
     psfSig = 0.047 #Angstroms
 
@@ -140,13 +141,14 @@ class environment:
         self._bfileLoad(Bfile, plot=False)
         self.__processBMap(thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False)
         if analyze: self.analyze_BMap2()
+        self.ionLoad()
         self._xiLoad()
         self._plasmaLoad(bkFile)
-        self._chiantiLoad()
+        
         self._fLoad(fFile)
         self._hahnLoad()
         self._LOS2DLoad()
-        self.makeLamAxis(self.Ln, self.lam0, self.lamPm)
+
         self.rtPi = np.sqrt(np.pi)
 
         print("Done")
@@ -206,6 +208,7 @@ class environment:
         #plt.axhline(1, color = 'k')
         #plt.legend()
         #plt.show()
+        pass
 
     def _xiLoad(self):
         #Load Xi
@@ -230,80 +233,90 @@ class environment:
         pass
 
     def _chiantiLoad(self):
-        ##Load Chianti File Info
+        ##Load Chianti File Info #This should work for any ion
 
         #Load in the ionization fraction info
         chi = np.loadtxt(self.def_ioneq)
 
-            #Find the correct entry
-        for idx in np.arange(len(chi[:,0])):
-            if chi[idx,0] == self.element and chi[idx,1] == self.ion: break
-        else: raise ValueError('Ion Not Found in fraction file')
+        #Load Chianti Data for every ion
+        for ion in self.ions:
 
-        self.chTemps = chi[0,2:]
-        self.chFracs = chi[idx,2:] + 1e-100
+            #Load the frational ion abundance file
+            for idx in np.arange(len(chi[:,0])):
+                if chi[idx,0] == ion['element'] and chi[idx,1] == ion['ion']: break
+            else: raise ValueError('{}_{} Not Found in fraction file'.format(ion['ionString'], ion['ion']))
 
-                    #Spline it!
-        #self.splinedChTemps = np.linspace(min(self.chTemps),max(self.chTemps), 1000)
-        #self.splinedChFracs = interp.spline(self.chTemps, self.chFracs, self.splinedChTemps)
+            ion['chTemps'] = chi[0,2:]
+            ion['chFracs'] = chi[idx,2:] + 1e-100
 
-        #T = []
-        #for tt in self.chTemps:
-        #    T.append(self.interp_frac(10**tt))
-        #T = np.asarray(T)
-        #print(self.chTemps)
+            #Load in elemental abundance info 
+            abund = np.loadtxt(self.def_abund, usecols=[1])
+            ion['abundance'] = 10**(abund[ion['element']-1]-abund[0])
 
-        #plt.plot(self.chTemps, self.chFracs, 'o')
-        #plt.title("Ion Fraction f(T) for " + str(self.ionString) + str(self.ion))
-        #plt.xlabel("Temperature")
-        #plt.ylabel("Fraction")
-        #plt.yscale('log')
-        ##plt.xscale('log')
-        #plt.plot(self.chTemps,T)
-        #plt.show()
+            #Load in upsilon(T) info 
+            fullstring = ion['ionString'] + '_' + str(ion['ion'])
+            ionpath = (self.def_ionpath +'/'+ ion['ionString'] + '/' + fullstring)
+            fullpath = os.path.normpath(ionpath + '/'+ fullstring + '.scups')
 
-        #Load in elemental abundance info
-        abund = np.loadtxt(self.def_abund, usecols=[1])
-        self.abundance = 10**(abund[self.element-1]-abund[0])
+            getTemps = False
+            getUps = False
+            try:
+                with open(fullpath) as f:
+                    for line in f:
+                        data = line.split()
+                        if getUps == True:
+                            ion['ups'] = [float(x) for x in data]
+                            break
 
-        #Load in upsilon(T) info
-        fullstring = self.ionString + '_' + str(self.ion)
-        ionpath = (self.def_ionpath +'/'+ self.ionString + '/' + fullstring)
-        fullpath = os.path.normpath(ionpath + '/'+ fullstring + '.scups')
+                        if getTemps == True:
+                            ion['upsTemps'] = [float(x) for x in data]
+                            getUps = True
+                            continue
 
-        getTemps = False
-        getUps = False
-        with open(fullpath) as f:
-            for line in f:
-                data = line.split()
-                if getUps == True:
-                    self.ups = [float(x) for x in data]
-                    break
+                        if data[0] == str(ion['lower']) and data[1] == str(ion['upper']):
+                            ion['upsInfo'] = [float(x) for x in data]
+                            getTemps = True
+            
+                ion['splinedUpsX'] = np.linspace(0,1,200)
+                ion['splinedUps'] = interp.spline(ion['upsTemps'], ion['ups'], ion['splinedUpsX'])
+            except: raise ValueError('Transition {}_{}:{}->{} not found in scups file'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower']))
 
-                if getTemps == True:
-                    self.upsTemps = [float(x) for x in data]
-                    getUps = True
-                    continue
+            #Load in statistical weights 
+            fullpath2 = os.path.normpath(ionpath + '/'+ fullstring + '.fblvl')   
+            found = False
+            with open(fullpath2) as f2:     
+                for line in f2:
+                    data = line.split()
+                    if data[0] == str(ion['lower']):
+                        ion['wi'] = float(data[-3])
+                        found = True
+                        break
+            if found == False: raise ValueError('Statistical Weight {}_{}:{} not found in fblvl file'.format(ion['ionString'], ion['ion'], ion['lower']))
 
-                if data[0] == str(self.lower) and data[1] == str(self.upper):
-                    self.upsInfo = [float(x) for x in data]
-                    getTemps = True
+            if False: #Plot the info
+                fig, ax1 = plt.subplots()
+                #fig.subplots_adjust(right=0.8)
+                ax2 = ax1.twinx()
 
-        self.splinedUpsX = np.linspace(0,1,200)
-        self.splinedUps = interp.spline(self.upsTemps, self.ups, self.splinedUpsX)
+                ax2.plot(ion['chTemps'], ion['chFracs'], 'bo-')
+                ax2.set_xlabel('Temperature')
+                ax2.set_ylabel('Fraction', color='b')
+                ax2.tick_params('y', colors='b')
 
-        #Load in statistical weights
-        fullpath2 = os.path.normpath(ionpath + '/'+ fullstring + '.fblvl')   
-        with open(fullpath2) as f2:     
-            for line in f2:
-                data = line.split()
-                if data[0] == str(self.lower):
-                    self.wi = float(data[6])
-        #print('')
-        #print(self.ryd2ang(info[2]))
-        #print(temps)
-        #print(ups)  
-        pass     
+            
+                ax1.plot(ion['splinedUpsX'], ion['splinedUps'], 'ro-')
+                ax1.set_xlabel('Temperature')
+                ax1.set_ylabel('Upsilon', color='r')
+                ax1.tick_params('y', colors='r')
+
+                plt.title("Data for {}_{}:{}->{} \n $\lambda$ = {}".format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'],ion['lam0']))
+
+                height = 0.9
+                left = 0.09
+                plt.figtext(left, height + 0.06, "Abundance: {:0.4E}".format(ion['abundance']))
+                plt.figtext(left, height + 0.03, "Weight: {}".format(ion['wi']))
+                plt.show()
+            pass     
 
     def _hahnLoad(self):
         x = np.loadtxt(self.def_hahnFile)
@@ -321,6 +334,22 @@ class environment:
         self.R_time = x.time
         self.R_zx = x.zx
         self.R_vlos = x.vxlos
+
+    def ionLoad(self):
+        self.ions = []
+        import csv
+        with open(self.def_ionFile) as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                if '#' in row['ionString']:
+                    continue
+                for key in row.keys():
+                    if not key.casefold() == 'ionstring':
+                        if '.' in row[key]: row[key] = float(row[key])
+                        else: row[key] = int(row[key])
+                row['lamAx'] = self.makeLamAxis(row['ln'], row['lam0'], row['lamPm'])
+                self.ions.append(row)
+        self._chiantiLoad()
 
     def plot2DV(self):
         fig, ax = plt.subplots()
@@ -529,9 +558,13 @@ class environment:
   ## Light ############################################################################
 
     def makeLamAxis(self, Ln = 100, lam0 = 200, lamPm = 0.5):
-        self.lam0 = lam0
-        self.lamAx = np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
-        return self.lamAx
+        return np.linspace(lam0 - lamPm, lam0 + lamPm, Ln)
+
+    def getIons(self, maxIons):
+        if maxIons > len(self.ions):
+            return self.ions
+        return self.ions[0:maxIons]
+
 
 
 
@@ -586,16 +619,16 @@ class environment:
         locs = self.rx_raw
         return self.interp(locs, array, rx)
 
-    def interp_frac(self, T):
-        #Figures out the ionization fraction as f(T)
-        locs = self.chTemps
-        func = np.log10(self.chFracs)
+    def interp_frac(self, T, ion):
+        #Interpolate the ionization fraction as f(T)
+        locs = ion['chTemps']
+        func = np.log10(ion['chFracs'])
         temp = np.log10(T)
 
-        #plt.plot(locs, func)
-        #plt.xlabel('Temperature')
-        #plt.ylabel('Fraction')
-        #plt.show()
+                #plt.plot(locs, func)
+                #plt.xlabel('Temperature')
+                #plt.ylabel('Fraction')
+                #plt.show()
         return 10**self.interp(locs, func, temp)
 
     def interp_f1(self, b):
@@ -622,10 +655,10 @@ class environment:
         func = self.ur_raw
         return self.interp(locs, func, b)
 
-    def interp_upsilon(self, X):
+    def interp_upsilon(self, X, ion):
         #Figures out upsilon as f(X)
-        locs = self.splinedUpsX
-        func = self.splinedUps
+        locs = ion['splinedUpsX']
+        func = ion['splinedUps']
         return self.interp(locs, func, X)
 
     def interp(self, X, Y, K):
@@ -786,7 +819,8 @@ class envrs:
         self.__saveEnvs(maxN)
         if show: plt.show(False)
         return self.envs
-            
+
+     
 
 ####################################################################                            
 ##                           Simulation                           ##
@@ -801,6 +835,7 @@ class simpoint:
         #Inputs
         self.grid = grid
         self.env = env
+        self.ions = copy.deepcopy(self.env.getIons(self.env.maxIons))
 
         if findT is None:
             self.findT = self.grid.findT
@@ -894,11 +929,11 @@ class simpoint:
         self.densfac = self.__findDensFac()
         self.rho = self.__findRho(self.densfac) #Total density
         self.nE = 0.9*self.rho/self.env.mP #electron number density
-        self.frac = self.env.interp_frac(self.T) #ion fraction
 
-        if self.useIonFrac:
-            self.nion = np.abs(0.8* self.frac * self.env.abundance * self.rho/self.env.mP) #ion number density 
-        else: self.nion = self.nE
+        for ion in self.ions:
+            ion['frac'] = self.env.interp_frac(self.T, ion) #ion fraction
+            ion['N'] = np.abs(0.8 * ion['frac'] * ion['abundance'] * self.rho/self.env.mP) #ion number density 
+
 
     def __findDensFac(self):
         # Find the density factor
@@ -948,40 +983,44 @@ class simpoint:
 
   ## Radiative Transfer ################################################################
     def findQt(self):
-        #Chianti Stuff
-        Iinf = 2.18056334613e-11 #ergs, equal to 13.61eV
-        kt = self.env.KB*self.T
-        dE = self.env.ryd2erg(self.env.upsInfo[2])
-        upsilon = self.findUpsilon(self.T)
-        self.qt = 2.172e-8*np.sqrt(Iinf/kt)*np.exp(-dE/kt)* upsilon / self.env.wi
+        for ion in self.ions:
+            #Chianti Stuff
+            Iinf = 2.18056334613e-11 #ergs, equal to 13.61eV
+            kt = self.env.KB*self.T
+            dE = self.env.ryd2erg(ion['upsInfo'][2])
+            upsilon = self.findUpsilon(self.T, ion)
+            ion['qt'] = 2.172e-8*np.sqrt(Iinf/kt)*np.exp(-dE/kt)* upsilon / ion['wi']
         
-    def findUpsilon(self, T):
-        Eij = self.env.upsInfo[2] #Rydberg Transition energy
-        K = self.env.upsInfo[6] #Transition Type
-        C = self.env.upsInfo[7] #Scale Constant
+    def findUpsilon(self, T, ion):
+        Eij = ion['upsInfo'][2] #Rydberg Transition energy
+        K = ion['upsInfo'][6] #Transition Type
+        C = ion['upsInfo'][7] #Scale Constant
 
         E = np.abs(T/(1.57888e5*Eij))
         if K == 1 or K == 4: X = np.log10((E+C)/C)/np.log10(E+C)
         if K == 2 or K == 3: X = E/(E+C)
 
-        Y = self.env.interp_upsilon(X)
+        Y = self.env.interp_upsilon(X, ion)
         if K == 1: Y = Y*np.log10(E+np.exp(1))
         if K == 3: Y = Y/(E+1)
         if K == 4: Y = Y*np.log10(E+C)
 
         return Y
        
-    def getProfile(self):
-        self.lam0 = self.env.lam0 #Angstroms
-        self.deltaLam = self.lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / self.env.mI)
-        self.lamLos =  self.vLOS * self.lam0 / self.env.c
+    def getProfiles(self):
+        profiles = []
+        for ion in self.ions:
+            lam0 = ion['lam0'] #Angstroms
+            deltaLam = lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / ion['mIon'])
+            lamLos =  self.vLOS * lam0 / self.env.c
 
-        expblock = (self.env.lamAx - self.lam0 - self.lamLos)/(self.deltaLam)
+            expblock = (ion['lamAx'] - lam0 - lamLos)/(deltaLam)
 
-        self.lamPhi = 1/(self.deltaLam * self.env.rtPi) * np.exp(-expblock*expblock) #Shouldn't there be twos?
-        self.profile = self.nion * self.nE * self.qt * self.lamPhi
-
-        return self.profile
+            lamPhi = 1/(deltaLam * self.env.rtPi) * np.exp(-expblock*expblock) #Shouldn't there be twos?
+            ion['profile'] = ion['N'] * self.nE * ion['qt'] * lamPhi
+            ion['totalInt'] = np.sum(ion['profile'])
+            profiles.append(ion['profile'])
+        return profiles
 
     def chiantiSpectrum(self):
         a = 1
@@ -1035,31 +1074,31 @@ class simpoint:
         if self.wavesVsR and self.useWaves: 
             #Set the wave time
             self.t1 = t + self.alfT1
-            self.t2 = t + self.alfT2
+            #self.t2 = t + self.alfT2
             #Get the wave profile at that time
             self.alfU1 = self.interp_R_wave(self.t1)
-            self.alfU2 = self.interp_R_wave(self.t2)
+            #self.alfU2 = self.interp_R_wave(self.t2)
             #Match the boundary of Braid with the time method
             if self.matchExtrap:
                 self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else self.vRms*self.xi1(self.t1- self.twave)].pop()
-                self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else self.vRms*self.xi2(self.t2- self.twave)].pop()
+                #self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else self.vRms*self.xi2(self.t2- self.twave)].pop()
             else:
                 self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else 0].pop() 
-                self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else 0].pop()
+                #self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else 0].pop()
             #Modify the waves based on density
             self.alfU1 = self.alfU1/self.densfac**0.25
-            self.alfU2 = self.alfU2/self.densfac**0.25
+            #self.alfU2 = self.alfU2/self.densfac**0.25
 
         else:
             #Just the time method
             self.t1 = t - self.twave + self.alfT1
             self.t2 = t - self.twave + self.alfT2
-            self.alfU1 = self.vRms*self.xi1(self.t1) 
-            self.alfU2 = self.vRms*self.xi2(self.t2)
+            self.alfU1 = self.vRms*self.xi1(self.t1) /self.densfac**0.25
+            self.alfU2 = self.vRms*self.xi2(self.t2) /self.densfac**0.25
 
         #Rotate the waves and place them in correct coordinates
-        uTheta = self.alfU1 * np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
-        uPhi =   self.alfU1 * np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
+        uTheta = self.alfU1 #* np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
+        uPhi =   self.alfU1 #* np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
         pU = [self.uw, uTheta, uPhi]
 
         if self.useFluxAngle:
@@ -1327,6 +1366,8 @@ class simulate:
         self.timeAx = timeAx
         self.randomizeTime()  
 
+        self.ions = self.env.getIons(self.env.maxIons)
+
 
         self.sims = []
         self.repoint(gridObj)
@@ -1426,8 +1467,11 @@ class simulate:
 
         return self
 
-    def get(self, myProperty, dim = None, scaling = 'None', scale = 10):
-        propp = np.array([x[myProperty] for x in self.pData])
+    def get(self, myProperty, dim = None, scaling = 'None', scale = 10, ion = None):
+        if ion is None:
+            propp = np.array([x[myProperty] for x in self.pData])
+        else:
+            propp = np.array([x['ions'][ion][myProperty] for x in self.pData])
         prop = propp.reshape(self.shape2)
         if not dim is None: prop = prop[:,:,dim]
         prop = prop.reshape(self.shape)
@@ -1444,26 +1488,53 @@ class simulate:
         else: 
             print('Bad Scaling - None Used')
             scaleProp = prop
-        datSum = sum((v for v in scaleProp.ravel() if not math.isnan(v)))
-        return scaleProp, datSum
+        return scaleProp
 
-    def plot(self, property, dim = None, scaling = 'None', scale = 10, cmap = 'jet', axes = True, center = False, linestyle = 'b', abscissa = None, absdim = 0):
-        scaleProp, datSum = self.get(property, dim, scaling, scale)
-        if abscissa is not None:
-            absc, _ = self.get(abscissa, absdim)
-        else: absc = self.cumSteps
-        scaleProp = np.ma.masked_invalid(scaleProp)
+    def plot(self, property, dim = None, scaling = 'None', scale = 10, ion = None, cmap = 'jet', axes = True, center = False, linestyle = 'b', abscissa = None, absdim = 0, yscale = 'linear', xscale = 'linear'):
+
         self.fig, ax = self.grid.plot(iL = self.iL)
+        self.fig.canvas.set_window_title(property)
+
+        #Get the abscissa
+        if abscissa is not None: absc = self.get(abscissa, absdim)
+        else: absc = self.cumSteps
+
+        if ion == -1:
+            scaleProp = []
+            for ii in np.arange(len(self.ions)):
+                scaleProp.append(np.ma.masked_invalid(self.get(property, dim, scaling, scale, ii)))
+
+        else:
+            scaleProp = np.ma.masked_invalid(self.get(property, dim, scaling, scale, ion))
+
+        
+        
         if type(self.grid) is grid.sightline:
             #Line Plot
-            im = ax.plot(absc, scaleProp, linestyle)
+
+            omax, omin = 0, 1e100
+
+
+            if ion == -1:
+                for prop, i in zip(scaleProp, self.ions):
+                    nmax, nmin = np.max(prop), np.min(prop)
+                    omax, omin = max(nmax, omax), min(nmin, omin) 
+                    im = ax.plot(absc, prop, label = '{}_{}'.format(i['ionString'], i['ion']))
+                ax.legend()
+                ax.set_ylim([omin, omax])
+
+
+            else: im = ax.plot(absc, scaleProp, linestyle)
+
             ax.set_xlabel(abscissa)
             ax.set_ylabel(property)
+            ax.set_yscale(yscale)
+            ax.set_xscale(xscale)
             if axes:
                 ax.axhline(0, color = 'k')
                 ax.axvline(0.5, color = 'k')
                 #ax.set_xlim([0,1])
-            datSum = datSum / self.N
+
 
         elif type(self.grid) is grid.plane:
             #Image Plot
@@ -1476,13 +1547,20 @@ class simulate:
             self.fig.subplots_adjust(right=0.89)
             cbar_ax = self.fig.add_axes([0.91, 0.10, 0.03, 0.8], autoscaley_on = True)
             self.fig.colorbar(im, cax=cbar_ax)
-            datSum = datSum / self.N ** 2
+
         else: 
             print("Invalid Grid")
             return
 
+        if ion is None: ionstring = ''
+        if ion == -1: ionstring = 'All Ions'
+        else: 
+            ion = self.ions[ion]
+            ionstring = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam0'])
+
+
         if dim is None:
-            ax.set_title(property + ", scaling = " + scaling)
+            ax.set_title(property + ", scaling = " + scaling + ', {}'.format(ionstring))
         else:
             ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling )
 
@@ -1619,7 +1697,9 @@ class simulate:
 
     def lineProfile(self):
         #Get a line profile integrated over time
-        profile = np.zeros_like(self.env.lamAx)
+        profiles = []
+        for ion in self.ions:
+            profiles.append(np.zeros_like(ion['lamAx']))
 
         if self.plotSimProfs: fig, axarray = plt.subplots(nrows=1, ncols=2, sharex=True, sharey=False)
 
@@ -1636,9 +1716,10 @@ class simulate:
         for point, step in zip(self.sims, self.steps):
             for tt in self.timeAx:
                 point.setTime(tt)
-                prof = point.getProfile() * step
-                profile += prof
-                if self.plotSimProfs: pp.append(prof)
+                for profile, newProf in zip(profiles, point.getProfiles()):            
+                    profile += newProf * step  
+
+                #if self.plotSimProfs: pp.append(prof)
                 pB += point.dPB * step
                 urProj += point.urProj * step
                 rmsProj += point.rmsProj * step
@@ -1649,20 +1730,20 @@ class simulate:
                     bar.increment()
                     bar.display()
 
-                if self.plotSimProfs: axarray[1].plot(self.env.lamAx, prof)
-        if self.plotSimProfs:
-            axarray[1].plot(self.env.lamAx, profile, 'k')
-            axarray[0].stackplot(self.env.lamAx, np.asarray(pp))
-            grid.maximizePlot()
-            plt.suptitle('Contributions to a single profile')
-            plt.show()
+                #if self.plotSimProfs: axarray[1].plot(self.env.lamAx, prof)
+        #if self.plotSimProfs:
+        #    axarray[1].plot(self.env.lamAx, profile, 'k')
+        #    axarray[0].stackplot(self.env.lamAx, np.asarray(pp))
+        #    grid.maximizePlot()
+        #    plt.suptitle('Contributions to a single profile')
+        #    plt.show()
             #mybatch = batch('analyze').loadBatch()
             #mybatch.makePSF()
             #mybatch.II=0
             #mybatch.impact = self.sims[0].cPos[2]
             #mybatch.findProfileStats(profile)
 
-        self.profile = profile
+        self.profiles = profiles
         self.pB = pB
         self.urProj = np.sqrt(urProj/rho2)
         self.rmsProj = np.sqrt(rmsProj/rho2)
@@ -1671,7 +1752,7 @@ class simulate:
         #plt.plot(profile)
         #plt.show()
         if self.print and self.root: bar.display(True)
-        return self.profile
+        return profiles
 
 
 
@@ -2143,7 +2224,7 @@ class multisim:
             #print(self.oneBatch)
             print('Nenv = ' + str(self.Nenv), end = '; ')
             print('Lines\Env = ' + str(len(self.oneBatch)), end = '; ')
-            print('JobSize = ' + str(len(self.batch)))
+            print('JobSize = ' + str(len(self.batch)), end = '; ')
 
             print('PoolSize = ' + str(self.size), end = '; ')
             print('ChunkSize = ' + str(len(self.gridList)), end = '; ') 
@@ -2194,7 +2275,7 @@ class multisim:
             t = time.time() #Print Stuff
             print('Nenv = ' + str(self.Nenv), end = '; ')
             print('Lines\Env = ' + str(len(self.oneBatch)), end = '; ')
-            print('JobSize = ' + str(len(self.batch)))
+            print('JobSize = ' + str(len(self.batch)), end = '; ')
 
             print('PoolSize = ' + str(self.size), end = '; ')
             #print('ChunkSize = ' + str(len(self.gridList)), end = '; ') 
@@ -2232,8 +2313,8 @@ class multisim:
     def collectVars(self, simulation):
         if self.keepAll: self.sims.append(simulation)
         else: self.sims = [simulation]
-        self.profiles.append(simulation.profile)
-        self.intensities.append(np.sum(simulation.profile))
+        self.profiles.append(simulation.profiles)
+        self.intensities.append(np.sum(simulation.profiles))
         self.pBs.append(simulation.pB)
         self.urProjs.append(simulation.urProj)
         self.rmsProjs.append(simulation.rmsProj)
@@ -2429,6 +2510,7 @@ class batchjob:
         else: self.envs = [envs]
         #print(self.envs)
         self.env = self.envs[0]
+        self.ions = self.env.getIons(self.env.maxIons)
         self.firstRunEver = True
         self.complete = False
         self.completeTime = "Incomplete Job"
@@ -2450,7 +2532,9 @@ class batchjob:
             print('\nCoronaSim!')
             print('Written by Chris Gilbert')
             print('-------------------------\n')
-            print("Simulating Impacts: \n{}".format(self.labels))
+            print("Simulating Impacts: {}".format(self.labels))
+            print("Ions: {}".format(["{}_{}".format(x['ionString'], x['ion']) for x in self.ions]))
+            print("Integration Time: {} seconds".format(len(self.timeAx)))
 
         if self.firstRunEver:
             self.count = 0
@@ -2552,28 +2636,33 @@ class batchjob:
 
     def doStats(self, width):
         """Do the statistics for the whole batch and plot."""
-        self.makePSF()
-        self.__findBatchStats()
-        self.makeVrms()
+        try: self.statsDone
+        except: self.statsDone = False
+        if not self.statsDone or self.redoStats:
+            self.makePSF()
+            self.__findBatchStats()
+        
         self.plot(width)
         #self.doPB(self.pBname)
 
-    def findProfileStats(self, profile):
+    def findProfileStats(self, profile, ion):
         """Analyze a single profile and return a list of the statistics"""
         def gauss_function(x, a, x0, sigma, b): return a*np.exp(-(x-x0)**2/(2*sigma**2)) + b
-
+        #import pdb
+        #pdb.set_trace()
         #Convolve with PSF and the deconvolve again
-        profileCon, profileDecon = self.conDeconProfile(profile)
-
+        profileCon, profileDecon = self.conDeconProfile(profile, ion)
+        #import pdb
+        #pdb.set_trace()
         #Use the moment method to get good initial guesses
-        p0 = self.findMomentStats(profile)
+        p0 = self.findMomentStats(profile, ion)
 
         try:
             #Fit gaussians to the lines
 
-            poptRaw, pcovRaw = curve_fit(gauss_function, self.lamAx, profile, p0 = p0)  
-            poptCon, pcovCon = curve_fit(gauss_function, self.lamAx, profileCon, p0 = p0) 
-            poptDecon, pcovDecon = curve_fit(gauss_function, self.lamAx, profileDecon, p0 = p0)
+            poptRaw, pcovRaw = curve_fit(gauss_function, ion['lamAx'], profile, p0 = p0)  
+            poptCon, pcovCon = curve_fit(gauss_function, ion['lamAx'], profileCon, p0 = p0) 
+            poptDecon, pcovDecon = curve_fit(gauss_function, ion['lamAx'], profileDecon, p0 = p0)
 
             ampRaw = np.abs(poptRaw[0])
             muRaw = np.abs(poptRaw[1])
@@ -2597,15 +2686,18 @@ class batchjob:
             return [np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]
 
         #Subtract the Point Spread Width in quadrature
-        sigmaSubtract = np.sqrt(np.abs(sigmaCon**2 - self.psfSig_e**2)) #Subtract off the PSF width
+        sigmaSubtract = np.sqrt(np.abs(sigmaCon**2 - ion['psfSig_e']**2)) #Subtract off the PSF width
 
         #Plot the fits
-        if self.plotFits and self.II < self.maxFitPlot: 
-            self.II += 1
+        if self.plotFits and ion['II'] < self.maxFitPlot: 
+            #self.II += 1
+            ion['II'] += 1
             plt.figure()
-            plt.plot(self.lamAx, profile, "g", label = "Raw")
-            plt.plot(self.lamAx, gauss_function(self.lamAx, ampRaw, muRaw, sigmaRaw, bRaw), 'g.:', label = 
-                     "Raw Fit: {:.4} km/s".format(self.std2V(sigmaRaw)))
+            ionStr = '{}_{} : {} -> {}, $\lambda_0$: {}'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam0'])
+            plt.suptitle(ionStr)
+            plt.plot(ion['lamAx'], profile, "go-", label = "Raw")
+            plt.plot(ion['lamAx'], gauss_function(ion['lamAx'], ampRaw, muRaw, sigmaRaw, bRaw), 'g.:', label = 
+                     "Raw Fit: {:.4} km/s".format(self.std2V(sigmaRaw, ion)))
 
             #plt.plot(self.lamAx, profileCon, "b", label = "Convolved")
             #plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaCon, bCon), 'b.:', label =
@@ -2613,8 +2705,8 @@ class batchjob:
 
             #plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaSubtract, bCon), 'c.:', label = 
             #         "Subtraction: {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract))))
-            plt.plot(self.lamAx, gauss_function(self.lamAx, ampRaw, muCon, sigmaSubtract, bRaw), 'm.:', label = 
-                     "Subtraction {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract))))
+            plt.plot(ion['lamAx'], gauss_function(ion['lamAx'], ampRaw, muCon, sigmaSubtract, bRaw), 'm.:', label = 
+                     "Subtraction {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract), ion)))
  
             #plt.plot(self.lamAx, profileDecon, "r--", label = "Deconvolved")
             #plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.:', label = 
@@ -2643,7 +2735,7 @@ class batchjob:
             ampOut, muOut, sigOut, perrOut = ampRaw, muRaw, sigmaRaw, perrRaw
 
         #Check the reconstruction against the raw fit
-        ratio = self.std2V(sigOut) / self.std2V(sigmaRaw) 
+        ratio = self.std2V(sigOut, ion) / self.std2V(sigmaRaw, ion) 
 
 
         return [ampOut, muOut, sigOut, 0, 0, perrOut, ratio]
@@ -2652,26 +2744,18 @@ class batchjob:
     def makePSF(self):
         """Do all the things for the PSF that only have to happen once per run"""
         def gauss_function(x, a, x0, sigma, b): return a*np.exp(-(x-x0)**2/(2*sigma**2)) + b
-        self.lamAx = self.env.makeLamAxis(self.env.Ln, self.env.lam0, self.env.lamPm)
-        self.lamRez = np.diff(self.lamAx)[0]
-        self.psfSig_e = self.FWHM_to_e(self.psfSig_FW)
-        self.psfPix = int(np.ceil(self.psfSig_e/self.lamRez))
-        self.psf = gauss_function(self.env.lamAx, 1, self.env.lam0, self.psfSig_e, 0)
+        for ion in self.ions:
+            lamRez = np.diff(ion['lamAx'])[0]
+            ion['psfSig_e'] = self.FWHM_to_e(ion['psfsig'])
+            psfPix = int(np.ceil(ion['psfSig_e']/lamRez))
+            ion['psf'] = gauss_function(ion['lamAx'], 1, ion['lam0'], ion['psfSig_e'], 0)
         
-        #Try it with sinc
-        sincSig = self.psfSig_e / 0.69696969
-        newlam = (self.lamAx - self.env.lam0) / sincSig /1.5
-        self.sincPsf = np.sinc(newlam)
-
-        #plt.plot(self.sincPsf)
-        #plt.plot(self.psf)
-        #plt.show()
-        pass
+            pass
 
     def FWHM_to_e(self, sig): return sig / 2*np.sqrt(np.log(2))
     def e_to_FWHM(self, sig): return sig * 2*np.sqrt(np.log(2))
 
-    def conDeconProfile(self, profile):
+    def conDeconProfile(self, profile, ion):
         """Convolve a profile and deconvolve it again, return both. """
         profLen = len(profile)
 
@@ -2679,20 +2763,15 @@ class batchjob:
 
         #Pad the profile and the psf, both for resolution and for edge effects
         padd = 1000 #self.psfPix 
-        psfPad = np.pad(self.psf, padd, 'constant')
-        psincPad = np.pad(self.sincPsf, padd, 'constant')
+        psfPad = np.pad(ion['psf'], padd, 'constant')
         profilePad = np.pad(profile, (0,2*padd), 'constant')
 
         #Shift the PSF to be correct in frequency space and normalize it
         psfShift = np.fft.fftshift(psfPad)  
         psfShift = psfShift/np.sum(psfShift)
 
-        psincShift = np.fft.fftshift(psincPad)  
-        psincShift = psincShift/np.sum(psincShift)
-
         #Transform the PSF
         psFFT = np.fft.fft(psfShift)
-        psincFFT = np.fft.fft(psincShift) 
 
         #Convolve
         proFFT = np.fft.fft(profilePad)
@@ -2704,7 +2783,7 @@ class batchjob:
         dconvFFT = proConFFT / (psFFT + buffer)
         profileDecon = np.fft.ifft(dconvFFT)
 
-        if self.plotFits and self.II < self.maxFitPlot and False:
+        if self.plotFits and ion['II'] < self.maxFitPlot and False:
             plt.figure()
             plt.plot(np.fft.ifftshift(psFFT), label='psf')
             plt.plot(np.fft.ifftshift(proFFT), ':', label='profile')
@@ -2739,123 +2818,162 @@ class batchjob:
 
         return np.abs(profileCon[0:profLen]), np.abs(profileDecon[0:profLen])
 
-    def findMomentStats(self, profile):
+    def findMomentStats(self, profile, ion):
         #Finds the moment statistics of a profile
 
         maxMoment = 5
         moment = np.zeros(maxMoment)
         for mm in np.arange(maxMoment):
-                moment[mm] = np.dot(profile, self.env.lamAx**mm)
+                moment[mm] = np.dot(profile, ion['lamAx']**mm)
 
         powerM = moment[0] 
         muM = moment[1] / moment[0]
         sigmaM = np.sqrt(moment[2]/moment[0] - (moment[1]/moment[0])**2)
         skewM = (moment[3]/moment[0] - 3*muM*sigmaM**2 - muM**3) / sigmaM**3
         kurtM = (moment[4] / moment[0] - 4*muM*moment[3]/moment[0]+6*muM**2*sigmaM**2 + 3*muM**4) / sigmaM**4 - 3
-        ampM = powerM/(np.sqrt(2*np.pi) * sigmaM)/len(self.env.lamAx)
+        ampM = powerM/(np.sqrt(2*np.pi) * sigmaM)/len(ion['lamAx'])
 
         return [ampM, muM, sigmaM, 0]
 
     def __findSampleStats(self):
         #Finds the mean and varience of each of the statistics for each multisim
-        self.stat =  [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
-        self.statV = [[[],[]],[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]]
+        nIon = len(self.ions)
+        self.stat = []
+        self.statV = []
         self.allStd = []
         self.binStdV = []
         self.binStdVsig = []
         self.allRatio = []
-        for vars, impact, binStats in zip(self.lineStats, self.labels, self.binStats):
-            allAmp = [x[0] for x in vars if not np.isnan(x[0])]
-            allMean = [x[1] for x in vars if not np.isnan(x[1])]
-            allMeanC = [x[1] - self.env.lam0 for x in vars if not np.isnan(x[1])]
-            allStd = [x[2] for x in vars if not np.isnan(x[2])]
-            allSkew = [x[3] for x in vars if not np.isnan(x[3])]
-            allKurt = [x[4] for x in vars if not np.isnan(x[4])]
-            allRatio = [x[6] for x in vars if not np.isnan(x[6])]
+        for ii in np.arange(nIon):
+            self.stat.append([[[],[]],[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]])
+            self.statV.append([[[],[]],[[],[]],[[],[]],[[],[]],[[],[]],[[],[]]])
+            self.allStd.append([])
+            self.binStdV.append([])
+            self.binStdVsig.append([])
+            self.allRatio.append([])
+
+        for simStats, impact, binStats in zip(self.impactStats, self.labels, self.binStats):
+        #For Each Impact Parameter
+
+            for ion, binIon, idx in zip(self.ions, binStats, np.arange(nIon)):
+            #For Each Ion
+                ion['idx'] = idx
+
+                #Collect all of the measurements
+                allAmp = [x[idx][0] for x in simStats if not np.isnan(x[idx][0])]
+                allMean = [x[idx][1] for x in simStats if not np.isnan(x[idx][1])]
+                allMeanC = [x[idx][1] - ion['lam0'] for x in simStats if not np.isnan(x[idx][1])]
+                allStd = [x[idx][2] for x in simStats if not np.isnan(x[idx][2])]
+                allSkew = [x[idx][3] for x in simStats if not np.isnan(x[idx][3])]
+                allKurt = [x[idx][4] for x in simStats if not np.isnan(x[idx][4])]
+                allRatio = [x[idx][6] for x in simStats if not np.isnan(x[idx][6])]
             
-            #Wavelength Units
-            self.assignStat(0, allAmp)
-            self.assignStat(1, allMeanC)
-            self.assignStat(2, allStd)
-            self.assignStat(3, allSkew)
-            self.assignStat(4, allKurt)
+                #Wavelength Units
+                self.assignStat(idx, 0, allAmp)
+                self.assignStat(idx, 1, allMeanC)
+                self.assignStat(idx, 2, allStd)
+                self.assignStat(idx, 3, allSkew)
+                self.assignStat(idx, 4, allKurt)
             
-            #Velocity Units
-            self.assignStatV(0, allAmp)
-            self.assignStatV(3, allSkew)
-            self.assignStatV(4, allKurt)
+                #Velocity Units
+                self.assignStatV(idx, 0, allAmp)
+                self.assignStatV(idx, 3, allSkew)
+                self.assignStatV(idx, 4, allKurt)
 
-            #I think that these functions do what they are supposed to.
-            mean1= self.__mean2V(np.mean(allMean))
-            std1 = np.std([self.__mean2V(x) for x in allMean])
-            self.assignStatV2(1, mean1, std1)
+                #I think that these functions do what they are supposed to.
+                mean1= self.__mean2V(np.mean(allMean), ion)
+                std1 = np.std([self.__mean2V(x, ion) for x in allMean])
+                self.assignStatV2(idx, 1, mean1, std1)
 
-            self.allStd.append([self.std2V(x) for x in allStd])
-            mean2= self.std2V(np.mean(allStd))
-            std2 = self.std2V(np.std(allStd))
-            self.assignStatV2(2, mean2, std2)
+                self.allStd[idx].append([self.std2V(x, ion) for x in allStd])
+                mean2= self.std2V(np.mean(allStd), ion)
+                std2 = self.std2V(np.std(allStd), ion)
+                self.assignStatV2(idx, 2, mean2, std2)
 
-            #Collect the binned version of the profile stats
-            self.binStdV.append(self.std2V(binStats[2])) 
-            self.binStdVsig.append(self.std2V(binStats[5][2]))
+                #Collect the binned version of the profile stats
+                try:
+                    s1 = binIon[2]
+                    s2 = binIon[5][2]
+                except:
+                    s1, s2 = np.nan, np.nan
 
-            self.allRatio.append(allRatio)
-            self.assignStat(5, allRatio)
-            self.assignStatV(5, allRatio)
+                self.binStdV[idx].append(self.std2V(s1, ion)) 
+                self.binStdVsig[idx].append(self.std2V(s2, ion)) 
 
-    def assignStat(self, n, var):
-        self.stat[n][0].append(np.mean(var))
-        self.stat[n][1].append(np.std(var))
+                self.allRatio[idx].append(allRatio)
+                self.assignStat(idx, 5, allRatio)
+                self.assignStatV(idx, 5, allRatio)
 
-    def assignStatV(self, n, var):
-        self.statV[n][0].append(np.mean(var))
-        self.statV[n][1].append(np.std(var))
+    def assignStat(self, idx, n, var):
+        self.stat[idx][n][0].append(np.mean(var))
+        self.stat[idx][n][1].append(np.std(var))
 
-    def assignStatV2(self, n, mean, std):
-        self.statV[n][0].append(mean)
-        self.statV[n][1].append(std)
+    def assignStatV(self, idx, n, var):
+        self.statV[idx][n][0].append(np.mean(var))
+        self.statV[idx][n][1].append(np.std(var))
 
-    def __mean2V(self, mean):
+    def assignStatV2(self, idx, n, mean, std):
+        self.statV[idx][n][0].append(mean)
+        self.statV[idx][n][1].append(std)
+
+
+    def __mean2V(self, mean, ion):
         #Finds the redshift velocity of a wavelength shifted from lam0
-        return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(self.env.lam0)) * self.env.c / 
-                (self.env.ang2cm(self.env.lam0)))
+        return self.env.cm2km((self.env.ang2cm(mean) - self.env.ang2cm(ion['lam0'])) * self.env.c / 
+                (self.env.ang2cm(ion['lam0'])))
 
-    def std2V(self, std):
-        return np.sqrt(2) * self.env.cm2km(self.env.c) * (std / self.env.lam0)
+    def std2V(self, std, ion):
+        return np.sqrt(2) * self.env.cm2km(self.env.c) * (std / ion['lam0'])
 
     def __findBatchStats(self):
-        #Finds the statistics of all of the profiles in all of the multisims
-        self.lineStats = []
+        """Find the statistics of all of the profiles in all of the multisims"""
+        self.impactStats = []
         self.binStats = []
         print("Fitting Profiles...")
         bar = pb.ProgressBar(len(self.profiless))
         bar.display()
+
         
-        for profiles, impact in zip(self.profiless, self.doneLabels):
-            self.II = 0
+        for impProfiles, impact in zip(self.profiless, self.doneLabels):
+            #self.II = 0
+            for ion in self.ions:
+                ion['II'] = 0 if impact > 3.5 else 1
             self.impact = impact
-            self.lineStats.append(self.__findSimStats(profiles))
-            self.binStats.append(self.__findStackStats(profiles))
+            self.impactStats.append(self.__findSimStats(impProfiles))
+            self.binStats.append(self.__findStackStats(impProfiles))
             bar.increment()
             bar.display()
         bar.display(force = True)
         self.__findSampleStats()
+        self.statsDone = True
+        self.save()
 
-    def __findStackStats(self, profiles):
-        try: self.stacks
-        except: self.stacks = []
-        stack = np.zeros_like(profiles[0])
-        for profile in profiles:
-            stack += profile
-        self.stacks.append(stack)
-        return self.findProfileStats(stack)
+    def __findStackStats(self, impProfiles):
+        """Stack all the profiles in a list and then get statistics"""
 
-    def __findSimStats(self, profiles):
-        #Finds the statistics of all profiles in a given list
+        stacks = []
+        for ion in self.ions:
+            stacks.append(np.zeros_like(ion['lamAx']))
+
+        for profileBundle in impProfiles:
+            for ionLine, stack in zip(profileBundle, stacks):
+                stack += ionLine
+
+        return self.__findIonStats(stacks)
+
+    def __findSimStats(self, impProfiles):
+        """Find the statistics of all profiles in a given list"""
         simStats = []
-        for profile in profiles:
-            simStats.append(self.findProfileStats(profile))
+        for profileBundle in impProfiles:
+            simStats.append(self.__findIonStats(profileBundle))
         return simStats
+
+    def __findIonStats(self, profileBundle):
+        """Finds the stats for each ion in a given LOS"""
+        ionStats = []
+        for ion, ionLine in zip(self.ions, profileBundle):
+            ionStats.append(self.findProfileStats(ionLine, ion))
+        return ionStats
 
 
 
@@ -2914,7 +3032,8 @@ class batchjob:
     ## Main Plots ########################################################################
     def plot(self, width):
         if width:
-            self.plotWidth()
+            self.ionPlot()
+            self.plotMultiWidth()
         else:
             self.plotStatsV()
 
@@ -2984,9 +3103,9 @@ class batchjob:
 
 
 
-    def makeVrms(self):
+    def makeVrms(self, ion):
         self.env._fLoad(self.env.fFileName)
-        self.thisV = []
+        ion['expectedRms'] = []
         self.hahnV = []
 
         for impact in self.doneLabels:
@@ -2996,7 +3115,7 @@ class batchjob:
             pUr = self.env.interp_rx_dat(impact, self.env.ur_raw) if self.copyPoint.windWasOn else 0
             pRms = self.env.extractVrms(impact) if self.copyPoint.waveWasOn else 0
 
-            vTh = 2 * self.env.KB * pTem / self.env.mI
+            vTh = 2 * self.env.KB * pTem / ion['mIon']
 
             wind =  2 * (self.env.interp_f1(impact) * pUr)**2 
             rms =   (self.env.interp_f2(impact) * pRms)**2
@@ -3004,9 +3123,19 @@ class batchjob:
 
             V = np.sqrt( (thermal + wind + rms) )
 
-            self.thisV.append(self.env.cm2km(V))
+            ion['expectedRms'].append(self.env.cm2km(V))
             self.hahnV.append(self.hahnFit(impact))
 
+    def ionPlot(self):
+        fig, ax1 = plt.subplots()
+        for ion in self.ions:
+            label = '{}_{}'.format(ion['ionString'], ion['ion'])
+            ax1.errorbar(self.doneLabels, self.binStdV[ion['idx']], yerr = self.binStdVsig[ion['idx']], fmt = 'o', label = label, capsize=6)
+        ax1.legend()
+        ax1.set_title('Binned Profile Measurements')
+        ax1.set_xlabel('Impact Parameter')
+        ax1.set_ylabel('Measured Width in km/s')
+        plt.show(False)
 
 
     def getLabels(self):
@@ -3017,18 +3146,26 @@ class batchjob:
             doRms = False
         return labels
 
-    def plotWidth(self):
-        """Generate the primary plot"""
-        f = plt.figure()
-        f.canvas.set_window_title(self.batchName)
+    def plotMultiWidth(self):
 
-        labels = self.getLabels()
+        #Determine Shape of Subplot Array
+        nIon = len(self.ions)
+        sq = np.sqrt(nIon)
+        intSq = int(np.floor(sq))
+        W = intSq
+        H = intSq
+        if sq > intSq: H += 1
+        if W*H < nIon: W += 1
+
+        #Create Figure
+        f, axArray = plt.subplots(H, W, sharex = True, sharey = True)
+        f.canvas.set_window_title(self.batchName)
 
         #Format the header
         try: self.completeTime
         except: self.completeTime = 'Incomplete Job'
-
-        str1 = "{}: {}\nWavelength: {} Angstroms\nEnvs: {}; Lines per Env: {}; Lines per Impact: {}\n".format(self.batchName, self.completeTime, self.env.lam0, self.Nenv, self.Nrot, self.Npt)
+        
+        str1 = "{}: {}\nEnvs: {}; Lines per Env: {}; Lines per Impact: {}\n".format(self.batchName, self.completeTime, self.Nenv, self.Nrot, self.Npt)
         str2 = "usePsf: {}                                          reconType: {}".format(self.usePsf, self.reconType)
         f.suptitle(str1 + str2)
 
@@ -3043,8 +3180,26 @@ class batchjob:
         plt.figtext(left, height + 0.02, "Waves: {}".format(self.copyPoint.waveWasOn))
         plt.figtext(left, height, "B: {}".format(self.copyPoint.bWasOn))
 
+        #Fill each subplot
+        for ion, ax in zip(self.ions, axArray.flatten()):
+            self.plotWidth(ion, ax)
+
+        grid.maximizePlot()
+        
+        plt.show(False)
+            
+       
+
+    def plotWidth(self, ion, ax):
+        """Generate the primary plot"""
+
+        ionStr = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam0'])
+        ax.set_title(ionStr)
+
+        labels = self.getLabels()
+
         #Plot the actual distribution of line widths in the background
-        self.histlabels = []
+        histLabels = []
         edges = []
         hists = []
         low = []
@@ -3053,7 +3208,7 @@ class batchjob:
 
         small = 1e16
         big = 0
-        for stdlist in self.allStd:
+        for stdlist in self.allStd[ion['idx']]:
             newBig = np.abs(np.ceil(np.amax(stdlist)))
             newSmall = np.abs(np.floor(np.amin(stdlist)))
             
@@ -3063,12 +3218,12 @@ class batchjob:
         throw = np.arange(0,400,5)
         spread = 2
         vmax = 0
-        for stdlist, label in zip(self.allStd, self.doneLabels):
+        for stdlist, label in zip(self.allStd[ion['idx']], self.doneLabels):
             
             hist, edge = np.histogram(stdlist, throw)#, range = [small-spread,big+spread])
             hist = hist / np.sum(hist)
             vmax = max(vmax, np.amax(hist))
-            self.histlabels.append(label)
+            histLabels.append(label)
             edges.append(edge)
             hists.append(hist)
 
@@ -3080,80 +3235,80 @@ class batchjob:
 
 
         array = np.asarray(hists).T
-        diff = np.average(np.diff(np.asarray(self.histlabels)))
-        self.histlabels.append(self.histlabels[-1] + diff)
+        diff = np.average(np.diff(np.asarray(histLabels)))
+        histLabels.append(histLabels[-1] + diff)
         ed = edges[0][:-1]
-        xx, yy = np.meshgrid(self.histlabels-diff/2, ed)
-        self.histlabels.pop()
+        xx, yy = np.meshgrid(histLabels-diff/2, ed)
+        histLabels.pop()
 
-        hhist = plt.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Sim Hist")
+        hhist = ax.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Sim Hist")
         hhist.cmap.set_under("#FFFFFF")
         hhist.set_clim(1e-8,vmax)
         #cbar = plt.colorbar()
         #cbar.set_label('Number of Lines')
 
         #Plot the confidence intervals
-        plt.plot(self.histlabels, low, 'c:', label = "{}%".format(self.qcuts[0]), drawstyle = "steps-mid")
-        plt.plot(self.histlabels, self.medians, 'c--', label = "{}%".format(self.qcuts[1]), drawstyle = "steps-mid")
-        plt.plot(self.histlabels, high, 'c:', label = "{}%".format(self.qcuts[2]), drawstyle = "steps-mid")
+        ax.plot(histLabels, low, 'c:', label = "{}%".format(self.qcuts[0]), drawstyle = "steps-mid")
+        ax.plot(histLabels, self.medians, 'c--', label = "{}%".format(self.qcuts[1]), drawstyle = "steps-mid")
+        ax.plot(histLabels, high, 'c:', label = "{}%".format(self.qcuts[2]), drawstyle = "steps-mid")
 
         #Plot the Statistics from the Lines
-        self.lineWidths = self.statV[2][0]
-        self.lineWidthErrors = self.statV[2][1]
-        plt.errorbar(self.histlabels, self.lineWidths, yerr = self.lineWidthErrors, fmt = 'bo', label = 'Simulation', capsize=4)
+        self.lineWidths = self.statV[ion['idx']][2][0]
+        self.lineWidthErrors = self.statV[ion['idx']][2][1]
+        ax.errorbar(histLabels, self.lineWidths, yerr = self.lineWidthErrors, fmt = 'bo', label = 'Simulation', capsize=4)
 
         #Do the chi-squared test
-        self.chiTest()
-        height = 0.9
-        left = 0.65 + 0.09
-        shift = 0.1
-        #plt.figtext(left, height + 0.04, "Fit to the Binned Prof")
-        #plt.figtext(left, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_bin))
-        #plt.figtext(left, height, "Chi2_R = {:0.3f}".format(self.rChi_bin))
-        plt.figtext(left + shift, height + 0.04, "Fit to the Mean")
-        plt.figtext(left + shift, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mean))
-        plt.figtext(left + shift, height, "Chi2_R = {:0.3f}".format(self.rChi_mean))
+        self.makeVrms(ion)  
+        self.chiTest(ion)
+        #height = 0.9
+        #left = 0.65 + 0.09
+        #shift = 0.1
+        #plt.figtext(left + shift, height + 0.04, "Fit to the Mean")
+        #plt.figtext(left + shift, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mean))
+        #plt.figtext(left + shift, height, "Chi2_R = {:0.3f}".format(self.rChi_mean))
 
         if self.hahnPlot:
             #Plot the Hahn Measurements
-            plt.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr = self.env.hahnError, fmt = 'gs', label = 'Hahn Observations', capsize=4)
-            plt.plot(self.doneLabels, self.hahnV, label = "HahnV", color = 'g') 
-                   
+            ax.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr = self.env.hahnError, fmt = 'gs', label = 'Hahn Observations', capsize=4)
+            ax.plot(self.doneLabels, self.hahnV, label = "HahnV", color = 'g') 
+
+                         
         #Plot the expected values
-        plt.plot(self.doneLabels, self.thisV, label = 'Expected', color = 'b') 
+
+        ax.plot(self.doneLabels, ion['expectedRms'], label = 'Expected', color = 'b') 
 
         #Plot the results of the binned Test
-        plt.errorbar(self.doneLabels, self.binStdV, yerr = self.binStdVsig, fmt = 'mo', label = "Binned Profiles", capsize=6)
+        ax.errorbar(self.doneLabels, self.binStdV[ion['idx']], yerr = self.binStdVsig[ion['idx']], fmt = 'mo', label = "Binned Profiles", capsize=6)
 
         #Plot Resolution Limit
-        diff = self.env.lamAx[1] - self.env.lamAx[0]
-        minrez = self.std2V(diff)
-        psfrez = self.std2V(self.psfSig_e)
+        diff = ion['lamAx'][1] - ion['lamAx'][0]
+        minrez = self.std2V(diff, ion)
+        psfrez = self.std2V(ion['psfSig_e'], ion)
 
 
         #flr = np.ones_like(self.doneLabels)*minrez
-        plt.axhline(minrez, color = 'k', linewidth = 2)
-        plt.axhline(psfrez, color = 'k', linewidth = 2, linestyle = ':')
+        ax.axhline(minrez, color = 'k', linewidth = 2)
+        ax.axhline(psfrez, color = 'k', linewidth = 2, linestyle = ':')
         #plt.plot(self.doneLabels, flr, label = "Rez Limit", color = 'k', linewidth = 2)
 
         ##Put numbers on plot of widths
-        #for xy in zip(self.histlabels, self.statV[2][0]): 
+        #for xy in zip(histLabels, self.statV[2][0]): 
         #    plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
 
         #Put numbers on plot of widths
-        for xy in zip(self.doneLabels, self.binStdV): 
-            plt.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
+        for xy in zip(self.doneLabels, self.binStdV[ion['idx']]): 
+            ax.annotate('(%.2f)' % float(xy[1]), xy=xy, textcoords='data')
 
 
-        plt.title('Line Width')
-        plt.legend(loc =2)
-        plt.ylabel('Km/s')
+        if ion['idx'] == 0: ax.legend(loc =2)
+        if ion['idx'] == len(self.ions)-1: ax.set_xlabel(self.xlabel)
+        plt.setp(ax.get_xticklabels(), visible=True)
+        ax.set_ylabel('Km/s')
         spread = 0.02
-        plt.xlim([self.histlabels[0]-spread, self.histlabels[-1]+spread]) #Get away from the edges
-        plt.ylim([0,400])
-        plt.xlabel(self.xlabel)
-        grid.maximizePlot()
-        plt.show(False)
+        ax.set_xlim([histLabels[0]-spread, histLabels[-1]+spread]) #Get away from the edges
+        ax.set_ylim([0,400])
+        
+        self.histlabels = histLabels
         if self.plotRatio: self.ratioPlot()
 
     def ratioPlot(self):
@@ -3229,7 +3384,7 @@ class batchjob:
         plt.legend()
         plt.show()
 
-    def chiTest(self):
+    def chiTest(self, ion):
                 
         #self.hahnMids = np.interp(self.env.hahnAbs, self.histlabels, self.medians)
         #self.hahnMeans = np.interp(self.env.hahnAbs, self.histlabels, self.lineWidths)
@@ -3239,7 +3394,7 @@ class batchjob:
         self.chi_mean = 0
         
         N = 0
-        for expectedWidth, binWidth, binError, meanWidth, meanError in zip(self.thisV, self.binStdV, self.binStdVsig, self.lineWidths, self.lineWidthErrors):
+        for expectedWidth, binWidth, binError, meanWidth, meanError in zip(ion['expectedRms'], self.binStdV[ion['idx']], self.binStdVsig[ion['idx']], self.lineWidths, self.lineWidthErrors):
             N += 1
             self.chi_bin += (binWidth - expectedWidth)**2 / (binError * binError)
             self.chi_mean += (meanWidth - expectedWidth)**2 / (meanError * meanError)
@@ -3443,8 +3598,9 @@ class impactsim(batchjob):
         self.impacts = self.labels
         self.xlabel = 'Impact Parameter'    
         self.fullBatch = []
-        for ind in self.impacts:
-            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = ind, rez = rez, size = size, x0 = length, findT = False)) 
+        for b in self.impacts:
+            long = max(length, 12*b)
+            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = b, rez = rez, size = size, x0 = long, findT = False)) 
 
         super().__init__(envs)
 
