@@ -83,7 +83,7 @@ class environment:
     def_f2File = os.path.join(datFolder, 'f2_fix.txt')
     def_ionpath = os.path.abspath('../chianti/chiantiData/')
     def_hahnFile = os.path.join(datFolder, 'hahnData.txt')
-    def_2DLOSFile = os.path.join(datFolder, 'vxlos_2D_gilly40401.sav')
+    def_2DLOSFile = os.path.join(datFolder, 'vxnew_2D_gilly40401.sav')
     def_ionFile = os.path.join(datFolder, 'useIons.csv')
 
 
@@ -111,6 +111,7 @@ class environment:
     mH = 1.67372e-24 #grams per hydrogen
     mE = 9.10938e-28 #grams per electron
     mP = 1.6726218e-24 #grams per proton
+    amu = 1.6605e-24 #Grams per amu
 
     #Parameters
     rstar = 1
@@ -864,7 +865,7 @@ class simpoint:
         self.findTwave()
         self.__streamInit()
         self.findSpeeds(t)
-        self.findQt()
+        self.findQt(self.T)
         self.findUrProj()       
         self.findDPB()
 
@@ -982,13 +983,13 @@ class simpoint:
 
 
   ## Radiative Transfer ################################################################
-    def findQt(self):
+    def findQt(self, T):
         for ion in self.ions:
             #Chianti Stuff
             Iinf = 2.18056334613e-11 #ergs, equal to 13.61eV
-            kt = self.env.KB*self.T
+            kt = self.env.KB*T
             dE = self.env.ryd2erg(ion['upsInfo'][2])
-            upsilon = self.findUpsilon(self.T, ion)
+            upsilon = self.findUpsilon(T, ion)
             ion['qt'] = 2.172e-8*np.sqrt(Iinf/kt)*np.exp(-dE/kt)* upsilon / ion['wi']
         
     def findUpsilon(self, T, ion):
@@ -1016,8 +1017,9 @@ class simpoint:
 
             expblock = (ion['lamAx'] - lam0 - lamLos)/(deltaLam)
 
-            lamPhi = 1/(deltaLam * self.env.rtPi) * np.exp(-expblock*expblock) #Shouldn't there be twos?
-            ion['profile'] = ion['N'] * self.nE * ion['qt'] * lamPhi
+            lamPhi = 1/(deltaLam * self.env.rtPi) * np.exp(-expblock*expblock)
+
+            ion['profile'] =  self.nE * self.nE * ion['qt'] * lamPhi # ion['N']
             ion['totalInt'] = np.sum(ion['profile'])
             profiles.append(ion['profile'])
         return profiles
@@ -2746,7 +2748,7 @@ class batchjob:
         def gauss_function(x, a, x0, sigma, b): return a*np.exp(-(x-x0)**2/(2*sigma**2)) + b
         for ion in self.ions:
             lamRez = np.diff(ion['lamAx'])[0]
-            ion['psfSig_e'] = self.FWHM_to_e(ion['psfsig'])
+            ion['psfSig_e'] = self.FWHM_to_e(ion['psfsig_FW'])
             psfPix = int(np.ceil(ion['psfSig_e']/lamRez))
             ion['psf'] = gauss_function(ion['lamAx'], 1, ion['lam0'], ion['psfSig_e'], 0)
         
@@ -3032,8 +3034,9 @@ class batchjob:
     ## Main Plots ########################################################################
     def plot(self, width):
         if width:
-            self.ionPlot()
-            self.plotMultiWidth()
+            #self.ionPlot()
+            self.massPlot()
+            #self.plotMultiWidth()
         else:
             self.plotStatsV()
 
@@ -3100,7 +3103,13 @@ class batchjob:
         #plt.yscale('log')
         plt.show()
 
-
+    def getLabels(self):
+        try:
+            labels = np.asarray(self.doneLabels)
+        except: 
+            labels = np.arange(len(self.profiles))
+            doRms = False
+        return labels
 
 
     def makeVrms(self, ion):
@@ -3137,14 +3146,49 @@ class batchjob:
         ax1.set_ylabel('Measured Width in km/s')
         plt.show(False)
 
+    def massPlot(self):
+        fig, ax = plt.subplots()
+        #ax2 = ax.twiny()
+        slopes = []
+        intercepts = []
 
-    def getLabels(self):
-        try:
-            labels = np.asarray(self.doneLabels)
-        except: 
-            labels = np.arange(len(self.profiles))
-            doRms = False
-        return labels
+        for impact in np.arange(len(self.doneLabels)):
+            widthList = []
+            invMassList = []
+            for ion in self.ions:
+                width = self.binStdV[ion['idx']][impact]
+                invMass = self.env.amu/ion['mIon']
+                widthList.append(width)
+                invMassList.append(invMass)
+            color = next(ax._get_lines.prop_cycler)['color']
+            
+
+            ax.plot(invMassList, widthList, 'o:', label = self.doneLabels[impact], color = color)
+            slope, intercept = np.polyfit(invMassList, widthList, 1)
+
+            ax.plot(invMassList, np.polyval((slope,intercept), invMassList), '-', color = color) 
+
+            slopes.append(slope)
+            intercepts.append(intercept)
+
+        #massList = [1/x for x in invMassList]
+        #ax2.plot(massList, [100 for x in np.zeros_like(massList)], '-', color = 'w')
+        #ax2.set_xlabel('Mass in Amu')
+        ax.legend()
+        ax.set_xlabel('invMass')
+        ax.set_ylabel('lineWidth')
+        fig.suptitle('Width vs Mass for Each Height')
+        plt.show(False)
+
+        fig = plt.figure()
+        plt.title('Fit parameters as a function of height')
+        plt.plot(self.doneLabels, slopes, 'o-', label = 'Slope')
+        plt.plot(self.doneLabels, intercepts, 'o-', label = 'Intercept')
+        plt.xlabel('Impact Parameter')
+        plt.ylabel('Velocity')
+        plt.legend()
+        plt.show()
+
 
     def plotMultiWidth(self):
 

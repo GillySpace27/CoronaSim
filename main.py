@@ -30,12 +30,12 @@ if __name__ == '__main__':
     processEnvironments = False
 
     #Batch Name
-    batchName = 'multitestWide' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'WavesNoMion' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
-    simOne = True  
+    simOne = False  
 
     #3D Stuff - ImageSim Parameters
     compute3d = False
@@ -54,7 +54,7 @@ if __name__ == '__main__':
 
     #1D Stuff - ImpactSim Parameters
     compute = False  
-    analyze = False  
+    analyze = True  
 
     impactPoints = 15
     iterations = 2
@@ -63,7 +63,7 @@ if __name__ == '__main__':
 
 
     b0 =  1.02
-    b1 =  5#1.6 #46
+    b1 =  3#1.6 #46
     spacing = 'lin'
 
     N_line = (200,3000)
@@ -92,7 +92,7 @@ if __name__ == '__main__':
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
     #sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
-    sim.batchjob.redoStats = True
+    sim.batchjob.redoStats = False
 
 
     printSim = False #This makes it show the generating profile progress bar
@@ -102,12 +102,12 @@ if __name__ == '__main__':
     #Run in parallel?
 
     parallel = True
-    cores = 7
+    cores = 6
 
     ##Plotting Flags
     sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
     
-    sim.batchjob.plotFits = True #Plots the Different fits to the line w/ the raw line
+    sim.batchjob.plotFits = False #Plots the Different fits to the line w/ the raw line
     sim.batchjob.maxFitPlot = 1    
 
     sim.batchjob.hahnPlot = False #Plot the green Hahn Data on the primary plot
@@ -212,7 +212,7 @@ if __name__ == '__main__':
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
             lineSim = sim.simulate(df.primeLineVLong, env, N = 3000, findT = False, getProf = True, printOut = True)
-            lineSim.plot('totalInt', ion = -1, yscale = 'log')
+            lineSim.plot('qt', ion = -1, abscissa = 'T', yscale = 'log')
             
             #temps, _ = lineSim.get('T')
             #rad, _ = lineSim.get('pPos', dim = 0)
