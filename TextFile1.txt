@@ -1,0 +1,850 @@
+\documentclass[natbib209]{aastex6}
+\usepackage{hyperref,graphicx,setspace,wrapfig,booktabs}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{etoolbox}
+\usepackage{color}
+\usepackage{comment}
+\usepackage{mathrsfs}
+
+\newcommand{\cites}[1]{\citeauthor{#1}'s \citeyear{#1}}
+
+\watermark{DRAFT}
+% \setwatermarkfontsize{48pt}
+
+% Pads the document with lorem text
+\newtoggle{pad}
+\toggletrue{pad}
+\togglefalse{pad}
+
+%Gets rid of most of those figures
+\excludecomment{figure}
+\let\endfigure\relax
+
+\newcommand{\linewidthb}{0.5\linewidth}
+
+\newcommand{\loremPad}{
+\textcolor{blue}{Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam id ornare odio, vitae interdum lacus. Integer lorem dui, lobortis at mollis quis, viverra ut tortor. Nam sed ante maximus, imperdiet mi in, mollis augue. 	Cras vitae condimentum lectus. Phasellus luctus et leo ac viverra. Cras at orci dolor. Etiam commodo mi bibendum risus tristique imperdiet a aliquet magna. Aliquam in mi purus. Aenean ultrices ultrices diam, et sodales justo porta vel. Vestibulum congue quam a dictum facilisis. Sed dictum gravida diam mattis tempor. Aliquam pellentesque in nulla id scelerisque. Aenean et erat consequat felis molestie sagittis sed in quam.}\ \\
+
+\textcolor{blue}{Nunc vestibulum sem dui. Mauris sed vulputate sapien, ut bibendum mauris. Morbi tincidunt augue sit amet metus pharetra, sed posuere dolor laoreet. Nunc vitae posuere nulla. Fusce ornare venenatis tortor sit amet vulputate. Maecenas vestibulum, mi ut fermentum elementum, ante lacus porttitor nisl, vel ultrices libero libero nec nisi. Quisque cursus, ipsum ac ullamcorper posuere, turpis mauris semper augue, quis euismod leo risus et mauris. Ut arcu nisl, vehicula ac massa vitae, finibus blandit turpis. Cras nec vehicula augue. Praesent lacinia justo a tortor lacinia, vitae venenatis justo efficitur. Cras ipsum augue, gravida non diam in, lacinia viverra felis.}\ \\
+}
+
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{document}
+
+\title{Understanding Spectroscopic Measurements of \\Open-Field Regions of the Solar Corona}
+
+\author{Chris Gilbert}
+% \author{Steven R. Cranmer}
+\affil{Department of Astrophysical and Planetary Sciences, Laboratory for Atmospheric and Space Physics\\ University of Colorado, Boulder, CO 80309}
+
+\begin{abstract}
+A radiative transfer code is developed for the solar corona. Several models are used as inputs to create a toy model of the Northern polar region of the corona. Optically thin lines of sight are then generated through that space and spectral lines are produced. The statistical properties of these spectral lines are then related to the plasma parameters along the line of sight, and various line broadening sources are analyzed. It is found that the effect of the solar wind on the spectral widths is significant. Also, the effect of ionization freezing acts to confound temperature measurements in the lower corona. 
+\end{abstract}
+
+\keywords{Sun: oscillations -- Sun: atmosphere -- Sun: corona -- solar wind -- Sun: UV radiation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% % % % % % % % % % % % % % % % % % % % % %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction} \label{sec:intro}
+
+It has been known that the Sun's corona is very hot for over 75 years \citep{Alfven1941}, but there is still debate about the precise mechanism that is providing the thermal energy. It is generally accepted that the kinetic energy from photospheric convection is transferred to the corona by the shaking of the magnetic foot points of coronal flux tubes \citep{Hollweg1990}. These motions can lead to magnetohydrodynamic waves which travel into the corona and dissipate their energy (e.g. \cite{Roberts2002,McIntosh2011,Pontieu2012}).  Alternately, these random motions can lead to twisting and braiding of the coronal field lines, which results in the build up of current sheets in which magnetic reconnection can occur, providing impulsive heating \citep{Klimchuk2017, Klimchuk2006, Patsourakos,Parker1988}. These two theories are described as wave heating and nanoflare heating, respectively, and determining which effect is most dominant in different regions of the corona requires detailed observations that tell us about the dynamic motions.
+
+Spectroscopy is a powerful tool for determining the conditions in the solar corona. With it, we can learn about the velocity distributions, temperatures, densities, and abundances of electrons, protons, and minor ions near the Sun. \citep{Kohl2006} It has been an important tool for solar research since at least the 1860s, when the first ever issue of Nature included an article about the unknown spectral lines produced in the corona, which later turned out to be highly ionized iron \citep{Lockyer1868,Lockyer1869}. In more modern times, observations from the SUMER \citep{Landi2009a} and UVCS \citep{Kohl1999} spectrometers on the \textit{Solar and Heliophyiscal Observatory} have been used extensively. Today, the EUV Imaging Spectrometer (EIS) is currently still operational aboard the \textit{Hinode} spacecraft, \citep{Culhane2007a, Hahn2013a}, and the Coronal Multi-Channel Polarimeter (CoMP) is a ground based spectrometer run by the High Altitude Observatory \citep{Tomczyk}.
+
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=\linewidthb]{basicGeometry.png}
+\caption{A telescope observes a coronal hole above the pole of the Sun. Magnetic field lines expand from the polar cap, while Alfv\'en waves driven at the surface propagate up them.  }
+\label{fig:geometry}
+\end{figure}
+
+Both the shape and the intensity of spectral lines can be useful diagnostics. Outflow velocities can be determined by the Doppler Dimming method, comparing the relative intensities of two spectral lines \citep{WithBroe1982}. Temperatures can also be found by looking at the intensity ratio of pairs of lines, or by analyzing the width of the lines. Hotter plasma produces broader lines, but this relationship is confounded by the presence of a non-thermal broadening \citep{Phillips2008}. Unresolved motions along the line of sight will lead to Doppler shifts of the rest wavelength of the line, which is measurable as more light production in the line wings. (see Figure \ref{fig:geometry}) This non-thermal width is generally assumed to primarily be caused by Alfv\'en waves in the corona, though other effects may play a role.
+
+We want to be able to understand the different contributions to the spectral width so that we can put limits on parameters like the strength of plasma waves and the temperature of the emitting plasma. But interpreting spectral lines produced in the solar corona is a difficult task. Because the corona is optically thin, it is impossible to measure just a single structure, and instead there are contributions to the spectral line by many points along the line of sight, such that it is difficult to know with which structure the observations are correlated \citep{DeForest2006a, DeMoortel2012}. It has generally been assumed that the plane of the sky dominates the spectral signature; because the density of the corona drops off rapidly with altitude, the plane of the sky is the most dense (and therefore brightest) structure sampled by a line of sight at a given impact parameter. The validity of this assumption is, however, uncertain, and we will address it with this work.
+
+There are still many aspects of these observations that are still poorly understood. Recent observations of spectral widths in the lower corona have been narrower than expected \citep{Hahn2013}, implying that Alfv\'en waves are damping out faster than predictions. The EIS instrument suffers from stray instrumental light which tends to narrow the lines\citep{Ugarte2010}, which may be a possible explanation for the narrow widths. Conversely, there have been many measurements taken of anomalously broad lines of O VI around $3.5R_\odot$ \citep{Cranmer1999, Esser1999, Kohl1999}. This has been interpreted to indicate ion temperatures in excess of $10^8$ Kelvin, significantly higher than the local electron temperature. Differential acceleration and heating of ions is expected to occur, but the extent and precise mechanisms involved are unclear. A forward model would go a long way towards understanding the nature of these observations.
+
+In this work, the Geometric Heliospheric Optically-thin SpecTral Simulation (GHOSTS) is developed. The coronal hole geometry is simulated and spectral lines are generated in order to explore the relative contributions of the thermal and non-thermal components of the spectral line width, as well as the strength of line-of-sight effects. GHOSTS uses inputs from other more self-consistent simulations to generate ensembles of simulated observations. Rays through near-Solar space are defined, and the properties along that ray are determined through interpolation of model values. Each point generates a set of spectral lines, which are summed along the ray. Statistics are then performed on the line ensembles. By varying the impact parameter that is simulated, we can determine how the observations change with height. Individual physics can be turned on and off to examine their effect on the lines.
+
+The rest of this paper will be organized as follows: Section \ref{sec:environment} will describe the way that the Solar Environment was constructed out of a variety of input models. Section \ref{sec:light} will discuss the way that light was generated, and Section \ref{sec:analysis} will describe our method for analyzing the it. Section \ref{sec:results} will describe some interesting results, and Section \ref{sec:future} will discuss future work related to this project.
+
+% \vfill\eject
+\tableofcontents
+% \vfill\eject
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \subsection{Comparisons to Real Observations$\dagger$}
+% \citep{Banerjee1998} SUMER/SOHO si7 line broadening \\
+% \citep{Landi2009a} SUMER/SOHO ion T > electron T, ion-cyclotron heating, SUMER/SOHO constant T, measured many ion temps.\\
+% \citep{Seely1997} SUMER/SOHO temperature of several ions measured \\
+% \citep{Dolla2008a} SUMER/SOHO observations with stray light considerations. hahn 2013 describes this paper as coming up with these two assumptions: vnt is constant with height, waves are undamped. this lets you seperate thermal and nonthermal \\
+
+
+% \citep{Cranmer1999} UVCS/SOHO o6 stuff, also superradial expansion. \\
+% \citep{Esser1999} UVCS/SOHO, ion-proton collision time, limits on wave motions from spectral lines, UVCS/SOHO, O6 stuff \\
+% \citep{Kohl1999} UVCS/SOHO measurements, comparison of Mg and O6 to hydrogen at <2Rs.\\
+
+
+% \citep{Bemporad2012} EIS/Hinode fe line stuff, alfven flux measurements \\
+% \citep{Hahn2013a} EIS/Hinode measurements with parallel and perp. components\\
+% \citep{Gupta2016} EIS/Hinode This work provides measurements of non-thermal velocities and Alfven wave energy fluxes at wide range of temperature. Lots of introduction references\\
+% \citep{Hahn2013} EIS/Hinode main comparison paper, good for references talks about seperating the parts of the line\\
+% 	\citep{Korendyke} EIS Instrument paper.\\
+% 	\citep{Culhane2007a} another EIS instrument paper\\
+% \citep{Ugarte2010} Stray light is a problem with EIS measurements\\
+% 	\citep{Kosugi2007} Hinode mission/instrument paper.\\
+
+% EIS Instrument Paper: \citep{Culhane2007a} \\
+% 	SOLIS Paper :\citep{Henney2008}
+
+% \citep{Kiddie2012} AIA intensity measurements, slow mode waves. mostly loops, good references.\\
+% \citep{Young2007} EIS emission lines \\
+% \citep{Vernazza1978} Skylab, Identification of lots of solar lines and intensities.\\
+% maybe look for more OSO or skylab references.
+
+% (Feldman et al. 1999) stray light issues \\
+
+% % % % % % % % % % % % % % % % % % % % % %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Building the Environment} \label{sec:environment}
+There are several processes which act to broaden coronal spectral lines and must be taken into account. First, the temperature of the emitting plasma provides a natural broadening due to the distribution of particle velocities on the smallest, thermal scale. Next, there are MHD waves that travel throughout the solar atmosphere. These transverse waves add an additional bulk Doppler velocity to each of the parcels of plasma along the line of sight. Finally, the Solar Wind provides another source of velocity, leading to additional broadening which is usually not considered. The treatment of each of these components will be considered in the following sections.  
+
+This simulation is not a self-consistent model. Rather, pieces from other models are assembled together in order to simulate observations. Rather than simulating the entire polar region of the corona in 3D, many individual 1D lines of sight are simulated through the space. An adaptive step size helps to reduce computation time. All of the properties of a simulation point are determined by it's coordinate: tabulated plasma properties from the ZEPHYR model (\S\ref{sec:steadybackground}) are interpolated as a function of altitude, which are then modified by the strength of the magnetic field (\S\ref{sec:magfield}). Ionization balance is calculated from the CHIANTI database (\S\ref{sec:quantum}. Alfv\'en waves are added to the background flows by interpolating a velocity profile produced by the BRAID code (\S\ref{sec:waves}).  
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Steady State Background Plasma} \label{sec:steadybackground}
+
+The ZEPHYR model is a self-consistent model of the photosphere, chromosphere, corona, and solar wind. \citep{Cranmer2007}. This code considers a one-dimensional open magnetic flux tube, rooted in the solar photosphere, and calculates the radial variation of the plasma parameters. The results are time-independent solutions to the hydrodynamic conservation equations. This means that any wave fluctuations are modeled as statistical "wave energy fluxes,' rather than actual wave velocities. 
+
+In this model, the only heating sources that were considered were wave and turbulent motions. Because the treatment is statistical, nonlinear processes such as turbulent cascades and mode conversion must be explicitly defined as sources or sinks in the conservation equations. The coronal heating rate deals only with the turbulent cascade energy flux, and not the specifics of the energy dissipation on the smallest scales. One extreme simplification of this model is that it is a single-fluid model, treating protons, electrons, and ions as if they had the same velocities and temperatures. 
+
+For this work, tabulated output was obtained for mass density, solar wind speed, Alfv\'en speed, and temperature. The magnetic flux tube was rooted at the North pole, in the center of the polar coronal hole. These plasma properties are treated as steady-state background values, which can then be modified by the presence of a magnetic field as described in \S \ref{sec:magfield}. Figure \ref{fig:zephyr} shows the values of these properties.  \\
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{ZephyrOutputs2.png}
+\caption{Tabulated Output from the Zephyr code, \citep{Cranmer2007} The Solid lines use the scaling on the left, and the dashed line uses the right scale bar.}
+\label{fig:zephyr}
+\end{center}
+\end{figure}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Quantum Mechanics} \label{sec:quantum}
+The ZEPHYR model provides the coronal mass density as a function of height. It does not, however, consider of what that mass is comprised. In order to accurately generate the light from a given parcel of plasma, we have to know which ions are present. For this work, this information came from the Chianti Database. This database is the result of several decades of quantum mechanical research effort. The project was first reported by \citet{Dere1997}, and since then there have been many versions. For this work, the Chianti Database version 8 was used \citep{DelZanna2015}. CHIANTI is a collaborative project involving George Mason University, the University of Michigan (USA) and the University of Cambridge (UK).
+
+Chianti provides abundance tables for each chemical element, so that the relative densities can be computed. There are several abundance tables provided, some for the photosphere and others for the corona; for this work, the most recent coronal abundances, from \citet{Schmelz2012a}, were used. 
+
+After the elemental abundances are known, it is necessary to define what ionization state those elements are occupying. When a parcel of plasma is in collisional equilibrium, the relative populations of ionization states will depend on the plasma temperature alone. Higher temperatures lead to stronger collisions, which have the potential to collisionally ionize a particle. Once ionized, these particles then have a rate of recombination. The balancing of collisional ionization and radiative recombination lead to an equilibrium population in a given ionization state. CHIANTI provides collision and recombination rate coefficients for a long list of ions, as well as functions for determining the equilibrium ionization fraction of each ion as a function of temperature. 
+
+Ionization state is only a function of temperature in a collisionally dominant plasma. When the density become too low, the collision rate drops, and the rates of excitation and recombination become very small \citep{WithBroe1982}. When the ion collision time becomes longer than the expansion time of the solar wind, the ionization state can be considered to be ``frozen-in." These rates, as given by \citep{Owocki1983}, are
+\begin{equation}
+\tau_{ion/recomb} = \frac{1}{R_{i+1}(T) + C_i(T)}
+\end{equation}
+and
+\begin{equation}
+\tau_{expansion} = \left| \frac{\rho}{\frac{d\rho}{dr} * u_{w}}  \right|
+\end{equation}
+where $u_w$ is the solar wind speed. Note that the collisional time will be different for each ion. By relating these two times, we can determine the freezing radius for each of the ions. Because we know $T(r)$, $\rho(r)$, and $U_w(r)$ from the ZEPHYR model, we have an equation of the form
+\begin{equation}
+\frac{1}{R_{i+1}(T(r)) + C_i(T(r))} = \left| \frac{\rho(r)}{\frac{d\rho(r)}{dr} * u_{w}(r)}  \right|
+\end{equation}
+A scipy routine called ``minimize\_scalar" was used to find the solution $r=r_{freeze}$ to this equation for each ion. This is the freezing radius assuming only the background plasma state from ZEPHYR. This freezing altitude will not always be the same, however, because the freezing radius can be considered to be defined by the density at that radius, and the densities can be modified by the presence of the magnetic field. To account for these perturbations, the following procedure was used.
+
+First, $\rho_{crit} = \rho(r_{freeze})$ and $T_{crit} = T(r_{freeze})$ were pre-calculated for each ion using ZEPHYR tables. Two ion fraction values were calculated at each simulation point using CHIANTI tables: $f_{eq} = f(T)$ and $f_{fr} = f(T_{crit})$. Then, the density of the point was compared to the critical density via 
+\begin{equation}
+\epsilon = \frac{\left(\frac{\rho}{\rho_{crit}}\right)^p}{1+\left(\frac{\rho}{\rho_{crit}}\right)^p}
+\end{equation}
+where $p=6$ has been chosen to make the transition relatively sharp. Finally, the actual ionization fraction for each element
+\begin{equation}
+f = \epsilon f_{eq} + (1-\epsilon)f_{fr}
+\end{equation}
+was determined. The results of this process can be seen in Figure \ref{fig:freezing}. The ionization fraction for each element is free to stay in equilibrium until it reaches a critical density, at which point it is no longer able to change. 
+
+The CHIANTI Database is also used in the process of producing spectral lines, see \S\ref{sec:spectralLines}.
+
+\begin{figure}[ht!]
+    \centering
+%     \textbf{Ionization Freezing Heights}\par\medskip
+       \subfigure[Ionization Equilibrium]{
+           \label{fig:noFreeze}
+           \includegraphics[width=\linewidthb]{freezeNot.png} 
+       }
+       \subfigure[Frozen-In Ionization]{%
+          \label{fig:freeze}
+          \includegraphics[width=\linewidthb]{freeze.png}
+	   }
+   \caption{%
+	These plots show the fraction of each of the ions, which is a function of temperature. Once the density becomes too low, however, collisions can no longer maintain ionization balance, and the relative populations of a given element's ions become frozen-in. The freezing heights are indicated by dots. No magnetic field was present in this simulation.
+    }%
+  \label{fig:freezing}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{The Magnetic Field} \label{sec:magfield}
+
+Now that the steady background conditions have been defined, the magnetic field must be considered. Magnetic field lines protrude from the photosphere at a variety of scales. As the photosphere convects, the field lines are drawn into the cool downflow lanes and create regions of strong field and low density.  These are observed as magnetic bright points, and are the roots of coronal magnetic flux tubes \citep{Nordlund2009a}. These bright points are on the 100~km scale (Figure \ref{fig:expansion}, bottom of panel a), and several of them expand upwards and merge together to form bundles on the scale of the photosphere granulation, with radii around 1000~km (top of panel a). Many of these regions then expand further and merge to form the super-granular network, with strong field regions that are about 5000~km across (the base of panel b). This network finally expands to touch it's neighbors, creating many super-granule scale field patches that are approximately 20~Mm in diameter (the open field canopy in panel b). 
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{expansion_sm.png}
+\caption{Expansion of magnetic flux tubes from the surface of the Sun \citep{Cranmer2005}}
+\label{fig:expansion}
+\end{center}
+\end{figure}
+
+The 1000 km, granulation-scale magnetic patches are measurable by the SOLIS instrument \citep{Henney2008}. Unfortunately, no entirely contiguous magnetograms exist for polar coronal holes, as the only spacecraft to fly over the pole of the Sun, Ulysses, did not carry any imaging instruments. Instead, magnetograms taken from several equatorial Coronal Holes were stitched together via a random tiling process to form a single continuous magnetogram which could be mapped to the polar region of the Sun.
+
+In this work, we want to consider structures of the largest scale: magnetic flux tubes with diameters on the order of 20~Mm. We must, therefore, artificially expand the small scale SOLIS magnetic patches. Consider Figure \ref{fig:magfield}. The top plot displays a portion of the stitched together SOLIS magnetogram. The magnetogram was thresholded at 90\% of the mean absolute field magnitude. The black contours in the plot show regions that were considered to be part of a single feature. The location of the strongest local maxima in each region was determined, plotted as dots in the figure. Each of these thresholded regions is assumed to expand into the same super-granualar scale cell. The coordinates of the maxima were therefore used as the seeds for a voronoi transform, in which every location on the field map is assigned to the nearest seed point.  The map is thus broken into many segments, as shown in the bottom panel of Figure \ref{fig:magfield}. In this new map, the whole area of each segment is assigned the mean value in from that segment, emulating the decreased magnetic field strength due to expansion. The average radius of the cells were tuned to match the cell size of the super-granular network by using a Gaussian blur filter on the original magnetogram. This new voronoi field map serves as a lower magnetic boundary that will be expanded self-similarly outward into the Heliosphere.
+
+\begin{figure}[ht!]
+\begin{center}
+% \includegraphics[width=\linewidthb]{Field_Process.png}
+\includegraphics[width=\linewidthb]{segmented_small.png}
+\caption{The top plot shows a sample magnetic field map. The colorbar is truncated: individual strong field patches reach into the low 100s of gauss. The black curves are the result of thresholding the map, and the maxima of each region is marked with a dot.  The bottom figure shows the voronoi transform of those maxima. Each of the regions in this plot represent a magnetic flux tube that has expanded to touch nearby tubes, decreasing in field strength as it does so. This map is placed over the North pole of the Sun.}
+\label{fig:magfield}
+\end{center}
+\end{figure}
+ 
+Each of the voronoi cells is considered to be the base of a single polar plume. Because they each represent a different bundle of magnetic flux tubes, they each act as a separate source of Alfv\'en waves. Section \ref{sec:waves} will discuss the treatment of waves.
+
+%%%%%%%%%%%%%%%
+\subsubsection{Flux Tube Expansion into the Heliosphere}
+
+Much of the equatorial region of the sun is covered in closed field regions. Only a small fraction of the solid angle of the solar surface is comprised of coronal holes, which have open fields that reach out into the solar system. Because of this, the solid angle subtended by the polar coronal hole must increase as it expands high into the corona. This super-radial expansion has been measured by e.g.\citet{Deforest12001,Guhathakurta1994,Munro1977}.
+
+We will model this expansion using the general method of \citet{Munro1977}, as implemented by \cite{Cranmer1999}. The radial variation in the total area of the coronal hole can be described by
+\begin{equation} \label{eq:areaF}
+A(r) = A(R_\odot)\left(\frac{r}{R_\odot}\right)^2f(r) 
+\end{equation}
+where $f(r)$ accounts for the super-radial expansion of the flux tubes. Geometrically, this super-radial enhancement factor is given by
+\begin{equation} \label{eq:geoF}
+f(r)=\frac{1-\cos(\Theta_0(r))}{1-\cos(\Theta_0(R_\odot))}
+\end{equation}
+where $\Theta_0(r)$ is the colatitude of the boundary of the coronal hole. In order to solve for $\Theta_0(r)$, another expression for $f(r)$ is required. This was obtained by examining the radially varying magnitude of the polar magnetic field in the publicly available global magnetic field simulation by \citet{Riley2001}. Because $|B|\propto A$ for a magnetic flux tube, we can determine $f(r) \propto A(r) \propto B(r)$ from Equation \ref{eq:areaF}. A model of the 1996-1997 solar minimum was used, and the following fit function was obtained:
+\begin{equation} \label{eq:fFit}
+f(r) = f_{max} + (1-f_{max})e^{-\left(\frac{r-1}{H}\right)^{1.1}} 
+\end{equation}
+where $f_{max} = 8.2$ and $H=1.945$. By choosing $\Theta_0(R_\odot) = 28^\circ$, Equation \ref{eq:geoF} can be solved for the location of the coronal hole boundary $\Theta_0(r)$. 
+
+In order to describe the expansion of individual flux tubes, we must assume that all of the expansion happens self-similarly everywhere in the polar cap \citep{Cranmer1999}. Under that assumption, for a given foot point colatitude of $\Theta_{ft}$, 
+\begin{equation}
+\theta(r) = \frac{\Theta_{ft}}{\Theta(R_\odot)}\Theta_0(r)
+\end{equation}
+This equation is what defines the magnetic structures in Figure \ref{fig:delta}. 
+
+%%%%%%%%%%%%%%%
+\subsubsection{Effect on Solar Wind Direction} \label{sec:wind} 
+
+The Solar wind is accelerated in the open field regions of coronal holes \citep{Goldstein1996, Krieger1973}. The solar wind speed as a function of height is obtained from from the ZEPHYR Code, but it is constrained to move along magnetic field lines. This means that the super-radial expansion of the polar coronal hole can cause the solar wind direction to be turned toward the equatorial plane by several tens of degrees. The angle $\delta_{sup}$ is defined as the angle between the radial vector and the solar wind outflow vector, and is defined in the $r-\theta$ plane. See the teal lines in Figure \ref{fig:delta}. This flaring out will have the effect of broadening the spectral lines more than might be anticipated, as the solar wind velocity will have a much greater projection into the line of sight.\\
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{poleplane/rho_nt2.png}
+\caption{The Solar Wind does not always flow out radially, but instead follows the magnetic field lines. Notice the strong non-radial structures that exist near the boundaries of the coronal hole. The super-radial delta is illustrated in teal. The magnetic field strength at the footpoints of the tubes controls their density. }
+\label{fig:delta}
+\end{center}
+\end{figure}
+
+%%%%%%%%%%%%%%%
+\subsubsection{Density enhancement and velocity depression$\dagger$}
+The magnetic field strength is used to make a parameter called $D_\rho$, which is applied to the entire flux tube. This is how it is made: asdf.\\
+
+$D_\rho$ is used in several places. The RMS amplitude of the Alfv\'e waves is decreased in areas of high density in order to conserve energy. This modification is treated by saying $v_{rms} = v_{rms,0} / D_\rho^{\frac{1}{4}}$ \citep{Moran2001}. The solar wind speed is also reduced by the factor $u_w=u_{w,0} /D_{\rho}^{\frac{1}{2}}$. The Alfv\'en speed, given by is similarly depressed as $V_{alf}=V_{alf,0} / D_{\rho}^{\frac{1}{2}}$
+
+\iftoggle{pad}{\loremPad}{} % % % % % 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Plasma Waves} \label{sec:waves}
+The photosphere of the sun is continuously convecting, and magnetic flux tubes that extend into the corona are rooted in the down-flow lanes of the convecting granulation. The convective motions shake these foot points and cause many different MHD fluctuations in the solar atmosphere and wind which have been studied for almost 70 years \citep{Alfven1947,Schwarzschild1948}. While compressible modes such as acoustic and magneto-acoustic modes may be important in some parts of the atmosphere, it is believed that the incompressible Alfv\'en mode is the dominant wave type in open field regions of the corona \citep{Osterbrock1961, Kuperus1981}. This section will discuss the treatment of Alfv\'en waves and turbulence in GHOSTS.
+
+\subsubsection{Braid Code and Wave Output}
+The ZEPHYR model treats waves statistically, simply tracking energy flux. This means that we require another source for actual Alfv\'en wave transverse velocity profiles. For this work, we choose to use data from \cites{VanBallegooijen2011} reduced MHD flux tube model. 
+
+Reduced MHD is a simplification of the MHD equations used to help make numerical progress in solving the equations. The important approximations are that (1) The magnetic fluctuations associated with the waves are assumed to have length scales much greater in the parallel direction than in the perpendicular direction. (2) The magnetic fluctuation amplitude is small compared to the background field strength. (3) The velocity fluctuations are small compared to the Alfv\'en speed. (4) The plasma pressure and density do not fluctuate. (5) The background density and magnetic field are constant over the cross section of the flux tube \citep{VanBallegooijen2016}. The MHD equations are then split and applied separately to the background state and to the fluctuating wave part.
+
+This model was originally used to simulate coronal loops, but was later extended to treat an open flux tube at the center of a polar coronal hole \citep{VanBallegooijen2016}. The simulation follows a magnetic flux tube from $r_{base}= 1.003 R_\odot$ to $r_{max}=3R_\odot$, with a base radius of 1~Mm. Alfv\'en waves are launched by imposing transverse motions on the plasma at the coronal base with $v_{rms} \approx$ 40~km/s. These waves travel upward and encounter variations in Alfv\'en speed with height; as the density drops off, the phase speed increases. This causes the generation of downward propagating waves, which then interact with the upward propagating waves to create turbulence (e.g. \citet{Shebalin1983, Goldreich1995}). A turbulent cascade is initiated, where large wave motions generate smaller and smaller scale motions until a dissipation scale is reached. 
+
+The output from this model is a cylinder in which the velocity is known at all points, and about 4000 seconds are simulated. The start of the simulation was truncated to remove any unwanted transient effects. The mean x velocity at each height was then calculated for each time step, such that a 2D time series is created (Figure \ref{fig:braid}).  
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{2Dvelocity_nt.png}
+\caption{This is the wave velocity for a flux tube over the course of a few thousand seconds}
+\label{fig:braid}
+\end{center}
+\end{figure}
+
+
+% The Elsasser variables are also defined, which treat perturbations in velocity and perturbations in the magnetic field on an equal footing as 
+% \begin{equation}
+% \vec{Z}_\pm = \vec{v}\pm\vec{b}
+% \end{equation}
+% Then, after some algebra, the RMHD equations produce the following wave evolution equation:
+% \begin{equation}
+% \frac{\partial \vec{Z}_\pm}{\partial t} = -\vec{Z}_\mp \cdot \nabla \vec{Z}_\pm
+% \end{equation}
+
+% Lots of specific details about alfven waves from photosphere to high corona \citep{Cranmer2005}
+% The output of that code is a flux tube with velocities along its length\\
+% We take the mean velocity in the x direction at each height and watch that evolve over time. This is plotted in Figure \ref{fig:braid}\\
+% \citep{Strauss} is the origin of RMHD.\\
+% \citep{Spruit1981} magnetic flux tube waves, modes, damping, phase speeds\\
+% The wave rms amplitude changes with height because reasons\\
+
+
+%%%%%%%%%%%%%%%
+\subsubsection{Many Plumes}
+Each voronoi cell is assigned a random starting time, and the wave profile from in Figure \ref{fig:braid} is placed above the cell. By giving the cells random starting times, we are emulating many separate wave driving regions. The wave velocities are assigned to the $\theta$ and $\phi$ directions, but are then tilted into the radial direction by the super-radial $\delta_{sup}$ such that they are in the perpendicular magnetic frame, as is appropriate for Alfv\'en waves.
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{poleplane/alfu1_marked2.png}
+\caption{Each of the supergranule scale regions near the surface act as individual wave driving regions.}
+\label{fig:waves}
+\end{center}
+\end{figure}
+
+%%%%%%%%%%%%%%%
+\subsubsection{Extrapolating Past the Braid Code}
+Because the BRAID code only simulates up to 3$R_\odot$, it is necessary to do some work to extrapolate the waves beyond that point.
+First, we take the velocity time series from the highest point available in the BRAID simulation and normalize its RMS amplitude to unity. Then, the standard deviation of the velocity profile from Figure \ref{fig:braid} is determined and extrapolated. See Figure \ref{fig:extrapolate}. Next, we calculate the wave travel time to a given point in the corona. The travel time can be determined by integrating the phase velocity of the waves along the line from the surface to the simulation point. To reduce computation time, a fitting function was found. The wave travel time, added to the random offset given to each flux tube, determines the wave profile at that point. The amplitude is then rescaled according to the extrapolated curve in Figure \ref{fig:extrapolate}.  Figure \ref{fig:waves} shows Alfv\'en waves propagating out to infinity. 
+
+% We calculate the wave travel time to a point in the corona, and then use the time series from the greatest altitude available in the Braid simulation to find the appropriate wave velocity amplitude.  We then normalize the RMS wave amplitude and then scale it as shown in the extrapolated orange curve in Figure \ref{fig:extrapolate}. 
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{vrms_extrapolation_nt.png}
+\caption{The Braid Simulation only goes up to 3 Rsun, so the wave amplitudes must be extrapolated above that}
+\label{fig:extrapolate}
+\end{center}
+\end{figure}
+
+
+
+% % % % % % % % % % % % % % % % % % % % % %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Generating the Light} \label{sec:light}
+A primary diagnostic for determining the velocity structure along a line of sight through the corona is to look at the widths of spectral lines. These widths can also be useful for determining temperatures, especially if multiple ions are considered. Therefore, we want to know what the spectral lines of a list of ions will look like as a function of height. 
+
+The Corona exists high above the photosphere, and is optically thin. (CITE) This means that we do not have to use the equations of radiative transfer to track the attenuation of the light, as is necessary when the density is high enough to affect the photons (i.e. the optical depth is high). In this case, we can assume that all of the light emitted by a point travels unimpeded to the spectrograph, and simply sum all the light from all the point to get a synthetic spectrum for a given line of sight. Therefore, the bulk of the work is done by each individual point.
+
+There are several ways in which light can be emitted by a parcel of plasma. For metal ions, collisional excitation dominates the line emission in the low Corona, while resonantly scattered photons become more important in the higher regions of the atmosphere. (CITE) At this time, only collisionally excited lines are considered by this code. There is also a polarized white light component, called pB, which is calculated. See \S\ref{sec:future} for a discussion of future work involving resonant scattering.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Ion Selection} \label{sec:spectralLines}
+
+The ion lines chosen for this work were selected because many of them have been observed simultaneously in the real Corona, and because they have been examined extensively by the community. Table \ref{tab:ions} list the ions lines that were chosen, along with the instrument they have been observed by and an observation paper. 
+
+\begin{table}[]
+\centering
+\label{tab:ions}
+\begin{tabular}{llll}
+Ion     & Wavelength($\AA$) & Instrument & Reference \\ \hline
+N V     & 1238.821          & SUMER      & L         \\
+O VI    & 1031.93           & SUMER      & L         \\
+Ne VIII & 770.42            & SUMER      & L         \\
+Mg X    & 624.968           & SUMER      & L         \\
+Si VII  & 275.361           & EIS        & H         \\
+Si XII  & 499               &            &           \\
+S VI    & 933.41            & EIS        & L         \\
+Fe X    & 184.537           & EIS        & H         \\
+Fe XI   & 188.217           & EIS        & H         \\
+Fe XII  & 195.12            & EIS        & H,B       \\
+Fe XIII & 202.04            & EIS        & H,B      
+\end{tabular}
+\caption{These ions were simulated. References: L - \cite{Landi2009}, H - \cite{Hahn2013}, B - \cite{Bemporad2012} }
+\end{table}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Collisional Line Formation}
+
+A Gaussian spectral line is produced by each point along the line of sight for each ion. The following formulation for collisional line excitation was laid out by  by \citet{Withbroe1970}. The shape of the spectral line is given by the line profile function $\Phi$:
+\begin{equation}
+\Phi(\lambda)=\frac{1}{\Delta\lambda\sqrt{\pi}}e^{-\left(\frac{\lambda-\lambda_0-\lambda_{los}}{\Delta\lambda}\right)^2}
+\end{equation}
+where
+\begin{equation}
+\Delta\lambda=\frac{\lambda_0}{c}\sqrt{\frac{2k_bT}{m_i}}
+\end{equation}
+is the thermal width of the line and
+\begin{equation}
+\lambda_{los}=\frac{v_{los}}{c}\lambda_0
+\end{equation}
+is the Doppler shift of the mean. $v_{los}$ is the component of the point's velocity that is projected into the line of sight, $\lambda_0$ is the rest wavelength of the spectral line, and $m_i$ is the mass of the ion being considered. The width of each line is therefore controlled by the ion temperature and mass, while the center wavelength is controlled by the line of sight Doppler velocity. \\
+Once the line profile function has been determined, the actual intensity produced is given by
+\begin{equation}
+I(\lambda)= n_e n_i q(T) \Phi(\lambda)
+\end{equation}
+where $n_e$ and $n_i$ are the electron and ion number densities, respectively, and $q(T)$ is the temperature-sensitive emissivity of the ion, which is provided by the CHIANTI Database.\\
+
+%collage 2016 derivation of collisional lines, lecture 9?
+
+
+\def \wid {0.24}
+\begin{figure*}[ht!] %Should be starred
+    \begin{center}
+\makebox[\textwidth][c]{
+       \subfigure[Thermal Width Only]{
+           \label{fig:build_thermal}
+           \includegraphics[width=\wid\textwidth]{buildLine/build_none2.png} 
+       }
+       \subfigure[Solar Wind Active]{%
+          \label{fig:build_wind}
+          \includegraphics[width=\wid\textwidth]{buildLine/build_wind2.png}
+       } 
+       \subfigure[Waves Active]{%
+           \label{fig:build_all}
+           \includegraphics[width=\wid\textwidth]{buildLine/build_waves2.png}
+       }   
+       \subfigure[Wind and Waves]{%
+           \label{fig:build_all}
+           \includegraphics[width=\wid\textwidth]{buildLine/build_windWaves.png}
+       }}\ \\
+\makebox[\textwidth][c]{
+       \subfigure[B Active]{%
+           \label{fig:build_B2}
+           \includegraphics[width=\wid\textwidth]{buildLine/build_B2.png}
+       }
+       \subfigure[Wind and B]{%
+           \label{fig:build_windB}
+           \includegraphics[width=\wid\textwidth]{buildLine/build_windB2.png}
+       }
+       \subfigure[Waves and B]{%
+           \label{fig:build_all}
+           \includegraphics[width=\wid\textwidth]{buildLine/build_wavesB2.png}
+       }
+       \subfigure[All Physics]{%
+           \label{fig:build_all}
+           \includegraphics[width=\wid\textwidth]{buildLine/build_all2.png}
+       }}
+   \end{center}
+   \caption{%
+       These figures show a sample spectral line generated at an impact parameter of r = 2 $R_\odot$. Moving from left to right, new physics are added to each plot. The spectral line is built up from many Gaussians, each generated by a point along the line of sight. The squared density of the point controls the amplitude and the temperature controls the width, while the center wavelength is determined by its Doppler velocity. The black line shows the total intensity at each wavelength. The bottom plots show the individual component Gaussians, which appear like parabolas in log space. The number of points along the LOS has been reduced by a factor of 3 in these figures for clarity. 
+    }%
+  \label{fig:buildLine}
+\end{figure*}
+
+\subsection{Polarization-Brightness}
+The so-called polarization-brightness is also calculated for each line of sight. This is white light quantity, and rather than being emitted as $n_e^2$, it is only dependent on $n_e$. This makes it an excellent tracer of the electron density, and these measurements have been used for a long time to constrain densities in the corona \citep{Altschuler1972}.
+The pB emitted by a single simulation point is given by
+\begin{equation} \label{eq:dpB}
+d(pB) = \frac{1}{2}\pi\sigma I_0 n_e \cos^2\tau [(1-u)\mathscr{A}+u\mathscr{B}]dx
+\end{equation}
+where 
+\begin{equation}
+\mathscr{A}=\cos\Omega\sin^2\Omega
+\end{equation}
+and
+\begin{multline}
+\mathscr{B} = -\frac{1}{8}\left[1-3\sin^2\Omega- \right.\\
+\left.\frac{\cos^2\Omega}{\sin\Omega}(1+3\sin^2\Omega)\ln\left(\frac{1+\sin\Omega}{\cos\Omega}\right)\right]
+\end{multline}
+with $\Omega = \sin^{-1}\left(\frac{R_\odot}{r}\right)$ and $\tau=\tan^{-1}\left(\frac{x}{r}\right)$ as relevant angles in the system, $\sigma= 7.95E-26 cm^2$ as the cross section of interaction (the square of the electron radius), and $I_0$ is the disk intensity, which was set to unity \citep{Minnaert1930}. 
+Equation \ref{eq:dpB} is then summed along the entire line of sight to produce a single $pB$. Because it is a good tracer of the electron column density, the $pB$ was used to adjust the effect of the magnetic field on the density such that the average column density is not changed by switching on and off the magnetic field. 
+
+
+% % % % % % % % % % % % % % % % % % % % % %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+
+\section{Analyzing the Light} \label{sec:analysis}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Experiment Methodology} 
+Because there are time variable waves and because the magnetic field maps are not axisymmetric, many 1D lines of sight must be simulated at different times and from different azimuthal angles, each sampling the distribution of possible line widths at that impact parameter. This gives an ensemble of spectral lines to be analyzed and allows us to characterize the distribution.
+
+A series of impact parameters from $b=1.015$ to $b=3$ were considered. Six different magnetic field configurations were used, with 23 lines of sight simulated from each one, for a total of 138 lines of sight at each impact parameter. All lines of sight crossed directly over the North pole, with an angular separation of about 8 degrees.
+
+The magnetic field, the solar wind, and the Alfv\'en waves can all be turned on and off independently. This allows us to see the effect that each one has on the line widths. Figure \ref{fig:buildLine} shows an example spectral line with all combinations of physics active. 
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{widthplot2.png}
+\caption{Results from the simulation of $N^{4+}$. The histogram in the background displays the measurements of the line widths after correction for instrumental broadening. The blue points show the mean of that distribution, and the blue error bars show the standard deviation. The magenta points are the result of a Gaussian being fitted to the binned line. The teal lines give the median and the 68\% quartile-like intervals.  }
+\label{fig:widthplot}
+\end{center}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Fitting Gaussians}
+
+Before being fit, each line was convolved with a Gaussian in order to degrade the resolution of the line and simulate instrumental broadening. This also had the effect of smoothing out some of the roughness in the lines.  The instrumental width was then subtracted off after curve fitting. 
+
+The scipy routine Curve\_Fit was then utilized to fit Gaussians of the form 
+\begin{equation}
+G(A,\lambda_0,\sigma, b)=Ae^{-\frac{(x-x_0)^2}{2\sigma^2}} + b
+\end{equation}
+to each spectral line. Initial guesses for the parameters were found by taking the first four moments of each line. The sample mean and sample standard deviation of these line widths were then calculated. Next, all the lines from a given impact parameter were binned, and the resulting line was also fit with a Gaussian. This binning process is commonly practiced in real observations (e.g. \cite{Hahn2013}) for signal to noise considerations, and results in a much smoother line profile. Because line widths represent Doppler velocities, we can then convert these line widths into velocity units by 
+\begin{equation}
+v = \frac{c}{\lambda_0}\sigma
+\end{equation}
+where $c$ is the speed of light and $\sigma$ is the line width in wavelength units. This analysis has been plotted in Figure \ref{fig:widthplot} for N V. 
+
+By using a Gaussian for the line profile function, we are implicitly assuming that the particle velocity distributions are Maxwellian. This may not be a good assumption above the ion freezing height, where collisions stop being important, however we don't expect the deviation to be very large, so it is probably not too bad of a choice.  
+
+
+% \begin{figure}[ht!]
+%     \centering
+% %     \textbf{Time Integration}\par\medskip
+%        \subfigure[One Second Integration]{
+%            \label{fig:1int}
+%            \includegraphics[width=0.9\linewidthb]{line_1.png} 
+%        }
+%        \subfigure[120 Second Integration]{%
+%           \label{fig:120int}
+%           \includegraphics[width=0.9\linewidthb]{line_120.png}
+% 	   }
+%    \caption{%
+% These spectral lines, in green, were produced at an impact parameter of 1.08
+%     }%
+%   \label{fig:Targets}
+% \end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Understanding the Widths$\dagger$}
+
+We would like to understand what is broadening the spectral lines, but the process of disentangling the various components is difficult. The contribution to the measured width of each spectral line comes from several separate components summed together in quadrature, as shown by \citet{Phillips2008}:
+\begin{equation} \label{eq:split}
+\Delta\lambda_{1/e} = \left[\Delta\lambda_{inst}^2 + \left(\frac{\lambda}{c}\right)^2\left(v_{th}^2 + v_{nt}^2\right)  \right]^{1/2}
+\end{equation}
+
+The thermal component of the width is given by 
+\begin{equation}\label{eq:thermal}
+v_{th} = \sqrt{\frac{2k_b T}{m_{ion}}}
+\end{equation}
+where $k_b$ is the Boltzmann Constant. The instrumental width is a known parameter of the measurement device. The non-thermal $v_{nt}$ represents any additional broadening by other mechanisms. In this case, that means both Alfv\'en waves and the Solar Wind. 
+
+The first step in the analysis is to remove the instrumental broadening. This is simply done by 
+\begin{equation}
+\Delta\lambda_{tot} = [\Delta\lambda_{1/e}^2 - \Delta\lambda_{inst}^2]^{1/2}
+\end{equation}
+It is important to note that for real instruments, this width must be precisely characterized, and can be a function of location along the slit, as is the case for EIS \citep{Young2011}. In this analysis, however, the instrumental width is only defined arbitrarily for each spectral line as 2.5E-4 times the rest wavelength.
+
+Equation \ref{eq:split} works because we are treating all of the distributions as Gaussians, which lets us simply sum their variances. If these distributions are not perfectly Gaussian, as is likely, then the equation is only approximately true. Still, we would like to use
+\begin{equation} \label{eq:mxb}
+v_{1/e}^2=\frac{2k_BT_i}{m_i}+v_{nt}^2
+\end{equation}
+\citep{Tu1998}. This is useful because it gives a way to place limits on the values of the two parameters. By making an assumption about the ion temperature, an estimate of the non-thermal component can be made, and vice versa. 
+
+A useful set of assumptions was formulated by \citet{Seely1997}. They assumed that all the ions were moving together in the same column, and therefore had the same $v_{nt}$. They also assumed that all ions were at the same temperature. This set of assumptions allows us to treat \ref{eq:mxb} as a linear fitting function. If spectral lines from multiple ions are measured simultaneously, then the line widths can be plotted vs inverse mass, and fit with Equation \ref{eq:mxb}, as seen in Figure \ref{fig:massplot}. The slope of the fit line gives a temperature, and the y-intercept gives the non-thermal velocity. \citep{Moran2003} 
+This fitting procedure was applied to the simulated observations. Fit lines can be seen in Figure \ref{fig:massplot}. The fit parameters were then plotted in Figure \ref{fig:proportions}, along with the plane of the sky values and also some analytic predictions, which will be described in the next section.
+ 
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{massWidths_nt.png}
+\caption{The line width is made of thermal and non-thermal components. Equation \ref{eq:split} shows that the slope of these lines should depend on the temperature, while the y-intercept represents the non-thermal component (plotted on the left).}
+\label{fig:massplot}
+\end{center}
+\end{figure}
+ 
+\begin{figure*}[ht!]
+\centering
+\includegraphics[width=\linewidthb]{fits_nt.png}
+\caption{Using a common technique, a fit line was found which gave these temperatures and velocities as fit parameters. The dashed curves are the true plane-of-sky values, the dotted lines are corrected for line of sight geometry with the f functions, The solid line and error bars represent the solution to the curve fits in Figure REF. Wind,Wave, B all on, 200 seconds integration, 138 lines/impact.}
+\label{fig:proportions}
+\end{figure*}
+ 
+Clearly, this procedure begins to fail to make good measurements below $r=1.5R_\odot$. While it is true that all of the ions have the same temperature and nonthermal velocity at a given location, the non-constancy of the ionization fractions in the lower part of the atmosphere seems to have a large effect on the ability to perform a linear fit. At the bottom of Figure \ref{fig:massplot}, the iron and silicon ions have a significant dispersion about their mean. This is because the ions are emitting from different heights in the atmosphere, and so the different spectral lines are not sampling the same locations in space. In contrast, once the impact parameter is greater than the highest freezing height, the ratios of the ions are the same at each point, even as the density drops rapidly with height. 
+Of course, it is unreasonable to expect that the temperatures of all the ions are the same in the first place \citep{Kohl2006}. In this simulation, they have all been treated as a single temperature to try to understand effects of geometry on their own. Even with these assumptions, however, the procedure fails at low heights, and we would not recommend it be used. 
+
+
+%     \citep{Dolla2008a} talks about fitting lines, assuming function for Vnt, subtract that off and determine temperatures. They do this to observations.\\
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Analytic Interpretation of the Widths}
+We would like to be able to use model parameters to predict the line widths of coronal spectral lines. To parametrize the widths, Equation \ref{eq:split} can be re-written in terms of velocity as:
+
+\begin{equation} \label{eq:sum}
+v_{tot} = \left[\frac{2k_b T}{m_{ion}} + (v_{rms})^2 + (v_{wind})^2  \right]^{1/2}
+\end{equation}
+where the non-thermal width has been split into a wind and a waves component. The fundamental problem here is that we don't know what values to use for $T$, $v_{rms}$ and $v_{wind}$, because they vary continuously along the line of sight. One would expect that the plane of the sky values at a given impact parameter would be a good first guess, because the plane of the sky intersects the point of lowest altitude of the line of sight: $v_{pos}(b) = v(x=0,y=0,z=b)$. As the density of the corona drops exponentially with altitude, it is therefore the most dense and most luminous, on average. Using this maxima along the line of sight will necessarily overestimate these parameters, however. We must therefore define some geometric weighting functions $W_i$ to adjust the POS values such that they can be used in Equation \ref{eq:sum}:
+
+\begin{equation}
+\begin{split}
+v_{tot} = \bigg[\frac{2k_b}{m_{ion}}(W_{th}T_{pos}) &+ (W_{rms}v_{rms,pos})^2 \\ 
+ &+ (W_{wi}v_{wi,pos})^2 \bigg]^{1/2}
+\end{split}
+\end{equation}
+where all of the variables are a function of $b$, the impact parameter. The geometric weighting functions $W_i$ are defined as follows. Effectively, they are the first moment of the projected line of sight velocity, weighted by $\rho^2$, which is a proxy for emission intensity. 
+
+The wind requires a sine term because it generally flows radially, but we only want the component along the line of sight:
+\begin{equation}
+\begin{aligned}
+v_{wi,proj}^2(b) = \left. \frac{\int_{-\infty}^{\infty} (\sin(\theta+\delta_{sup}) v_w)^2\rho^2dx}{\int_{-\infty}^{\infty}\rho^2dx}\right\rvert_{\substack{y = 0\\z = b}} \\
+W_{wi}(b) = v_{wi,proj}(b)/v_{wi,pos}(b)
+\end{aligned}
+\end{equation}
+
+Here, $\theta = \tan^{-1}(x/z)$ is the colatitude measured from the North pole, and $\delta_{sup}$ is the super-radial angle defined in \S\ref{idk}. 
+
+The waves require a cosine term because they are transverse oscillations:
+\begin{equation}
+\begin{aligned}
+v_{rms,proj}^2(b) = \left. \frac{\int_{-\infty}^{\infty} (\cos(\theta+\delta) v_{rms})^2\rho^2dx}{\int_{-\infty}^{\infty}\rho^2dx}\right\rvert_{\substack{y = 0\\z = b}} \\
+W_{rms}(b) = v_{rms,proj}(b)/v_{rms,pos}(b)
+\end{aligned}
+\end{equation}
+
+The temperature is a scalar, so no projection effect is required:
+\begin{equation}
+\begin{aligned}
+T_{proj}(b) = \left. \frac{\int_{-\infty}^{\infty} T\rho^2dx}{\int_{-\infty}^{\infty}\rho^2dx}\right\rvert_{\substack{y = 0\\z = b}} \\
+W_{T}(b) = T_{proj}(b)/T_{pos}(b)
+\end{aligned}
+\end{equation}
+These functions can be seen in Figure \ref{fig:fFuncs} as a function of $b$. 
+
+Figure \ref{fig:Proj} shows the integrands of $v_{wi,proj}$ and $v_{rms,proj}$ as a function of the line of sight. From Figure \ref{fig:rmsProj} it is clear that the plane of the sky dominates the contribution at the lowest heights, but as you increase in impact parameter, the range of relevant velocities extends out of the plane of the sky. A similar trend is seen in Figure \ref{fig:urProj}, except that there is no contribution from the plane of the sky itself. Still, it is clear that the solar wind does have a non-zero contribution to the line width, as evidenced by Figure \ref{fig:fFuncs}.
+
+Below about $r=2R_\odot$ the curves should diverge for different ions. This is because the ionization fraction has not been frozen-in yet (see Figure \ref{fig:freezing}) and different altitudes will be differently weighted depending on the specifics of the ionization equilibrium for that ion. To properly account for each ion in these low heights, $\rho$ would have to be replaced with $n_{ion}$ in the preceding equations.
+
+
+\begin{figure}[ht!]
+    \centering
+%     \textbf{Line of Sight Projection}\par\medskip
+       \subfigure[Where the Waves Matter]{
+           \label{fig:rmsProj}
+           \includegraphics[width=0.9\linewidthb]{urProj/rmsprojrel_nt.png} 
+       }
+       \subfigure[Where the Wind Matters]{%
+          \label{fig:urProj}
+          \includegraphics[width=0.9\linewidthb]{urProj/urprojrel_nt.png}
+	   }
+   \caption{%
+These plots show the contribution functions to the weights $W_i$. The two plots are on the same (arbitrary) scale for ease of comparison. The wave velocity primarily comes from the plane of the sky, while the wind velocity primarily comes from just in front of or behind the plane of the sky.
+    }%
+  \label{fig:Proj}
+\end{figure}
+
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{fFuncs_nt.png}
+\caption{The Geometric Weighting Functions. For a given impact parameter, these are the fractions of the plane of sky values that must be used to account properly for each contribution to the thermal width. Note that these will be different for each ion below about $2R_\odot$}
+\label{fig:fFuncs}
+\end{center} 
+\end{figure}
+
+Finally, the following statistic was made:
+\begin{equation}
+P_i = \frac{W_iv_i}{\sqrt{\sum_i (W_iv_i)^2}} 
+\end{equation}
+for each of the three components (Thermal, Waves, Wind). This statistic can be seen in Figure \ref{fig:proportions}, and it is a useful quantity for observers. It represents the proportion of the line width that is contributed by each factor, as a function of impact parameter. These percentages do not add to one, but they do add to one in quadrature. For example, a spectral line measured to have a width of 10 km/s at $b = 1.5$ would have a thermal width of about 4.5 km/s, and a wind-driven width of about 7km/s. Of immediate note is the fact that the wind broadening quickly becomes dominant above $r=1.5\ R_\odot$. This discovery will be discussed at length in \S\ref{sec:results:solarwind}.
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{Proportions_nt.png}
+\caption{These lines are defined such that if you took an instrument-corrected line width in velocity unit and multiplied it by each line, you would recover the value of that component.}
+\label{fig:proportions}
+\end{center}
+\end{figure}
+
+
+% % % % % % % % % % % % % % % % % % % % % %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Discussion $\dagger$} \label{sec:results}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Solar Wind Effects$\dagger$} \label{sec:results:solarwind}
+To the best of the author's knowledge, the effect of the solar wind on the broadening of spectral lines has not received any attention in the literature. However, as seen in Figure \ref{fig:proportions}, it is the dominant component of the widths above $1.5R_\odot$. This may have interesting implications for measurements made of OVI. The plane of the sky wind speed at $r=3.5R_\odot$ is about $u_w=320$. Utilizing the geometric weighting function, that means the projected wind speed is $u_{w,proj}=0.56u_w=180$~km/s. It this velocity were interpreted as a temperature via Equation \ref{eq:thermal}, then the temperature would be $3\times10^7$ Kelvin. In fact, the effective temperature at $r=3R_\odot$ is $T_{eff} = 8.14\times 10^7$ Kelvin, where 
+\begin{equation}
+T_{eff} = \frac{m_i}{2k}\Delta\lambda^2\left(\frac{c}{\lambda}\right)^2 = T_i + \frac{m_i}{2k}v_{nt}
+\end{equation}
+is used to interpret the entire measured width as a temperature. 
+The fact that we have recreated such high effective temperature measurements without the presence of any temperature so high in the model is a red flag. It may very well be true that the anomalously broad observations of OIV can be explained by the solar wind. The question then becomes: why are some ions disproportionately affected by this effect? In the GHOSTS model, the line widths for most of the ions are very similar. Would preferential acceleration of the different ions bring our simulated observations more in line with real ones? 
+
+
+% \iftoggle{pad}{\loremPad}{} % % % % % 
+
+% \begin{figure}[ht!]
+% \begin{center}
+% \includegraphics[width=\linewidthb]{deltaExample.png}
+% \caption{As the solar wind flows along the field lines, its velocity becomes non-radial.}
+% \label{fig:delta}
+% \end{center}
+% \end{figure}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Multi Ion Observation Technique invalid$\dagger$}
+Figure \ref{fig:binned} shows the measured widths to the binned lines at each height for each ion. The ions all have about the same width in the upper corona, modified only by the mass term in the thermal width equation. In the lower corona, however, the linear dependence on the mass is lost due to ionization effect. 
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=\linewidthb]{ionWidths.png}
+\caption{This plot shows the Gaussian width of the binned spectral lines for each ion. 138 lines per line. They begin to separate at low heights because of the ion freezing stuff}
+\label{fig:binned}
+\end{center}
+\end{figure}
+
+
+
+
+\ \\ 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \subsection{Other Discussion$\dagger$}
+% How is measurement impact parameter related to sampling height for (Temp, VRMS, etc)? \\
+% How is the measured value dependent on the real values along the LOS? \\
+% How does changing the strength of the (waves, wind, temperature) affect the spectral lines? \\
+% How does time integration affect the measurements? What is a good integration time to use? \\
+% Implications for the Hahn Measurements \\
+
+% \iftoggle{pad}{\loremPad}{} % % % % % 
+
+% \begin{figure}[ht!]
+% \begin{center}
+% \includegraphics[width=\linewidthb]{distributionTime.png}
+% \caption{The yellow and red in the background of this plot is a histogram of the simulated line widths. The blue errorbars indicate the mean and standard deviation of each distribution. Integrating the spectral lines in time narrows the distribution of measurable line widths, but doesn't seem to affect the mean. All of the lines are then binned and a new fit is found and plotted in magenta.}
+% \label{fig:proportions}
+% \end{center}
+% \end{figure}
+
+
+% % % % % % % % % % % % % % % % % % % % % %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Summary$\dagger$}
+In this work, we have created a forward model called GHOSTS, which compiles several models into a global coronal simulation. Spectral lines are generated under a variety of physical conditions, and the observations are related back to the plasma properties along the line of sight. An analytic model is developed which uses plane of the sky values of plasma parameters, modified by a geometric weighting function, to predict the widths of the spectral lines and discover the relative importance of different physics as a function of impact parameter. It is discovered that the solar wind dominates the spectral width at heights above $1.5R_\odot$, which may alternatively explain UVCS observations currently interpreted as super heated ions in those regimes. Below $1.5R_\odot$, ionization effects seem to preclude the use of multi-ion observations to constrain temperature using the method of \citet{Moran2003}. 
+
+
+% % % % % % % % % % % % % % % % % % % % % %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Future Work} \label{sec:future}
+\subsection{Relax the Isothermal Assumption}
+It is not possible for all of the ions to have the same temperature \cite{Moran2003}. In the current simulation, however, a single temperature for all ions has been used because it simplifies the interpretation of the spectral lines. In the future, we intend to model realistic differential heating for each of the ions, and see how that affects the simulated observations. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Differential Ion Acceleration}
+In general, it is unlikely that solar wind speed is the same for all ions. \citep{Marsch1981,Marsch1982} For simplicity of interpretation, this has not been considered, but in the future we would like to see what effect a differential Ion speed would have on our simulated observations.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Resonantly Scattered Light}
+The current simulation is generating collisionally excited spectral lines only. Another important photon contribution comes from resonantly scattered light from the solar disk. The proportion of light from this component will be greater the farther away from the limb we look. In order to properly consider this contribution, light from the entire disk should technically be considered. We intend to discover above which radius these multiple components can be ignored and only a single ray from disk center can be considered. Additionally, the doppler dimming technique of discovering outflow velocities is often used, and relies on resonantly scattered light as it's signal. We intend to verify that the results obtained from this method match the true outflow speed. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Smaller Scale Motions}
+Inside each of the polar plumes, there are actually many magnetic flux tubes, with a distribution of velocities. Right now this is condensed into a single average velocity that informs the Doppler shift of a given parcel of gas in a plume. We would like to utilize the full velocity distribution by broadening the line with the additional non-thermal velocity given by the variance of the velocities in the plume. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Comparison with Real Observations}
+Many papers have been written which report the calculated values for the non-thermal component of the line width. (CITE) However, we now have a pipeline capable of ingesting spectral lines and performing analysis on them, and we believe that it would be interesting to see what results we would obtain if we ran the pipeline on real data. In the future we intend to download some of the original SUMER/SOHO, EIS/HINODE and XXXX observations and compare them to our results for calibration.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Better Ionization Balance}
+In order to determine the ionization freezing height, the expansion time and the collision time are equated. In the future, it would be more realistic to self-consistently determine the ionization states by considering all of the collisional rates into and out of each ionization state. 
+
+
+\section{Acknowledgements}
+
+CHIANTI is a collaborative project involving George Mason University, the University of Michigan (USA) and the University of Cambridge (UK). (also in chianti section for now)
+\iftoggle{pad}{\loremPad}{} % % % % % 
+
+
+\newpage
+\bibliographystyle{apj}
+\bibliography{CoronaSim}
+
+\end{document}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

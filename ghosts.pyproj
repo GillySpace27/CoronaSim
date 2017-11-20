@@ -1,0 +1,109 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{f831b4c0-5fe9-4575-9f56-6861db41460b}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>main.py</StartupFile>
+    <SearchPath />
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId>Global|PythonCore|3.6</InterpreterId>
+    <IsWindowsApplication>False</IsWindowsApplication>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Depricated\Old\density.txt" />
+    <Content Include="Depricated\Old\requirements.txt" />
+    <Content Include="mastertest.txt" />
+    <Content Include="TextFile1.txt" />
+    <Content Include="UpgradeLog.htm" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="chianti\archival.py" />
+    <Compile Include="chianti\constants.py" />
+    <Compile Include="chianti\core\Continuum.py" />
+    <Compile Include="chianti\core\Ion.py" />
+    <Compile Include="chianti\core\IpyMspectrum.py" />
+    <Compile Include="chianti\core\Mspectrum.py" />
+    <Compile Include="chianti\core\RadLoss.py" />
+    <Compile Include="chianti\core\Spectrum.py" />
+    <Compile Include="chianti\core\_IonTrails.py" />
+    <Compile Include="chianti\core\_SpecTrails.py" />
+    <Compile Include="chianti\core\__init__.py" />
+    <Compile Include="chianti\data.py" />
+    <Compile Include="chianti\filters.py" />
+    <Compile Include="chianti\fortranformat\config.py" />
+    <Compile Include="chianti\fortranformat\FortranRecordReader.py" />
+    <Compile Include="chianti\fortranformat\FortranRecordWriter.py" />
+    <Compile Include="chianti\fortranformat\_edit_descriptors.py" />
+    <Compile Include="chianti\fortranformat\_exceptions.py" />
+    <Compile Include="chianti\fortranformat\_input.py" />
+    <Compile Include="chianti\fortranformat\_lexer.py" />
+    <Compile Include="chianti\fortranformat\_misc.py" />
+    <Compile Include="chianti\fortranformat\_output.py" />
+    <Compile Include="chianti\fortranformat\_parser.py" />
+    <Compile Include="chianti\fortranformat\__init__.py" />
+    <Compile Include="chianti\Gui\gui_cl\gui.py" />
+    <Compile Include="chianti\Gui\gui_cl\__init__.py" />
+    <Compile Include="chianti\Gui\gui_qt\gui.py" />
+    <Compile Include="chianti\Gui\gui_qt\ui.py" />
+    <Compile Include="chianti\Gui\gui_qt\__init__.py" />
+    <Compile Include="chianti\Gui\gui_wx\gui.py" />
+    <Compile Include="chianti\Gui\gui_wx\ui.py" />
+    <Compile Include="chianti\Gui\gui_wx\__init__.py" />
+    <Compile Include="chianti\Gui\__init__.py" />
+    <Compile Include="chianti\io.py" />
+    <Compile Include="chianti\ionrec.py" />
+    <Compile Include="chianti\ipymputil.py" />
+    <Compile Include="chianti\mputil.py" />
+    <Compile Include="chianti\sources.py" />
+    <Compile Include="chianti\util.py" />
+    <Compile Include="chianti\version.py" />
+    <Compile Include="chianti\__init__.py" />
+    <Compile Include="coronasim.py" />
+    <Compile Include="Depricated\bkk\sightline.py" />
+    <Compile Include="Depricated\bkk\simpoint.py" />
+    <Compile Include="Depricated\Old\depricated.py" />
+    <Compile Include="Depricated\Old\main %28WINL3263%27s conflicted copy 2016-07-30%29.py" />
+    <Compile Include="Depricated\Old\module1.py" />
+    <Compile Include="Depricated\Old\MPI_main.py" />
+    <Compile Include="Depricated\Old\processEnvs.py" />
+    <Compile Include="Depricated\Old\testchunks.py" />
+    <Compile Include="Depricated\scripts\density_sim.py" />
+    <Compile Include="Depricated\scripts\processEnvs.py" />
+    <Compile Include="gridgen.py" />
+    <Compile Include="main.py" />
+    <Compile Include="masterslave.py" />
+    <Compile Include="mastertest.py" />
+    <Compile Include="mpitest.py" />
+    <Compile Include="progressBar.py" />
+    <Compile Include="run.py" />
+    <Compile Include="runl.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="chianti" />
+    <Folder Include="chianti\core" />
+    <Folder Include="chianti\fortranformat" />
+    <Folder Include="chianti\Gui" />
+    <Folder Include="chianti\Gui\gui_cl" />
+    <Folder Include="chianti\Gui\gui_qt" />
+    <Folder Include="chianti\Gui\gui_wx" />
+    <Folder Include="Depricated\" />
+    <Folder Include="Depricated\bkk" />
+    <Folder Include="Depricated\Old" />
+    <Folder Include="Depricated\scripts" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|ContinuumAnalytics|Anaconda36-64" />
+    <InterpreterReference Include="Global|PythonCore|3.6" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>

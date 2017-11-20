@@ -54,6 +54,7 @@ class ProgressBar():
         self.update(self.current + change)
     
     def display(self, force=False):
+
         if self.disable:
             return
         now = datetime.now()
@@ -79,7 +80,7 @@ class ProgressBar():
         
         etaString = self.lastEta
         rateString = self.lastRate
-        
+     
         # If it's been more than a second since the last progress benchmark
         # was stored, let's update it as well as the ETA and progress rate.
         if(self.totalSeconds(now - self.lastUpdate) > 2):
@@ -114,6 +115,11 @@ class ProgressBar():
 
         # Prepare the progress bar display
         terminalSize = getTerminalSize()[0]
+        #print(terminalSize)
+        #import time
+        #print("Sleepytime")
+        #sys.stdout.flush()
+        #time.sleep(20)   
         # The 4 accounts for an initial space, two brackets, and a
         # 'rest space' at the end of the line to keep the cursor from
         # filling the line and moving the cursor to the next line.
@@ -175,7 +181,8 @@ def getTerminalSize():
     if current_os == 'Windows':
         tuple_xy = _getTerminalSize_windows()
         if tuple_xy is None:
-            tuple_xy = _getTerminalSize_tput()
+            pass
+            #tuple_xy = _getTerminalSize_tput() ##################THIS WAS THROWING A WARNING I DONT WANT
             # needed for window's python in cygwin's xterm!
     if current_os == 'Linux' or current_os == 'Darwin' \
        or current_os.startswith('CYGWIN'):

@@ -4,12 +4,14 @@ import numpy as np
 import matplotlib
 #matplotlib.use('qt4agg')
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import gridgen as grid
 import coronasim as sim
 import time
 import os
 from mpi4py import MPI
 import sys
+
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -18,97 +20,108 @@ size = comm.Get_size()
 
 if __name__ == '__main__':
 
-    integration = 240
-
     #Environment Parameters
-    envsName = 'multiIon'
-    fFileName = 'longfile'
+    envsName = 'ionFreeze2'
+    fFileName = 'hq'
     sim.environment.fFileName = fFileName
-    maxEnvs = 6
+    
     refineBmin = False
-    calcFFiles = False
     processEnvironments = False
+    calcFFiles = False #Turn off B
+    
 
     #Batch Name
-    batchName = 'WavesNoMion' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'Test' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
     simOne = False  
 
-    #3D Stuff - ImageSim Parameters
-    compute3d = False
-    analyze3d = False
-
-    NN3D = [200,200]
-    sim.imagesim.N = (200, 4000)
-    sim.imagesim.timeAx3D = np.arange(0, 120, 2)
-    rez3D =  [1,1]
-    target3D = [0,1.5]
-    len3D = 20
-    envInd = 0
-    sim.imagesim.corRez = 2000
-    sim.imagesim.filt = 10
-    sim.imagesim.smooth = True
-
     #1D Stuff - ImpactSim Parameters
-    compute = False  
+    compute = False
     analyze = True  
+    
+    try: #Plotflags
+        sim.batchjob.pMass = False #Plot with temperature and non-thermal velocity from fits
+        sim.batchjob.pIon = True #Plot with just the binned widths for all ions
+        sim.batchjob.pMFit = False #Plot with straight fit lines on the ions
+        sim.batchjob.pWidth = False #Plot with the hist velocities for each of the elements on its own plot
+        sim.batchjob.pPB = False #Plot the polarization brightness
+    except: pass
 
-    impactPoints = 15
-    iterations = 2
+    impactPoints = 10
+    iterations = 3
 
-    timeAx = np.arange(0, 200, 2) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
+    maxEnvs = 10
+    sim.environment.maxIons = 3
+    timeAx = [0]#np.arange(0, 400) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
-
-    b0 =  1.02
-    b1 =  3#1.6 #46
+    b0 =  1.015
+    b1 =  3.5 #6 #1.6 #46
     spacing = 'lin'
 
-    N_line = (200,3000)
+    N_line = (600,3000)
+    sim.batchjob.autoN = True
     rez = None #[3,3]
     size = [0.002, 0.01]
     sim.simulate.randTime = False
     length = 10
-    sim.environment.maxIons = 100
+    
+
+    #3D Stuff - ImageSim Parameters
+    compute3d = False
+    analyze3d = False
+
+    NN3D = [100,100]
+    sim.imagesim.N = 600
+    sim.imagesim.timeAx3D = [0]#np.arange(0, 120, 2)
+    rez3D =  [1,1]
+    target3D = [0,1.5]
+    len3D = 10
+    envInd = 0
+    sim.imagesim.corRez = 1000
+    sim.imagesim.filt = 1
+    sim.imagesim.smooth = True
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     #Simulation Properties
-    sim.simpoint.useB = False
+    sim.simpoint.useB = True
     sim.simpoint.g_useWaves = True   
     sim.simpoint.g_useWind = True
 
+    sim.simpoint.voroB = True #Use the voronoi average instead of the raw Bmap
     sim.simpoint.matchExtrap = True
-    sim.simpoint.wavesVsR = False
-    sim.simpoint.useIonFrac = True
+    sim.simpoint.wavesVsR = True
     sim.simpoint.g_useFluxAngle = True
-    sim.simpoint.g_Bmin = 3.8905410
+    sim.simpoint.useIonFrac = True #Use Ionization Fractions
+    sim.environment.ionFreeze = False #Freeze ionization states at freezing height
+
     sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
     sim.multisim.keepAll = False
     sim.multisim.useMasters = False
-    sim.batchjob.qcuts = [16,50,84]
     
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
-    #sim.batchjob.psfSig_FW = 0.06 #0.054 #angstroms FWHM
     sim.batchjob.redoStats = False
-
+    sim.batchjob.plotbinFits = False #Plots the binned and the non-binned lines, and their fits, during stats only
+    sim.batchjob.plotheight = 1
 
     printSim = False #This makes it show the generating profile progress bar
-    widthPlot = True #Plot just line width instead of all 5 moments
     firstRun = True  #Overwrite any existing batch with this name
 
     #Run in parallel?
 
     parallel = True
-    cores = 6
+    cores = 7
 
     ##Plotting Flags
     sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
     
     sim.batchjob.plotFits = False #Plots the Different fits to the line w/ the raw line
-    sim.batchjob.maxFitPlot = 1    
+    sim.batchjob.maxFitPlot = 10    
+
+    
 
     sim.batchjob.hahnPlot = False #Plot the green Hahn Data on the primary plot
     sim.batchjob.plotRatio = False #Plot the ratio of the reconstruction/raw fits
@@ -123,14 +136,16 @@ if __name__ == '__main__':
 ##################################################################################
 ##################################################################################
 
+    
     #This header handles calling the program in parallel
-    try: go = int(sys.argv[1])
+    try: 
+        go = int(sys.argv[1])
     except: go = 1
     if parallel and go == 1 and (compute or refineBmin or compute3d):
         print("Starting MPI...")
         os.system("mpiexec -n {} python main.py 0".format(cores))
+        print("Parallel Job Complete")
     else:
-        
 
         ### Process Envs ###
         ####################
@@ -161,13 +176,13 @@ if __name__ == '__main__':
 
         if compute:
             envs = sim.envrs(envsName).loadEnvs(maxEnvs) 
-            if firstRun:                   
+            if firstRun:        
                 myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim, fName = fFileName, spacing = spacing)
             else:
                 myBatch = sim.batch(batchName).restartBatch(envs)  
         if root:      
             if analyze:
-                myBatch = sim.batch(batchName).analyzeBatch(widthPlot)
+                myBatch = sim.batch(batchName).analyzeBatch()
                 #myBatch.fName='longfile'
                 #myBatch.calcFfiles()
             if showProfiles: 
@@ -189,10 +204,74 @@ if __name__ == '__main__':
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
-            env = sim.envrs(envsName).loadEnvs(100)[0]
+            env = sim.envrs(envsName).loadEnvs(100)[2]
+            #env.fPlot()
+            #env.plot2DV()
 
+            ###xx = np.linspace(0,300,100)
+            ###x0s = [125, 150, 175]
+            ###sigma = 25
+            ###a = [0.5, 500]
+            ###a2 = [0.5, 1, 0.5]
+            ###colors = ['r', 'b']
+            ###from scipy.optimize import curve_fit
+
+            ###def gauss_function(x, a, x0, sigma): return a*np.exp(-(x-x0)**2/(2*sigma**2))
+
+            ###ans = []
+            ###for amp, color in zip(a, colors):
+            ###    array = np.zeros_like(xx)
+            ###    for x0, a in zip(x0s, a2):
+            ###        gauss = gauss_function(xx, amp*a, x0, sigma)
+            ###        array += gauss
+            ###        plt.plot(xx, gauss, color = color)
+            ###    plt.plot(xx, array, '--', color = color)
+            ###    poptRaw, pcovRaw = curve_fit(gauss_function, xx, array, p0 = [1,150,30])  
+            ###    sigmaRaw = np.abs(poptRaw[2])
+            ###    ans.append(sigmaRaw)
+            ###print(ans)
+            ###plt.show()
+
+            
+            #This is for looking at the nion of each of the ions.
+            y = 0.001
+            x = 20 
+            z = 1.5
+            N = 500
+
+            position, target = [x, y, z], [-x, y, z]
+            #myLine = grid.sightline(position, target, coords = 'cart')
+            #lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True)
+            #lineSim.plot('N', ion = -1, abscissa = 'cPos', yscale = 'log', norm = True)
+            #lineSim.plot('vLOS', abscissa='cPos')
+            #print(env.interp_f1(3.5))
+            #lineSim.plot('uw', abscissa = 'pPos')
+
+            #vlos = lineSim.get('vLOS')
+            #plt.hist(vlos, 200)
+            #plt.xlabel('Velocity')
+            #plt.ylabel('Counts')
+            #plt.title('Velocity Distribution along LOS')
+            #plt.show()
+
+            #twave = lineSim.get('twave')
+            #r = lineSim.get('pPos', dim=0)
+            
+            #ans = env.interp(r, twave, 3)
+            #print(ans)
 
             #sim.plotpB()
+
+            #ex = 4
+
+            #xx = np.linspace(0,1,60)
+            #kk = xx**ex
+
+            #kmin = 1.0001
+            #kmax = 6
+            #dif = kmax - kmin
+            #qq = kk * dif + kmin
+            
 
             #env.plot2DV()
             #if self.root: 
@@ -201,19 +280,80 @@ if __name__ == '__main__':
             #self.comm.barrier()
 
             #env.plot('ur_raw', 'rx_raw')
-            x = 10
-            y = 0.001
-            z = 1.3
 
-            position, target = [x, y, z], [-x, y, z]
-            myLine = grid.sightline(position, target, coords = 'cart')
-            #env.plotXi()
-            #lineSim = sim.simulate(myLine, env, N = (200,4000), findT = True, getProf = True)
+            ##For plotting the buildline plots:
+            #y = 0.001
+            #x = 20 
+            #z = 2
+            #N = 302
+
+            #position, target = [x, y, z], [-x, y, z]
+            #myLine = grid.sightline(position, target, coords = 'cart')
+            #lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True)
+
+            ##This bit here is to plot something at many impacts on the same plot
+            #y = 0.001
+            #x = 20 
+            #z = 2
+            #N = 302
+            #zlist = np.linspace(1.01,5,6).tolist()
+
+            #p1 = 'urProjRel'
+            #p2 = 'rmsProjRel'
+
+
+            #z = zlist.pop(0)
+            #position, target = [x, y, z], [-x, y, z]
+            #myLine = grid.sightline(position, target, coords = 'cart')
+            #lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True)
+            #ax1 = lineSim.plot(p1, refresh = True, frame = False, show = False, label = z, abscissa = 'cPos', axes = 1e-9)
+            #ax2 = lineSim.plot(p2, refresh = True, frame = False, show = False, label = z, abscissa = 'cPos', axes = 1e-9)
+
+            #for z in zlist:
+            #    color = next(ax1._get_lines.prop_cycler)['color']
+            #    position, target = [x, y, z], [-x, y, z]
+            #    myLine = grid.sightline(position, target, coords = 'cart')
+            #    lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True)
+            #    lineSim.plot(p1, refresh = True, useax = ax1, show = False, label = z, c = color, abscissa = 'cPos', axes = False)
+            #    lineSim.plot(p2, refresh = True, useax = ax2, show = False, label = z, c = color, abscissa = 'cPos', axes = False)
+            #ax1.legend()
+            #ax2.legend()
+            #plt.show()
+
+
+
+            ##lineSim.plotProfile()
+            #lineSim.plot('totalInt', ion = -1, frame = False, abscissa='pPos', yscale = 'log')
+            #ax = lineSim.plot('frac', ion = -1, yscale = 'log', frame = False, abscissa = 'pPos', ylim = [1e-5,1], xlim = [1,4],show = False)
+
+            #if sim.environment.ionFreeze and True:
+            #    ax.set_color_cycle(None)
+            #    for ion in env.ions:
+            #        color = next(ax._get_lines.prop_cycler)['color']
+            #        R = ion['r_freeze']
+            #        T = env.interp_T(R)
+            #        frac = env.interp_frac(T, ion)
+            #        ax.plot(R, frac, color = color, marker = 'o')
+            #        print("{}_{}: {}".format(ion['ionString'],ion['ion'], ion['r_freeze']))
+
+
             ##lineSim.plot2('dangle', 'pPos', dim2 = 1)
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
-            lineSim = sim.simulate(df.primeLineVLong, env, N = 3000, findT = False, getProf = True, printOut = True)
-            lineSim.plot('qt', ion = -1, abscissa = 'T', yscale = 'log')
-            
+
+            #env.fPlot()
+            lineSim = sim.simulate(df.polePlane, env, N = 300, findT = False, getProf = False, printOut = True)
+            lineSim.plot('rho', scaling='log', sun = True) #, ion = -1, abscissa = 'T', yscale = 'log')
+            #lineSim.plot('densfac')
+
+            ###ax = lineSim.plot('rho', scaling = 'log', frame = False, vmax = -16, vmin = -21, cmap = 'inferno', clabel = 'log($g/cm^2$)', suptitle = 'Mass Density', extend = 'both')
+            #ax2 = lineSim.plot('alfU1', cmap = 'RdBu', center = True, clabel='km/s', show = False)
+            #streams = lineSim.get('streamIndex')
+            #env.plotEdges(ax2, streams, False)
+            #plt.show()
+
+            #ax2 = lineSim.plot('pU', dim = 1, cmap = 'RdBu', center = True, clabel='km/s')
+
+
             #temps, _ = lineSim.get('T')
             #rad, _ = lineSim.get('pPos', dim = 0)
             #F = []

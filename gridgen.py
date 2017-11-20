@@ -72,7 +72,7 @@ class generator:
         phi = np.arctan2(y, x)
         return [rho, theta, phi]
         
-    def plotSphere(self, ax): 
+    def plotSphere(self, ax, scale = True): 
         #Plot a sphere
         u = np.linspace(0, 2 * np.pi, 100)
         v = np.linspace(0, np.pi, 100)
@@ -86,9 +86,10 @@ class generator:
         ax.set_xlabel("X axis")
         ax.set_ylabel("Y axis")
         ax.set_zlabel("Z axis")
-        axscale = 1.5*diameter
-        ax.auto_scale_xyz([-axscale, axscale], 
-                          [-axscale, axscale], [-axscale, axscale])    
+        if scale:
+            axscale = 1.5*diameter
+            ax.auto_scale_xyz([-axscale, axscale], 
+                              [-axscale, axscale], [-axscale, axscale])    
 
     def quadAx(self, quad = True):
         fig = plt.figure("CoronaSim")
@@ -280,7 +281,7 @@ class plane(generator):
     #TODO Make plane adaptive
     default_N = 1000
 
-    def __init__(self, normal = [0,1,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False, absolute = False):
+    def __init__(self, normal = [1,0,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False, absolute = False):
         #print("Initializing Plane, normal = {}, offset = {}".format(normal, offset))
         self.absolute = absolute
         self.findT = findT
@@ -307,6 +308,32 @@ class plane(generator):
     def setN(self, N):
         self.defGrid = self.cGrid(N = N, iL = self.iL)
         
+    def findCoords(self):
+
+        hind = -1
+        vind = -1
+        vdiff, hdiff = 0,0
+
+        for ii in np.arange(3):
+
+            vert = [self.baseA[ii], self.baseB[ii]]
+            newvdiff = np.abs(vert[1]-vert[0])
+            if newvdiff > vdiff:
+                vdiff = newvdiff
+                vind = ii
+
+            horiz = [self.crossA[ii], self.crossB[ii]]
+            newhdiff = np.abs(horiz[1]-horiz[0])
+            if newhdiff > hdiff:
+                hdiff = newhdiff
+                hind = ii
+
+        horiz = [self.crossA[hind], self.crossB[hind]]
+        vert = [self.baseB[vind], self.baseA[vind]]
+
+
+        return horiz + vert, hind, vind #[hmin, hmax, vmin, vmax], hlabel, vlabel
+
     def findGrads(self):
         #Determine the eigenvectors of the plane
         grad1 = np.cross(self.normal, self.rotArray)
@@ -335,7 +362,12 @@ class plane(generator):
         sGrad1 = self.ngrad1*L1
         sGrad2 = self.ngrad2*L2
 
-        baseLine = sightline(sGrad1 + self.noffset, -sGrad1 + self.noffset).cGrid(self.N)
+        self.baseA = sGrad1 + self.noffset
+        self.baseB = -sGrad1 + self.noffset
+        self.crossA = self.baseA +sGrad2
+        self.crossB = self.baseA -sGrad2
+
+        baseLine = sightline(self.baseA, self.baseB).cGrid(self.N)
         pos0 = baseLine[0]
         self.nx = len(baseLine)
         self.ny = len(sightline(pos0+sGrad2, pos0-sGrad2).cGrid(self.N2))
@@ -376,6 +408,8 @@ class defGrid:
         #Bigger Slice of the Pole
         self.bpolePlane = plane(iL = 8)
 
+        self.sidePlane = plane([1,0,0], [0,16,0], rotAxis = [0,1,0], iL = 20)
+
         #This line goes over the pole without touching it
         position, target = [2, np.pi/4, 0.001], [2, -np.pi/4, -0.001]
         self.primeLine = sightline(position, target, coords = 'sphere')
@@ -385,7 +419,8 @@ class defGrid:
         self.primeLineLong = sightline(position, target, coords = 'cart')
 
         #This line goes over the pole without touching it
-        position, target = [10, 0.001, 1.5], [-10, 0.001, 1.5]
+        z = 1.02
+        position, target = [10, 0.001, z], [-10, 0.001, z]
         self.primeLineVLong = sightline(position, target, coords = 'cart')
 
         #This line starts from north pole and goes out radially
