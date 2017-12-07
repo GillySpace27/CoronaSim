@@ -397,7 +397,7 @@ class defGrid:
         normal1 = [0,0,1] 
         offset1 = [1.5, 0, 0]
 
-        self.topPlane = plane(normal1, offset1, iL)
+        self.topPlane = plane(normal1, offset1, iL, rotAxis = [0,1,0])
         
         #Slice of the Pole
         self.polePlane = plane()

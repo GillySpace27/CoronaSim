@@ -31,30 +31,32 @@ if __name__ == '__main__':
     
 
     #Batch Name
-    batchName = 'Test' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'test'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
-    simOne = False  
+    simOne = True  
 
     #1D Stuff - ImpactSim Parameters
     compute = False
-    analyze = True  
+    analyze = False  
     
     try: #Plotflags
         sim.batchjob.pMass = False #Plot with temperature and non-thermal velocity from fits
-        sim.batchjob.pIon = True #Plot with just the binned widths for all ions
+        sim.batchjob.pIon = False #Plot with just the binned widths for all ions
         sim.batchjob.pMFit = False #Plot with straight fit lines on the ions
-        sim.batchjob.pWidth = False #Plot with the hist velocities for each of the elements on its own plot
+        sim.batchjob.pWidth = True #Plot with the hist velocities for each of the elements on its own plot
         sim.batchjob.pPB = False #Plot the polarization brightness
+        sim.batchjob.pProportion = False #Plot the 4 ways of looking at the model parameters
+        sim.batchjob.plotIon = 1
     except: pass
 
-    impactPoints = 10
-    iterations = 3
+    impactPoints = 5
+    iterations = 2
 
-    maxEnvs = 10
-    sim.environment.maxIons = 3
+    maxEnvs = 1
+    sim.environment.maxIons = 2
     timeAx = [0]#np.arange(0, 400) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
     b0 =  1.015
@@ -103,7 +105,7 @@ if __name__ == '__main__':
     
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
-    sim.batchjob.redoStats = False
+    sim.batchjob.redoStats = True
     sim.batchjob.plotbinFits = False #Plots the binned and the non-binned lines, and their fits, during stats only
     sim.batchjob.plotheight = 1
 
@@ -112,7 +114,7 @@ if __name__ == '__main__':
 
     #Run in parallel?
 
-    parallel = True
+    parallel = False
     cores = 7
 
     ##Plotting Flags
@@ -233,17 +235,20 @@ if __name__ == '__main__':
             ###plt.show()
 
             
-            #This is for looking at the nion of each of the ions.
-            y = 0.001
-            x = 20 
-            z = 1.5
-            N = 500
+            if True:
+                #Plot a sightline
+                y = 0.001
+                x = 20 
+                z = 2.5
+                N = 1000
 
-            position, target = [x, y, z], [-x, y, z]
-            #myLine = grid.sightline(position, target, coords = 'cart')
-            #lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True)
+                position, target = [x, y, z], [-x, y, z]
+                myLine = grid.sightline(position, target, coords = 'cart')
+                lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True, printOut=True)
+                lineSim.plot('totalIntR', ion = 1)
+            
             #lineSim.plot('N', ion = -1, abscissa = 'cPos', yscale = 'log', norm = True)
-            #lineSim.plot('vLOS', abscissa='cPos')
+            #lineSim.plot('delta', abscissa='cPos')
             #print(env.interp_f1(3.5))
             #lineSim.plot('uw', abscissa = 'pPos')
 
@@ -290,6 +295,7 @@ if __name__ == '__main__':
             #position, target = [x, y, z], [-x, y, z]
             #myLine = grid.sightline(position, target, coords = 'cart')
             #lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True)
+
 
             ##This bit here is to plot something at many impacts on the same plot
             #y = 0.001
@@ -341,8 +347,12 @@ if __name__ == '__main__':
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
 
             #env.fPlot()
-            lineSim = sim.simulate(df.polePlane, env, N = 300, findT = False, getProf = False, printOut = True)
-            lineSim.plot('rho', scaling='log', sun = True) #, ion = -1, abscissa = 'T', yscale = 'log')
+            if True:
+                #Plot a plane
+                lineSim = sim.simulate(df.polePlane, env, N = 50, findT = False, getProf = False, printOut = True)
+                lineSim.plot('streamIndex', cmap='prism')#, threeD=True, sun=True)
+                
+                #lineSim.plot('streamIndex', sun = True) #, ion = -1, abscissa = 'T', yscale = 'log')
             #lineSim.plot('densfac')
 
             ###ax = lineSim.plot('rho', scaling = 'log', frame = False, vmax = -16, vmin = -21, cmap = 'inferno', clabel = 'log($g/cm^2$)', suptitle = 'Mass Density', extend = 'both')
