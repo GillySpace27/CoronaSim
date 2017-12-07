@@ -239,7 +239,7 @@ if __name__ == '__main__':
                 #Plot a sightline
                 y = 0.001
                 x = 20 
-                z = 2.5
+                z = 2.4
                 N = 1000
 
                 position, target = [x, y, z], [-x, y, z]
