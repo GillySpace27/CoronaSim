@@ -1526,7 +1526,7 @@ class simpoint:
 
     def resonantProfile(self, ion):
         #Now this just has to work correctly TODO
-        fudge = 5
+        fudge = 1.5
         lam0 = ion['lam0'] #Angstroms
         deltaLam = fudge*lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / ion['mIon'])
         lamLos =  self.vLOS * lam0 / self.env.c
@@ -2007,21 +2007,37 @@ class simulate:
         if abscissa is not None: absc = self.get(abscissa, absdim)
         else: absc = self.cumSteps
 
+        #Determine if more than one property requested
+        multiPlot = False
+        if isinstance(property, (list, tuple)):
+            if len(property) > 1: multiPlot = True
+            else: property = property.pop()
+
         if ion == -1:
+            #Plots the same property from multiple ions
             scaleProp = []
             for ii in np.arange(len(self.ions)):
-                scaleProp.append(np.ma.masked_invalid(self.get(property, dim, scaling, scale, ii, refresh)))
+                singleProp = np.ma.masked_invalid(self.get(property, dim, scaling, scale, ii, refresh))
+                if nanZero: singleProp[singleProp == 0] = np.ma.masked
+                scaleProp.append(singleProp)
 
+        elif multiPlot:
+            #Plots different properties from the same ion
+            scaleProp = []
+            for pp in property:
+                singleProp = np.ma.masked_invalid(self.get(pp, dim, scaling, scale, ion, refresh))
+                if nanZero: singleProp[singleProp == 0] = np.ma.masked
+                scaleProp.append(singleProp)
         else:
+            #Plots one property from one ion
             scaleProp = np.ma.masked_invalid(self.get(property, dim, scaling, scale, ion, refresh))
+            if nanZero: scaleProp[scaleProp == 0] = np.ma.masked
         
-        if nanZero: scaleProp[scaleProp == 0] = np.ma.masked
-
+            #TODO clean up this plotting so it works with all cases of ions and properties
         if type(self.grid) is grid.sightline:
             #Line Plot
 
             omax, omin = 0, 1e100
-
 
             if ion == -1:
                 for prop, i in zip(scaleProp, self.ions):
@@ -2029,12 +2045,32 @@ class simulate:
                     omax, omin = max(nmax, omax), min(nmin, omin) 
                     if norm: prop = prop / np.max(prop)
                     im = ax.plot(absc, prop, label = '{}_{}'.format(i['ionString'], i['ion']), **kwargs)
-                ax.legend()
                 ax.set_ylim([omin, omax])
 
+            elif multiPlot:
+                
+                for prop, plabel in zip(scaleProp, property):
+                    nmax, nmin = np.max(prop), np.min(prop)
+                    omax, omin = max(nmax, omax), min(nmin, omin) 
+                    if norm: prop = prop / np.max(prop)
 
-            else: im = ax.plot(absc, scaleProp, linestyle, **kwargs)
+                    
+                    if ion is not None:
+                        i = self.ions[ion]
+                        plabel += ', {}_{}'.format(i['ionString'], i['ion'])
 
+                    im = ax.plot(absc, prop, label = plabel, **kwargs)
+                
+                ax.set_ylim([omin, omax])
+
+            else: 
+                if ion is not None: 
+                    i = self.ions[ion]
+                    lab = '{}_{}'.format(i['ionString'], i['ion'])
+                else: lab = None
+                im = ax.plot(absc, scaleProp, linestyle, label = lab, **kwargs)
+
+            ax.legend()
             ax.set_xlabel(abscissa)
             ax.set_ylabel(property)
             ax.set_yscale(yscale)
@@ -2180,7 +2216,8 @@ class simulate:
         except: nval = "fail"
 
         if dim is None:
-            ax.set_title(property + ", scaling = " + scaling + ', {}={}, {}'.format(labels[nind], unq[0],ionstring))
+            try: ax.set_title(property + ", scaling = " + scaling + ', {}={}, {}'.format(labels[nind], unq[0],ionstring))
+            except: ax.set_title("{}, scaling = {}".format(property, scaling))
         else:
             ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling )
 

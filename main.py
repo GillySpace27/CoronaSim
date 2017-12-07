@@ -245,7 +245,7 @@ if __name__ == '__main__':
                 position, target = [x, y, z], [-x, y, z]
                 myLine = grid.sightline(position, target, coords = 'cart')
                 lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True, printOut=True)
-                lineSim.plot('totalIntR', ion = 1)
+                lineSim.plot(['totalIntR'], ion = -1, abscissa = 'cPos')
             
             #lineSim.plot('N', ion = -1, abscissa = 'cPos', yscale = 'log', norm = True)
             #lineSim.plot('delta', abscissa='cPos')
@@ -347,7 +347,7 @@ if __name__ == '__main__':
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
 
             #env.fPlot()
-            if True:
+            if False:
                 #Plot a plane
                 lineSim = sim.simulate(df.polePlane, env, N = 50, findT = False, getProf = False, printOut = True)
                 lineSim.plot('streamIndex', cmap='prism')#, threeD=True, sun=True)
