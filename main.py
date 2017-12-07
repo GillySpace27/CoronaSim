@@ -56,7 +56,7 @@ if __name__ == '__main__':
     iterations = 2
 
     maxEnvs = 1
-    sim.environment.maxIons = 2
+    sim.environment.maxIons = 200
     timeAx = [0]#np.arange(0, 400) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
     b0 =  1.015
@@ -235,7 +235,7 @@ if __name__ == '__main__':
             ###plt.show()
 
             
-            if True:
+            if False:
                 #Plot a sightline
                 y = 0.001
                 x = 20 
@@ -245,7 +245,7 @@ if __name__ == '__main__':
                 position, target = [x, y, z], [-x, y, z]
                 myLine = grid.sightline(position, target, coords = 'cart')
                 lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True, printOut=True)
-                lineSim.plot(['totalIntR'], ion = -1, abscissa = 'cPos')
+                lineSim.plot(['totalIntR', 'T'], ion = [4,6,7,2], abscissa = 'cPos')
             
             #lineSim.plot('N', ion = -1, abscissa = 'cPos', yscale = 'log', norm = True)
             #lineSim.plot('delta', abscissa='cPos')
@@ -347,10 +347,10 @@ if __name__ == '__main__':
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
 
             #env.fPlot()
-            if False:
+            if True:
                 #Plot a plane
                 lineSim = sim.simulate(df.polePlane, env, N = 50, findT = False, getProf = False, printOut = True)
-                lineSim.plot('streamIndex', cmap='prism')#, threeD=True, sun=True)
+                lineSim.plot('streamIndex', cmap='prism', threeD=False, sun=True)
                 
                 #lineSim.plot('streamIndex', sun = True) #, ion = -1, abscissa = 'T', yscale = 'log')
             #lineSim.plot('densfac')

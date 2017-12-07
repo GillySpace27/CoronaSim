@@ -1962,7 +1962,8 @@ class simulate:
         if ion is None:
             propp = np.array([x[myProperty] for x in self.pData])
         else:
-            propp = np.array([x['ions'][ion][myProperty] for x in self.pData])
+            try:propp = np.array([x['ions'][ion][myProperty] for x in self.pData])
+            except:propp = np.array([x[myProperty] for x in self.pData])
         prop = propp.reshape(self.shape2)
         if not dim is None: prop = prop[:,:,dim]
         prop = prop.reshape(self.shape)
@@ -2007,72 +2008,68 @@ class simulate:
         if abscissa is not None: absc = self.get(abscissa, absdim)
         else: absc = self.cumSteps
 
-        #Determine if more than one property requested
-        multiPlot = False
-        if isinstance(property, (list, tuple)):
-            if len(property) > 1: multiPlot = True
-            else: property = property.pop()
+        #Condition the Inputs into lists
+        if not isinstance(property, (list, tuple)): properties = [property]
+        else: properties = property
+        if not isinstance(dim, (list, tuple)): dims = [dim]
+        else: dims = dim
+        if not isinstance(scaling, (list, tuple)): scalings = [scaling]
+        else: scalings = scaling
+        if not isinstance(scale, (list, tuple)): scales = [scale]
+        else: scales = scale
 
-        if ion == -1:
-            #Plots the same property from multiple ions
-            scaleProp = []
-            for ii in np.arange(len(self.ions)):
-                singleProp = np.ma.masked_invalid(self.get(property, dim, scaling, scale, ii, refresh))
-                if nanZero: singleProp[singleProp == 0] = np.ma.masked
-                scaleProp.append(singleProp)
+        #make sure they have the right lengths
+        multiPlot = len(properties) > 1
+        while len(dims) < len(properties): dims.append(None)
+        while len(scalings) < len(properties): scalings.append('None')
+        while len(scales) < len(properties): scales.append(1)
 
-        elif multiPlot:
-            #Plots different properties from the same ion
-            scaleProp = []
-            for pp in property:
-                singleProp = np.ma.masked_invalid(self.get(pp, dim, scaling, scale, ion, refresh))
-                if nanZero: singleProp[singleProp == 0] = np.ma.masked
-                scaleProp.append(singleProp)
-        else:
-            #Plots one property from one ion
-            scaleProp = np.ma.masked_invalid(self.get(property, dim, scaling, scale, ion, refresh))
-            if nanZero: scaleProp[scaleProp == 0] = np.ma.masked
-        
-            #TODO clean up this plotting so it works with all cases of ions and properties
+        #Condition the ion list
+        if ion is None: useIons = [None]
+        elif ion == -1: useIons = np.arange(len(self.ions))
+        elif isinstance(ion, (tuple, list)): useIons = ion
+        else: useIons = [ion]
+
+        #Prepare the Plot Styles
+        from itertools import cycle
+        lines = ["-","--","-.",":"]
+        linecycler = cycle(lines)
+        colors = ['C0','C1','C2','C3','C4','C5','C6','C7','C8','C9']
+        colorcycler = cycle(colors)
+
+        #Make the plotlist
+        plotList = []
+        plotLabels = []
+        styles = []
+
+        for ii in useIons: #For each ion
+            clr = next(colorcycler)
+            linecycler = cycle(lines)
+            for property, dim, scaling, scale in zip(properties, dims, scalings, scales): #For each property
+                ls = next(linecycler)
+
+                #Get the data
+                thisProp = np.ma.masked_invalid(self.get(property, dim, scaling, scale, ii, refresh))
+                if nanZero: thisProp[thisProp == 0] = np.ma.masked
+                if norm: thisProp = thisProp / np.max(thisProp)
+
+                #Append to lists
+                plotList.append(thisProp)
+                labString = property 
+                if ii is not None: labstring += ', {}_{}'.format(self.ions[ii]['ionString'], self.ions[ii]['ion'])
+                plotLabels.append(labString)
+                styles.append(clr+ls)
+
         if type(self.grid) is grid.sightline:
+
             #Line Plot
+            for prop, lab, style in zip(plotList, plotLabels, styles):
+                im = ax.plot(absc, prop, style, label = lab, **kwargs)
 
-            omax, omin = 0, 1e100
-
-            if ion == -1:
-                for prop, i in zip(scaleProp, self.ions):
-                    nmax, nmin = np.max(prop), np.min(prop)
-                    omax, omin = max(nmax, omax), min(nmin, omin) 
-                    if norm: prop = prop / np.max(prop)
-                    im = ax.plot(absc, prop, label = '{}_{}'.format(i['ionString'], i['ion']), **kwargs)
-                ax.set_ylim([omin, omax])
-
-            elif multiPlot:
-                
-                for prop, plabel in zip(scaleProp, property):
-                    nmax, nmin = np.max(prop), np.min(prop)
-                    omax, omin = max(nmax, omax), min(nmin, omin) 
-                    if norm: prop = prop / np.max(prop)
-
-                    
-                    if ion is not None:
-                        i = self.ions[ion]
-                        plabel += ', {}_{}'.format(i['ionString'], i['ion'])
-
-                    im = ax.plot(absc, prop, label = plabel, **kwargs)
-                
-                ax.set_ylim([omin, omax])
-
-            else: 
-                if ion is not None: 
-                    i = self.ions[ion]
-                    lab = '{}_{}'.format(i['ionString'], i['ion'])
-                else: lab = None
-                im = ax.plot(absc, scaleProp, linestyle, label = lab, **kwargs)
-
+            #Label Everything
             ax.legend()
             ax.set_xlabel(abscissa)
-            ax.set_ylabel(property)
+            if not multiPlot: ax.set_ylabel(property)
             ax.set_yscale(yscale)
             ax.set_xscale(xscale)
             if ylim is not None: ax.set_ylim(ylim)
@@ -2086,6 +2083,10 @@ class simulate:
 
 
         elif type(self.grid) is grid.plane:
+
+            #Unpack the property
+            scaleProp = plotList.pop()
+
             #Get the Coordinates of the points
             xx = self.get('cPos', 0)
             yy = self.get('cPos', 1)
@@ -2106,9 +2107,6 @@ class simulate:
             vind = inds.pop()
             hind = inds.pop()
 
-                        ##extent, vind, hind = self.grid.findCoords()
-                        #vind, hind = 2, 1
-
             nind = 3 - vind - hind
             labels = ['X','Y','Z']
 
@@ -2122,6 +2120,7 @@ class simulate:
             if len(unq) > 1: otherax = "Non Constant"
             else: otherax = unq
 
+            #Center the Color Scale
             if center:
                 vmax = np.nanmax(np.abs(scaleProp))
                 vmin = -vmax
@@ -2165,7 +2164,7 @@ class simulate:
                 else:
                     im = ax.imshow(scaleProp, cmap=cmap, vmin=vmin, vmax=vmax, **kwargs)
                 ax.set_aspect('equal')
-                ax.patch.set(hatch='x', edgecolor='black')
+                ax.patch.set(hatch='x', edgecolor='lightgrey')
 
                 if axes: 
                     ax.axhline(0, color = 'k')
@@ -2183,29 +2182,23 @@ class simulate:
                 if threeD:
                     self.grid.plotSphere(ax, False)
                 else:
-                    sunCirc = plt.Circle((0,0),1, color='orange')
+                    sunCirc = plt.Circle((0,0),1, facecolor='orange', edgecolor ='k')
                     ax.add_artist(sunCirc)
 
-
-
-            #haxis = np.linspace(extent[0],extent[1], self.N)
-            #vaxis = np.linspace(extent[2],extent[3], self.N)
-            #XX,YY = np.meshgrid(haxis, vaxis)
-            #extent = None
-
-                    #im = ax.imshow(scaleProp, interpolation='none', cmap = cmap, vmin = -v, vmax = v, extent = extent, **kwargs)
-                    #im = ax.imshow(scaleProp, interpolation='none', cmap = cmap, extent = extent, **kwargs)
-            #ax.axes.get_xaxis().set_ticks([])
-            #ax.axes.get_yaxis().set_ticks([])
         else: 
             print("Invalid Grid")
             return
 
+
+        #Setting the Title
+        if multiPlot: property = 'MultiPlot'
+
         if ion is None: ionstring = ''
         elif ion == -1: ionstring = 'All Ions'
-        else: 
-            ion = self.ions[ion]
-            ionstring = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam0'])
+        elif len(ion) == 1: 
+            i = self.ions[ion]
+            ionstring = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(i['ionString'], i['ion'], i['upper'], i['lower'], i['lam0'])
+        else: ionstring = 'MultiIon'
 
         try:
             nmean = np.mean(ncoords)
@@ -2221,8 +2214,8 @@ class simulate:
         else:
             ax.set_title(property + ", dim = " + dim.__str__() + ", scaling = " + scaling )
 
+        #Finishing Moves
         if maximize and show: grid.maximizePlot()
-
         if show: plt.show(block)
         return ax
         
