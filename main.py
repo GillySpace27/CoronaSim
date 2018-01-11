@@ -26,7 +26,7 @@ if __name__ == '__main__':
     sim.environment.fFileName = fFileName
     
     refineBmin = False
-    processEnvironments = False
+    processEnvironments = True
     calcFFiles = False #Turn off B
     
 
@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     #1D Stuff - ImpactSim Parameters
     compute = False
-    analyze = False  
+    analyze = False 
     
     try: #Plotflags
         sim.batchjob.pMass = False #Plot with temperature and non-thermal velocity from fits
@@ -50,13 +50,16 @@ if __name__ == '__main__':
         sim.batchjob.pPB = False #Plot the polarization brightness
         sim.batchjob.pProportion = False #Plot the 4 ways of looking at the model parameters
         sim.batchjob.plotIon = 1
+
+        sim.batchjob.resonant = True #Use resonantly scattered light 
+        sim.batchjob.collisional = False #Use collisionally excited light
     except: pass
 
     impactPoints = 5
-    iterations = 2
+    iterations = 1
 
     maxEnvs = 1
-    sim.environment.maxIons = 200
+    sim.environment.maxIons = 10
     timeAx = [0]#np.arange(0, 400) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
     b0 =  1.015
@@ -88,8 +91,8 @@ if __name__ == '__main__':
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     #Simulation Properties
-    sim.simpoint.useB = True
-    sim.simpoint.g_useWaves = True   
+    sim.simpoint.useB = False
+    sim.simpoint.g_useWaves = False   
     sim.simpoint.g_useWind = True
 
     sim.simpoint.voroB = True #Use the voronoi average instead of the raw Bmap
@@ -114,7 +117,7 @@ if __name__ == '__main__':
 
     #Run in parallel?
 
-    parallel = False
+    parallel = True
     cores = 7
 
     ##Plotting Flags
@@ -138,7 +141,7 @@ if __name__ == '__main__':
 ##################################################################################
 ##################################################################################
 
-    
+    #All the call code is hidden
     #This header handles calling the program in parallel
     try: 
         go = int(sys.argv[1])
@@ -202,11 +205,12 @@ if __name__ == '__main__':
             myBatch.plot()
         #### Level 1 ### Simulate ################################################################################################################################
         ################
+    #All the call code is hidden
 
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
-            env = sim.envrs(envsName).loadEnvs(100)[2]
+            env = sim.envrs(envsName).loadEnvs(100)[0]
             #env.fPlot()
             #env.plot2DV()
 
@@ -235,18 +239,23 @@ if __name__ == '__main__':
             ###plt.show()
 
             
-            if False:
+            if True:
                 #Plot a sightline
                 y = 0.001
                 x = 20 
-                z = 2.4
-                N = 1000
+                z = 1.5
+                N = 200
 
                 position, target = [x, y, z], [-x, y, z]
                 myLine = grid.sightline(position, target, coords = 'cart')
                 lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True, printOut=True)
-                lineSim.plot(['totalIntR', 'T'], ion = [4,6,7,2], abscissa = 'cPos')
-            
+                #profR = lineSim.profilesR[0]
+                #lamax = np.squeeze(lineSim.ions[0]['lamAx'])
+                #plt.plot(lamax, profR, 'k', lw=3)
+                ##plt.yscale('log')
+                #plt.show()            
+                lineSim.plot(['totalIntR'], ion = -1, yscale='log', abscissa = 'cPos', frame = False)
+
             #lineSim.plot('N', ion = -1, abscissa = 'cPos', yscale = 'log', norm = True)
             #lineSim.plot('delta', abscissa='cPos')
             #print(env.interp_f1(3.5))
@@ -347,7 +356,7 @@ if __name__ == '__main__':
             #lineSim.plot('dPB', linestyle = 'o', scaling = 'log')
 
             #env.fPlot()
-            if True:
+            if False:
                 #Plot a plane
                 lineSim = sim.simulate(df.polePlane, env, N = 50, findT = False, getProf = False, printOut = True)
                 lineSim.plot('streamIndex', cmap='prism', threeD=False, sun=True)

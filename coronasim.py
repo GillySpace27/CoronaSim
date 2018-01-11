@@ -46,6 +46,7 @@ import math
 import time
 import pickle
 import glob
+import warnings
 
 #from astropy import units as u
 # import skimage as ski
@@ -89,6 +90,9 @@ class environment:
     def_hahnFile = os.path.join(datFolder, 'hahnData.txt')
     def_2DLOSFile = os.path.join(datFolder, 'vxnew_2D_gilly40401.sav')
     def_ionFile = os.path.join(datFolder, 'useIons.csv')
+    def_solarSpecFileHigh = os.path.abspath(os.path.join(datFolder, 'solarSpectrum/xIsun_whole.dat'))
+    def_solarSpecFileLow = os.path.abspath(os.path.join(datFolder, 'solarSpectrum/EVE_L3_merged_2017347_006.fit'))
+    #def_solarSpecFileLong = os.path.abspath(os.path.join(datFolder, 'solarSpectrum/recent.txt'))
 
 
     #For doing high level statistics
@@ -110,6 +114,7 @@ class environment:
     #Constants
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
     hev = 4.135667662e-15 #eV*s
+    hjs = 6.626e-34 #Joules*sec
     KB = 1.380e-16 #ergs/Kelvin
     r_Mm = 695.5 #Rsun in Mega meters
     mH = 1.67372e-24 #grams per hydrogen
@@ -148,6 +153,7 @@ class environment:
         if analyze: self.analyze_BMap2()
         
         self._plasmaLoad(bkFile)
+        self.spectrumLoad()
         self.expansionCalc()
         self.ionLoad()
         self._fLoad(fFile)
@@ -220,7 +226,79 @@ class environment:
 
             plt.show()
 
+    def spectrumLoad(self):
+        """Load the spectral data for the resonant profiles"""
+        ##TODO find the correct absolute scaling for these measurements
 
+        ##Load in the EVE data
+        from astropy.io import fits
+        hdulist = fits.open(self.def_solarSpecFileLow)
+        lamAx = hdulist[4].data['WAVELENGTH'].T.squeeze() #nm
+        units = hdulist[4].data['IRRADIANCE_UNITS'] #Watts/m^2/nm
+
+
+        #Average many of the EVE Spectra
+        intensity = np.zeros_like(hdulist[5].data[0]['SP_IRRADIANCE'])
+        averageDays = 365*2
+        succeed = 0
+        fail = 0
+        for ii in np.arange(averageDays):
+            ints = hdulist[5].data[ii]['SP_IRRADIANCE']
+            if -1 in ints: fail += 1; continue
+            succeed += 1
+            intensity += ints
+            #if np.mod(succeed, 10) == 0: plt.plot(lamAx, ints, label = ii)
+        intensity /= succeed #Watts/m^2/nm
+
+        if False:
+            plt.plot(lamAx, intensity,'k', label = 'Sum')
+            plt.title("Tried: {}, Succeeded: {}, Failed: {}".format(averageDays, succeed, fail))
+            plt.yscale('log')
+            plt.show()
+            #import pdb; pdb.set_trace()
+
+        #Attempt to put in correct units
+        lamAxLow = lamAx * 10 #angstrom
+        intensity #Watts/m^2/nm
+        solarSpecLow = intensity / 10 / 10000 /self.findSunSolidAngle(215) 
+                        #W/cm^2/sr/Angstrom
+
+        ##Load in the SUMER Spectral Atlas
+        x = np.loadtxt(self.def_solarSpecFileHigh, skiprows=13)
+        lamAxHigh = x[:,0]  #Angstroms
+        solarSpecHighRaw = x[:,1] #erg/s/cm2/sr/Angstrom 
+        solarSpecHigh = solarSpecHighRaw * 10**-7 #Watts/cm^2/sr/Angstrom 
+
+        ##Concatenate the two measurements
+        #Find the kink
+        lowMax = np.max(lamAxLow)
+        jj = 0
+        while lamAxHigh[jj] < lowMax:
+            jj += 1
+        newLamAxHigh = lamAxHigh[jj:]
+        newSolarSpecHigh = solarSpecHigh[jj:]
+
+        #Make them match at the kink
+        last = solarSpecLow[-1]
+        first = solarSpecHigh[jj]
+        ratio = first/last
+        newsolarSpecLow = solarSpecLow * ratio
+
+        #Concatenate
+        self.solarLamAx = np.concatenate((lamAxLow, newLamAxHigh))
+        self.solarSpec = np.concatenate((newsolarSpecLow, newSolarSpecHigh))
+
+        if False:
+            plt.plot(self.solarLamAx, self.solarSpec)
+            plt.plot(lamAxHigh, solarSpecHigh)
+            plt.axvline(lowMax, c='k')
+            plt.yscale('log')
+            plt.xscale('log')
+            plt.show()
+
+        #Create primary deliverable: Interpolation object
+        self.solarInterp = interp.interp1d(lamAxHigh, solarSpecHigh)#, kind='cubic') #Watts/cm^2/sr/Angstrom
+        pass
         
 
     def _fLoad(self, fFile = None):
@@ -359,21 +437,47 @@ class environment:
             
                 ion['splinedUpsX'] = np.linspace(0,1,200)
                 ion['splinedUps'] = interp.spline(ion['upsTemps'], ion['ups'], ion['splinedUpsX'])
+                #ion['gf'] = ion['upsInfo'][3]
             except: raise ValueError('Transition {}_{}:{}->{} not found in scups file'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower']))
 
-
+            #import pdb; pdb.set_trace()
             #Load in statistical weights 
             fullpath2 = os.path.normpath(ionpath + '/'+ fullstring + '.fblvl')   
-            found = False
+            found1 = False
+            found2 = False
+            ion['wiU'] = 1
             with open(fullpath2) as f2:     
                 for line in f2:
                     data = line.split()
                     if data[0] == str(ion['lower']):
                         ion['wi'] = float(data[-3])
+                        found1 = True
+                    if data[0] == str(ion['upper']):
+                        ion['wiU'] = float(data[-3])
+                        found2 = True
+                    if found1 and found2: break
+            if not found1: raise ValueError('Statistical Weight {}_{}:{} not found in fblvl file'.format(ion['ionString'], ion['ion'], ion['lower']))
+            if not found2: warnings.warn('Statistical Weight for upper level not found')
+            #Find the Einstein coefficients
+            fullpath3 = os.path.normpath(ionpath + '/'+ fullstring + '.wgfa')
+            found = False
+            with open(fullpath3) as f3:     
+                for line in f3:
+                    data = line.split()
+                    if data[0] == str(ion['lower']) and data[1] == str(ion['upper']):
+                        ion['lam00'] = float(data[2]) #angstroms
+                        ion['nu00'] = self.c / self.ang2cm(ion['lam00']) #1/s
+                        ion['gf'] = float(data[3]) #dimensionless
+                        ion['A21'] = float(data[4]) # inverse seconds
                         found = True
                         break
-            if found == False: raise ValueError('Statistical Weight {}_{}:{} not found in fblvl file'.format(ion['ionString'], ion['ion'], ion['lower']))
+            if found == False: raise ValueError('Einstein Coefficient for {}_{}:{} not found in wgfa file'.format(ion['ionString'], ion['ion'], ion['lower']))
            
+            ion['B21'] = ion['A21'] * self.c**2 / (2*self.hjs*ion['nu00']**3) #1/s cm^2 / s^2
+            ion['B12'] = ion['B21'] * ion['wiU'] / ion['wi']
+
+            #print("A = {}, B21 = {}".format(ion['A21'], ion['B21']))
+            #print('WiL: {}, WiU: {}'.format(ion['wi'], ion['wiU']))
 
             #Find the Ionization Potential
             ionizationPath = os.path.normpath('{}/ip/chianti.ip'.format(self.def_ionpath))
@@ -466,8 +570,70 @@ class environment:
             #Find the freezing density
             self.findFreeze2(ion)
             
+            ##Make the Spectral Irradiance arrays
+            rez = int(2*ion['ln'])
+            lam0= ion['lam0']
 
+            #First approximation, cut out the spectral line
+            pm = 0.003 * lam0 #2 * ion['lamPm']
+            if lam0 < 700:
+                pm *= 2
+            if lam0 < 225:
+                pm *= 2
+            lamAxPrime = np.linspace(lam0-pm, lam0+pm, rez)
+            I0array = self.solarInterp(lamAxPrime) #Watts/cm^2/sr/Angstrom
 
+            #Fit a Gaussian to it
+            fits, truncProfile = self.simpleGaussFit(I0array, lamAxPrime, lam0)
+
+            #Find the wind limits
+            vFast = self.interp_wind(10)
+
+            lamPm = vFast / self.c * lam0
+            lamHigh = lam0+lamPm
+            lamLow = lam0-lamPm
+
+            spread = 6
+            highLimit = lamHigh + spread*fits[2]
+            #highLimit = lam0 + spread*fits[2]
+            #lowLimit = lam0 - spread*fits[2]
+            lowLimit = lamLow - spread*fits[2]
+
+            #Store the Irradiance array
+            ion['lamAxPrime'] = np.linspace(lowLimit, highLimit, rez)
+            ion['I0array'] = self.solarInterp(ion['lamAxPrime']) #Watts/cm^2/sr/Angstrom
+
+            #Now convert it to frequency because waaaahhhh
+            ion['nuAx'] = self.c / self.ang2cm(ion['lamAx'])
+            ion['nuAxPrime'] = self.c / self.ang2cm(ion['lamAxPrime'])
+            ion['nuI0array'] = ion['I0array'] * ion['lamAxPrime'] / ion['nuAxPrime']
+
+            #plt.plot(ion['nuAxPrime'], ion['nuI0array'])
+            #plt.title("{}_{}".format(ion['ionString'], ion['ion']))
+
+            #plt.show()
+            
+
+            if False:
+                #Plot the irradiance array stuff
+                plt.plot(lamAxPrime, I0array)
+                plt.plot(lamAxPrime, self.gauss_function(lamAxPrime,*fits))
+                #plt.plot(lamAxPrime, truncProfile)
+                plt.axvline(lam0, c='grey')
+                plt.axvline(lamHigh, c='grey', ls= ':')
+
+                plt.axvline(highLimit, c='k', ls= '-')
+                plt.axvline(lowLimit, c='k', ls= '-')
+
+                plt.plot(ion['lamAxPrime'], self.gauss_function(ion['lamAxPrime'],fits[0], lamHigh,fits[2], fits[3]))
+            
+                plt.axvline(lamLow, c='grey', ls= ':')
+                plt.axvline(lamLow - spread*fits[2], c='grey', ls= '--')
+                plt.plot(ion['lamAxPrime'], self.gauss_function(ion['lamAxPrime'],fits[0], lamLow,fits[2], fits[3]))
+            
+                plt.plot(ion['lamAxPrime'], ion['I0array'], "c.", lw=3)
+                plt.title("{}_{}".format(ion['ionString'], ion['ion']))
+                plt.show()
 
 
             if False: #Plot the info
@@ -495,6 +661,44 @@ class environment:
                 plt.show()
             pass     
 
+    def simpleGaussFit(self, profile, lamAx, lam0):
+        sig0 = 0.2
+        amp0 = np.max(profile) - np.min(profile)
+
+        jj = 0
+        while lamAx[jj] < lam0: jj+=1
+        
+        low = np.flipud(profile[:jj])
+        high = profile[jj:]
+
+        lowP = []
+        last = low[0]
+        for p in low:
+            if p < last: lowP.append(p); last = p
+            else: lowP.append(last)
+        lowP = np.flipud(lowP)
+
+        highP = []
+        last = high[0]
+        for p in high:
+            if p < last: highP.append(p); last = p
+            else: highP.append(last)
+
+        
+
+        truncProfile = np.concatenate((lowP, highP))
+       
+        popt, pcov = curve_fit(self.gauss_function, lamAx, truncProfile, p0 = [amp0, lam0, sig0, 0])
+        amp = popt[0]
+        mu = popt[1] #- lam0
+        std = popt[2] 
+        b = popt[3]
+        area = popt[0] * popt[2]  
+        return (amp, mu, std, b), truncProfile
+
+    def gauss_function(self, x, a, x0, sigma, b):
+        return a*np.exp(-(x-x0)**2/(2*sigma**2))+b
+
     def collisFit(self, dE, P, A, X, K, T):
         U = dE / T
         return A*(1+P*np.sqrt(U))/(X+U)*U**K*np.exp(-U) #cm^3/s
@@ -514,7 +718,9 @@ class environment:
         return A * (T/ 10000)**(-eta)
 
   
-
+    def findSunSolidAngle(self, rx):
+        """Return the proportion of the sky covered by the sun"""
+        return 0.5*(1-np.sqrt(1-(1/rx)**2))
 
 
     def particleTimes(self,ion,R):
@@ -1162,6 +1368,9 @@ class environment:
     def interp_map(self, map, x, y):
         return map[self.__find_nearest(self.BMap_x, x)][self.__find_nearest(self.BMap_y, y)]
 
+    #def interp_spectrum(self, lamAx):
+    #    interp.interp1d()
+
     def cm2km(self, var):
         return var * 1e-5
 
@@ -1496,8 +1705,8 @@ class simpoint:
 
   ## Radiative Transfer ################################################################
 
-       
-    def getProfiles(self):
+    def getProfiles(self, lenCm = 1):
+        self.lenCm = lenCm
         profiles = []
         for ion in self.ions:
             profileC = self.collisionalProfile(ion)
@@ -1506,6 +1715,7 @@ class simpoint:
         return profiles
 
     def collisionalProfile(self, ion):
+        """Generate the collisionally excited line profile"""
         lam0 = ion['lam0'] #Angstroms
         deltaLam = lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / ion['mIon'])
         lamLos =  self.vLOS * lam0 / self.env.c
@@ -1517,7 +1727,7 @@ class simpoint:
         if self.useIonFrac: nn = ion['N']
         else: nn = self.nE
 
-        profileC = self.nE * nn * self.env.findQt(ion, self.T) * lamPhi
+        profileC = self.lenCm * self.nE * nn * self.env.findQt(ion, self.T) * lamPhi
 
         ion['profileC'] = profileC
         ion['totalIntC'] = np.sum(ion['profileC'])
@@ -1525,25 +1735,107 @@ class simpoint:
         return profileC
 
     def resonantProfile(self, ion):
-        #Now this just has to work correctly TODO
-        fudge = 1.5
-        lam0 = ion['lam0'] #Angstroms
-        deltaLam = fudge*lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / ion['mIon'])
-        lamLos =  self.vLOS * lam0 / self.env.c
+        """Generate the resonantly scattered line profile"""
 
-        expblock = (ion['lamAx'] - lam0 - lamLos)/(deltaLam)
+        #Fudged Parameters for now
+        b12 = ion['B12'] #cm^2 / joule second
+        sm = 1e-2 #a small number to keep zero from being zero
+        fudgeScale = 10**18.8
+        continuum = 1
+        dilution = 1#/self.rx**2
 
-        lamPhi = 1/(deltaLam * self.env.rtPi) * np.exp(-expblock*expblock)
+        #FAKE: Use the collisional light as the incident solar light
+        #ion['lamAxPrime'] = ion['lamAx']
+        #ion['I0array'] = ion['profileC']/np.sum(ion['profileC']) * dilution + continuum
 
-        if self.useIonFrac: nn = ion['N']
-        else: nn = self.nE
+        #Gathering Variables
+        lamAx = self.env.ang2cm(ion['lamAx'])
+        lamAxPrime = self.env.ang2cm(ion['lamAxPrime'])
+        lam0 = self.env.ang2cm(ion['lam0']) #cm
+        dLam = np.abs(lamAxPrime[1]-lamAxPrime[0])
+        C_cm = self.env.c #cm/second
+        h = self.env.hjs #Joules * Seconds
+        
+        if self.useIonFrac: Nion = ion['N']
+        else: Nion = self.nE # num/cm^3            
+        
+        #Scalar calculations
+        #Thermal Velocity
+        Vth = np.sqrt(2 * self.env.KB * self.T / ion['mIon']) #cm/s
+        inv_Vth = 1/Vth
+        
+        #Normed LOS and radial velocities
+        los_Vth = self.vLOS*inv_Vth
+        radialNorm = self.cPos / np.linalg.norm(self.cPos)
+        rad_Vth = np.dot(self.cU, radialNorm)*inv_Vth
 
-        profileC = fudge * self.nE * nn * self.env.findQt(ion, self.T) * lamPhi
+        #Geometric factors (with small fudge to keep away numerical errors)
+        alpha = np.cos(self.delta + sm) + sm
+        beta = np.sin(self.delta  + sm) + sm
+        inv_beta = 1/beta
 
-        ion['profileR'] = profileC
+        #Other scalar calculations
+        nu0 = self.env.c / lam0 #1/s
+        deltaNu = nu0 *   Vth / self.env.c #1/s
+        #deltaLam = lam0 * Vth / self.env.c #angstroms
+        scaleFactor = nu0/(lam0*deltaNu)
+        g = ion['E'] + 3*(1-ion['E'])*alpha*alpha
+        Rfactor = dLam * inv_beta * g/(np.pi * deltaNu*deltaNu)
+        preFactor = self.lenCm * h * C_cm *C_cm * b12 / (4*np.pi*lam0) * self.findSunSolidAngle() #Joules/second
+
+        #THE FAST WAY
+        #Create a column and a row vector
+        zeta =      (lam0-lamAx)      * scaleFactor - los_Vth
+        zetaPrime = (lam0-lamAxPrime) * scaleFactor - rad_Vth
+        zetaTall = zeta[np.newaxis].T
+        zetaDiffBlock = (zetaTall-alpha*zetaPrime)*inv_beta
+
+        invLamAxPrimeSq = (1/lamAxPrime) * (1/lamAxPrime)
+
+        #Use the vectors to create a matrix
+        R = invLamAxPrimeSq*np.exp(-zetaPrime*zetaPrime)*np.exp(-zetaDiffBlock*zetaDiffBlock)
+
+        #Apply that matrix to the incident light profile
+        profileR = fudgeScale * preFactor * Nion * Rfactor * np.dot(R, ion['I0array']) 
+        #profileR has shape of lamAx
+        #if ion['ionString'] == 'n':
+        #    plt.plot(ion['lamAx'], profileR)
+
+            
+        #import pdb
+        #pdb.set_trace()
+
+        #Store values and return
+        ion['profileR'] = profileR
         ion['totalIntR'] = np.sum(ion['profileR'])
+        #if ion['totalIntR'] ==0: import pdb; pdb.set_trace()
+        return ion['profileR']
 
-        return profileC
+
+        ##THE SLOW WAY
+        #profileR = []
+        #for lam in ion['lamAx'].tolist():
+        #    lightOut = 0
+        #    for lamPrime, I0 in zip(ion['lamAxPrime'].tolist(), I0list):
+        #        #WHY this is so slow dang
+
+        #        #zeta = (nu - nu0)/deltaNu - self.vLOS/Vth
+        #        #zetaPrime = (nuPrime - nu0)/deltaNu - np.dot(self.cU, radialNorm)/Vth
+        #        #R = g/(np.pi * beta *deltaNu**2)*np.exp(-zetaPrime**2)*np.exp(-((zeta-alpha*zetaPrime)/beta)**2)
+
+        #        zeta =      (lam0-lam)      * dLamFactor - los_Vth
+        #        zetaPrime = (lam0-lamPrime) * dLamFactor - rad_Vth
+
+        #        R = Rfactor / lamPrime**2 *np.exp(-zetaPrime**2)*np.exp(-((zeta-alpha*zetaPrime)/beta)**2)
+
+        #        lightOut += preFactor * nn * I0 * R
+        #    profileR.append(lightOut)
+
+
+
+    def findSunSolidAngle(self):
+        """Return the proportion of the sky covered by the sun"""
+        return 0.5*(1-np.sqrt(1-(1/self.rx)**2))
 
   ## Velocity ##########################################################################
 
@@ -1610,8 +1902,6 @@ class simpoint:
         R_Array = self.env.R_vlos[:,t_int]
         V = self.env.interp(self.env.R_zx, R_Array, self.zx)
         return V * 1e5
-
-
 
     def __findFluxAngle(self):
         dr = 1e-4
@@ -1696,9 +1986,8 @@ class simpoint:
         return self.vLOS
 
     def __findVLOS2(self, vel, nGrad = None):
-        if nGrad is not None: self.nGrad = nGrad
-        else: self.nGrad = self.grid.ngrad
-        vLOS2 = np.dot(self.nGrad, vel)
+        if nGrad is None: nGrad = self.grid.ngrad
+        vLOS2 = np.dot(nGrad, vel)
         #print(self.vLOS2)
         return vLOS2
 
@@ -1853,7 +2142,7 @@ class simulate:
 
         self.ions = self.env.getIons(self.env.maxIons)
 
-
+        self.throwCm = self.grid.norm * self.env.r_Mm * 1e8 #in cm
         self.sims = []
         self.repoint(gridObj)
 
@@ -2056,7 +2345,7 @@ class simulate:
                 #Append to lists
                 plotList.append(thisProp)
                 labString = property 
-                if ii is not None: labstring += ', {}_{}'.format(self.ions[ii]['ionString'], self.ions[ii]['ion'])
+                if ii is not None: labString += ', {}_{}'.format(self.ions[ii]['ionString'], self.ions[ii]['ion'])
                 plotLabels.append(labString)
                 styles.append(clr+ls)
 
@@ -2195,10 +2484,11 @@ class simulate:
 
         if ion is None: ionstring = ''
         elif ion == -1: ionstring = 'All Ions'
-        elif len(ion) == 1: 
+        elif isinstance(ion, (list, tuple)): ionstring = 'MultiIon'
+        elif isinstance(ion, int): 
             i = self.ions[ion]
             ionstring = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(i['ionString'], i['ion'], i['upper'], i['lower'], i['lam0'])
-        else: ionstring = 'MultiIon'
+        else: assert False
 
         try:
             nmean = np.mean(ncoords)
@@ -2332,12 +2622,17 @@ class simulate:
     #def getProfile(self):
     #    return self.lineProfile()
 
-    def plotProfile(self):
-        try: self.ions[0]['profile']
+    def plotProfile(self, which = 'R', norm = False):
+
+        prof = 'profile' + which
+
+        try: self.ions[0][prof]
         except: self.lineProfile()
 
         for ion in self.ions:
-            plt.plot(ion['profile']/np.max(ion['profile']))
+            if norm: pl = ion[prof]/np.max(ion[prof])
+            else: pl = ion[prof]
+            plt.plot(pl)
 
         plt.title("Line Profile")
         plt.ylabel("Intensity")
@@ -2382,16 +2677,17 @@ class simulate:
             bar = pb.ProgressBar(len(self.sims) * len(self.timeAx))
 
         for point, step in zip(self.sims, self.steps):
+            lenCm = step * self.throwCm
             #For each simpoint
             for tt in self.timeAx:
                 #For each time
                 point.setTime(tt)
-                for profileC, profileR, (newProfC, newProfR) in zip(profilesC, profilesR, point.getProfiles()):  
+                for profileC, profileR, (newProfC, newProfR) in zip(profilesC, profilesR, point.getProfiles(lenCm)):  
                     #For each Ion
 
                     #Sum the light
-                    profC = newProfC * step
-                    profR = newProfR * step
+                    profC = newProfC #step part moved into lenCm
+                    profR = newProfR #step part moved into lenCm
                     profileC += profC 
                     profileR += profR
 
@@ -3729,22 +4025,22 @@ class batchjob:
             ionStats.append(self.findProfileStats(ionLine, ion))
         return ionStats
 
-    def mergeImpProfs(self, impProfilesA, impProfilesB):
+    def mergeImpProfs(self, impProfilesC, impProfilesR):
         #Sum two different boxes of profiles
-        A = np.asarray(impProfilesA)
-        B = np.asarray(impProfilesB)
-        C = np.zeros_like(impProfilesA)
+        A = np.asarray(impProfilesC)
+        B = np.asarray(impProfilesR)
+        C = np.zeros_like(impProfilesC)
 
-        for ii in np.arange(len(A)):
-            for jj in np.arange(len(A[0])):
-                C[ii][jj]=A[ii][jj]+B[ii][jj]
-
-        return C.tolist()
-
-        #for profileBundleA, profileBundleB in zip(impProfilesA, impProfilesB):
-        #    for ionLineA, ionLineB in zip(profileBundleA, profileBundleB):
-        #        ionLineA += ionLineB
-        #return impProfilesA
+        if self.resonant and self.collisional:
+            #if both, sum
+            for ii in np.arange(len(A)):
+                for jj in np.arange(len(A[0])):
+                    C[ii][jj]=A[ii][jj]+B[ii][jj]
+            return C.tolist()
+        elif self.collisional:  return A.tolist()
+        elif self.resonant: return B.tolist()
+        else:  return C.tolist()
+        
 
     def plotProfiles(self, max):
         if max is not None:
