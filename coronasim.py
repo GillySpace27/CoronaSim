@@ -114,6 +114,7 @@ class environment:
     #Constants
     c = 2.998e10 #cm/second (base velocity unit is cm/s)
     hev = 4.135667662e-15 #eV*s
+    hergs = 6.626e-27 #ergs*sec
     hjs = 6.626e-34 #Joules*sec
     KB = 1.380e-16 #ergs/Kelvin
     r_Mm = 695.5 #Rsun in Mega meters
@@ -128,6 +129,9 @@ class environment:
     fmax = 8.2
     theta0 = 28
     S0 = 7.0e5
+
+    #for plotting
+    lastPos = 1e8
 
     ##Element Being Observed
     #mI = 9.2732796e-23 #grams per Iron
@@ -230,63 +234,63 @@ class environment:
         """Load the spectral data for the resonant profiles"""
         ##TODO find the correct absolute scaling for these measurements
 
-        ##Load in the EVE data
-        from astropy.io import fits
-        hdulist = fits.open(self.def_solarSpecFileLow)
-        lamAx = hdulist[4].data['WAVELENGTH'].T.squeeze() #nm
-        units = hdulist[4].data['IRRADIANCE_UNITS'] #Watts/m^2/nm
+        ###Load in the EVE data
+        #from astropy.io import fits
+        #hdulist = fits.open(self.def_solarSpecFileLow)
+        #lamAx = hdulist[4].data['WAVELENGTH'].T.squeeze() #nm
+        #units = hdulist[4].data['IRRADIANCE_UNITS'] #Watts/m^2/nm
 
 
-        #Average many of the EVE Spectra
-        intensity = np.zeros_like(hdulist[5].data[0]['SP_IRRADIANCE'])
-        averageDays = 365*2
-        succeed = 0
-        fail = 0
-        for ii in np.arange(averageDays):
-            ints = hdulist[5].data[ii]['SP_IRRADIANCE']
-            if -1 in ints: fail += 1; continue
-            succeed += 1
-            intensity += ints
-            #if np.mod(succeed, 10) == 0: plt.plot(lamAx, ints, label = ii)
-        intensity /= succeed #Watts/m^2/nm
+        ##Average many of the EVE Spectra
+        #intensity = np.zeros_like(hdulist[5].data[0]['SP_IRRADIANCE'])
+        #averageDays = 365*2
+        #succeed = 0
+        #fail = 0
+        #for ii in np.arange(averageDays):
+        #    ints = hdulist[5].data[ii]['SP_IRRADIANCE']
+        #    if -1 in ints: fail += 1; continue
+        #    succeed += 1
+        #    intensity += ints
+        #    #if np.mod(succeed, 10) == 0: plt.plot(lamAx, ints, label = ii)
+        #intensity /= succeed #Watts/m^2/nm
 
-        if False:
-            plt.plot(lamAx, intensity,'k', label = 'Sum')
-            plt.title("Tried: {}, Succeeded: {}, Failed: {}".format(averageDays, succeed, fail))
-            plt.yscale('log')
-            plt.show()
-            #import pdb; pdb.set_trace()
+        #if False:
+        #    plt.plot(lamAx, intensity,'k', label = 'Sum')
+        #    plt.title("Tried: {}, Succeeded: {}, Failed: {}".format(averageDays, succeed, fail))
+        #    plt.yscale('log')
+        #    plt.show()
+        #    #import pdb; pdb.set_trace()
 
-        #Attempt to put in correct units
-        lamAxLow = lamAx * 10 #angstrom
-        intensity #Watts/m^2/nm
-        solarSpecLow = intensity / 10 / 10000 /self.findSunSolidAngle(215) 
-                        #W/cm^2/sr/Angstrom
+        ##Attempt to put in correct units
+        #lamAxLow = lamAx * 10 #angstrom
+        #intensity #Watts/m^2/nm
+        #solarSpecLow = intensity / 10 / 10000 /self.findSunSolidAngle(215) 
+        #                #W/cm^2/sr/Angstrom
 
         ##Load in the SUMER Spectral Atlas
         x = np.loadtxt(self.def_solarSpecFileHigh, skiprows=13)
         lamAxHigh = x[:,0]  #Angstroms
         solarSpecHighRaw = x[:,1] #erg/s/cm2/sr/Angstrom 
-        solarSpecHigh = solarSpecHighRaw * 10**-7 #Watts/cm^2/sr/Angstrom 
+        solarSpecHigh = solarSpecHighRaw #ergs/s/cm^2/sr/Angstrom 
 
-        ##Concatenate the two measurements
-        #Find the kink
-        lowMax = np.max(lamAxLow)
-        jj = 0
-        while lamAxHigh[jj] < lowMax:
-            jj += 1
-        newLamAxHigh = lamAxHigh[jj:]
-        newSolarSpecHigh = solarSpecHigh[jj:]
+        ###Concatenate the two measurements
+        ##Find the kink
+        #lowMax = np.max(lamAxLow)
+        #jj = 0
+        #while lamAxHigh[jj] < lowMax:
+        #    jj += 1
+        #newLamAxHigh = lamAxHigh[jj:]
+        #newSolarSpecHigh = solarSpecHigh[jj:]
 
-        #Make them match at the kink
-        last = solarSpecLow[-1]
-        first = solarSpecHigh[jj]
-        ratio = first/last
-        newsolarSpecLow = solarSpecLow * ratio
+        ##Make them match at the kink
+        #last = solarSpecLow[-1]
+        #first = solarSpecHigh[jj]
+        #ratio = first/last
+        #newsolarSpecLow = solarSpecLow * ratio
 
         #Concatenate
-        self.solarLamAx = np.concatenate((lamAxLow, newLamAxHigh))
-        self.solarSpec = np.concatenate((newsolarSpecLow, newSolarSpecHigh))
+        #self.solarLamAx = np.concatenate((lamAxLow, newLamAxHigh))
+        #self.solarSpec = np.concatenate((newsolarSpecLow, newSolarSpecHigh))
 
         if False:
             plt.plot(self.solarLamAx, self.solarSpec)
@@ -297,9 +301,39 @@ class environment:
             plt.show()
 
         #Create primary deliverable: Interpolation object
-        self.solarInterp = interp.interp1d(lamAxHigh, solarSpecHigh)#, kind='cubic') #Watts/cm^2/sr/Angstrom
+        self.solarLamAx = lamAxHigh #Angstroms
+        self.solarSpec = solarSpecHigh #ergs/s/cm^2/sr/Angstrom 
+        self.solarInterp = interp.interp1d(lamAxHigh, solarSpecHigh)#, kind='cubic') #ergs/s/cm^2/sr/Angstrom
         pass
         
+
+
+    def returnSolarSpecLam(self, lowLam, highLam):
+        try:
+            ll = 0
+            while self.solarLamAx[ll] < lowLam:
+                ll += 1
+            lowInd = ll
+            while self.solarLamAx[ll] < highLam:
+                ll += 1
+            highInd = ll
+            return self.solarLamAx[lowInd:highInd], self.solarSpec[lowInd:highInd]
+        except: raise IndexError 
+        
+    def returnSolarSpecLamFast(self, lowLam, highLam, lamAx, I0array):
+        try:
+            ll = 0
+            while lamAx[ll] < lowLam:
+                ll += 1
+            lowInd = ll
+            while lamAx[ll] < highLam:
+                ll += 1
+            highInd = ll
+            return lamAx[lowInd:highInd], I0array[lowInd:highInd]
+        except: raise IndexError 
+
+
+
 
     def _fLoad(self, fFile = None):
         if fFile is None: 
@@ -445,7 +479,7 @@ class environment:
             fullpath2 = os.path.normpath(ionpath + '/'+ fullstring + '.fblvl')   
             found1 = False
             found2 = False
-            ion['wiU'] = 1
+            ion['wiU'] = 2
             with open(fullpath2) as f2:     
                 for line in f2:
                     data = line.split()
@@ -473,8 +507,8 @@ class environment:
                         break
             if found == False: raise ValueError('Einstein Coefficient for {}_{}:{} not found in wgfa file'.format(ion['ionString'], ion['ion'], ion['lower']))
            
-            ion['B21'] = ion['A21'] * self.c**2 / (2*self.hjs*ion['nu00']**3) #1/s cm^2 / s^2
-            ion['B12'] = ion['B21'] * ion['wiU'] / ion['wi']
+            ion['B21'] = ion['A21'] * self.c**2 / (2*self.hergs*ion['nu00']**3) #1/s * cm^2 / s^2 * 1/(ergs *s) * s^3 = cm^2 / (erg * s)
+            ion['B12'] = ion['B21'] * ion['wiU'] / ion['wi'] #cm^2 / (erg*s)
 
             #print("A = {}, B21 = {}".format(ion['A21'], ion['B21']))
             #print('WiL: {}, WiU: {}'.format(ion['wi'], ion['wiU']))
@@ -571,8 +605,8 @@ class environment:
             self.findFreeze2(ion)
             
             ##Make the Spectral Irradiance arrays
-            rez = int(2*ion['ln'])
-            lam0= ion['lam0']
+            rez = 1000 #int(2*ion['ln'])
+            lam0 = ion['lam0']
 
             #First approximation, cut out the spectral line
             pm = 0.003 * lam0 #2 * ion['lamPm']
@@ -580,37 +614,49 @@ class environment:
                 pm *= 2
             if lam0 < 225:
                 pm *= 2
-            lamAxPrime = np.linspace(lam0-pm, lam0+pm, rez)
-            I0array = self.solarInterp(lamAxPrime) #Watts/cm^2/sr/Angstrom
+            lamAxPrime, I0array = self.returnSolarSpecLam(lam0-pm, lam0+pm) #ergs/s/cm^2/sr/Angstrom
+            #lamAxPrime = np.linspace(lam0-pm, lam0+pm, rez)
+            #I0array = self.solarInterp(lamAxPrime) 
 
             #Fit a Gaussian to it
             fits, truncProfile = self.simpleGaussFit(I0array, lamAxPrime, lam0)
 
             #Find the wind limits
-            vFast = self.interp_wind(10)
+            vFast = self.interp_wind(40)
 
             lamPm = vFast / self.c * lam0
-            lamHigh = lam0+lamPm
-            lamLow = lam0-lamPm
+            lamHigh = lam0+lamPm*2
+            lamLow = lam0-lamPm*2
 
-            spread = 6
-            highLimit = lamHigh + spread*fits[2]
+            ion['I0Width'] = fits[2]
+
+            spread = 8
+            highLimit = lamHigh + spread*ion['I0Width']
             #highLimit = lam0 + spread*fits[2]
             #lowLimit = lam0 - spread*fits[2]
-            lowLimit = lamLow - spread*fits[2]
+            lowLimit = lamLow - spread*ion['I0Width']
 
             #Store the Irradiance array
-            ion['lamAxPrime'] = np.linspace(lowLimit, highLimit, rez)
-            ion['I0array'] = self.solarInterp(ion['lamAxPrime']) #Watts/cm^2/sr/Angstrom
+            #Watts/cm^2/sr/Angstrom
+            ion['lamAxPrime'], ion['I0array'] = self.returnSolarSpecLam(lowLimit, highLimit)
+            ion['I0interp'] = interp.interp1d(ion['lamAxPrime'], ion['I0array'])#, kind='cubic') #ergs/s/cm^2/sr/Angstrom
+            #ion['lamAxPrime'] = np.linspace(lowLimit, highLimit, rez)
+            #ion['I0array'] = self.solarInterp(ion['lamAxPrime']) 
 
             #Now convert it to frequency because waaaahhhh
-            ion['nuAx'] = self.c / self.ang2cm(ion['lamAx'])
-            ion['nuAxPrime'] = self.c / self.ang2cm(ion['lamAxPrime'])
-            ion['nuI0array'] = ion['I0array'] * ion['lamAxPrime'] / ion['nuAxPrime']
+            #ion['nuAx'] = self.c / self.ang2cm(ion['lamAx'])
+            #ion['nuAxPrime'] = self.c / self.ang2cm(ion['lamAxPrime'])
+            #ion['nuI0array'] = ion['I0array'] * ion['lamAxPrime'] / ion['nuAxPrime']
+
+            ion['nu0'] = self.c /self.ang2cm(lam0)
+            ion['nuAx'] = self.lamAx2nuAx(ion['lamAx'])
+            ion['nuAxPrime'] = self.lamAx2nuAx(ion['lamAxPrime'])
+            ion['nuI0array'] = self.lam2nuI0(ion['I0array'], ion['lamAxPrime'])
+
+
 
             #plt.plot(ion['nuAxPrime'], ion['nuI0array'])
             #plt.title("{}_{}".format(ion['ionString'], ion['ion']))
-
             #plt.show()
             
 
@@ -660,6 +706,15 @@ class environment:
                 plt.figtext(left, height + 0.03, "Weight: {}".format(ion['wi']))
                 plt.show()
             pass     
+
+    def lamAx2nuAx(self, lamAx):
+        """Change a lamAx (ang) to a nuAx"""
+        return self.c / self.ang2cm(lamAx)
+
+    def lam2nuI0(self, I0, lamAx):
+        """Change a ligt profile to frequency units"""
+        nuAx = self.lamAx2nuAx(lamAx)
+        return I0 * lamAx / nuAx
 
     def simpleGaussFit(self, profile, lamAx, lam0):
         sig0 = 0.2
@@ -1163,7 +1218,7 @@ class environment:
         kt = self.KB*T
         dE = self.ryd2erg(ion['upsInfo'][2])
         upsilon = self.findUpsilon(ion,T)
-        return 2.172e-8*np.sqrt(Iinf/kt)*np.exp(-dE/kt)* upsilon / ion['wi']
+        return 2.172e-8*np.sqrt(Iinf/kt)*np.exp(-dE/kt)* upsilon / ion['wi'] 
 
     def findQtIonization(self, ion, T):
         #
@@ -1717,24 +1772,170 @@ class simpoint:
     def collisionalProfile(self, ion):
         """Generate the collisionally excited line profile"""
         lam0 = ion['lam0'] #Angstroms
-        deltaLam = lam0 / self.env.c * np.sqrt(2 * self.env.KB * self.T / ion['mIon'])
-        lamLos =  self.vLOS * lam0 / self.env.c
+        vTh = np.sqrt(2 * self.env.KB * self.T / ion['mIon']) #cm/s
+        deltaLam = lam0  * vTh / self.env.c #ang
+        lamLos =  lam0 * self.vLOS / self.env.c #ang
 
-        expblock = (ion['lamAx'] - lam0 - lamLos)/(deltaLam)
+        expblock = (ion['lamAx'] - lam0 - lamLos)/(deltaLam) #unitless
 
-        lamPhi = 1/(deltaLam * self.env.rtPi) * np.exp(-expblock*expblock)
+        lamPhi = 1/(deltaLam * self.env.rtPi) * np.exp(-expblock*expblock) #1/ang
 
-        if self.useIonFrac: nn = ion['N']
+        if self.useIonFrac: nn = ion['N'] #/cm^3
         else: nn = self.nE
+        
+        const = self.env.hergs * self.env.c / self.env.ang2cm(lam0) / 4 / np.pi #ergs s 
 
-        profileC = self.lenCm * self.nE * nn * self.env.findQt(ion, self.T) * lamPhi
+        profileC = self.lenCm * const * self.nE * nn * self.env.findQt(ion, self.T) * lamPhi # ergs /s /sr /cm^2 /ang ;  Q=[cm^3/s^2/sr]
 
-        ion['profileC'] = profileC
-        ion['totalIntC'] = np.sum(ion['profileC'])
+        ion['profileC'] = profileC #ergs / (s cm^2 sr angstrom)
+        ion['totalIntC'] = np.sum(profileC)
+        ion['Cmax'] = np.max(profileC)
 
         return profileC
 
+
     def resonantProfile(self, ion):
+        """Generate the resonantly scattered line profile"""
+       
+        ## Determine the Relevant Velocities #######
+
+        #Thermal Velocity
+        Vth = np.sqrt(2 * self.env.KB * self.T / ion['mIon']) #cm/s
+        inv_Vth = 1/Vth
+        
+        #Normed LOS and radial velocities
+        los_Vth = self.vLOS*inv_Vth
+        radialV = self.ur 
+        rad_Vth = radialV*inv_Vth
+       
+
+        ## Create the prime (incident) axes ########
+
+        #Find the necessary limits for this redshift
+        lamShift =  ion['lam0'] * radialV / self.env.c #Redshift of this point
+        lamCenter = ion['lam0'] - lamShift #Center of this points spectrum
+        deltaLam =  ion['lam0'] * Vth / self.env.c #Width of the line here
+        
+        sigma = 8
+        lowLam = lamCenter - sigma*deltaLam #New limits for this point
+        highLam = lamCenter + sigma*deltaLam #New limits for this point
+  
+
+        ## Create the Incident array ##############
+        
+            #Interpolate it
+            #rez = 100
+            #lamAxPrime = np.linspace(lowLam, highLam, rez)
+            #I0array = ion['I0interp'](self.env.cm2ang(lamAxPrime)) ##ergs/cm^2/sr/Angstrom
+            #lamAxPrime = self.env.cm2ang(lamAxPrime)
+
+            #Just use the whole thing
+            #lamAxPrime, I0array = self.env.ang2cm(ion['lamAxPrime']), ion['I0array'] ##ergs/cm^2/sr/Angstrom
+        #Just pull the important part of the raw spectrum at original resolution
+        lamAxPrime, I0array = self.env.returnSolarSpecLamFast(lowLam, highLam, ion['lamAxPrime'], ion['I0array'])
+            #angstroms, ergs/s/cm^2/sr/Angstrom
+
+        #Convert from lam to nu
+        nuAxPrime = self.env.lamAx2nuAx(lamAxPrime) #Hz
+        nuI0Array = self.env.lam2nuI0(I0array, lamAxPrime) #ergs/s/cm^2/sr/Hz
+        dNu = np.abs(np.mean(np.diff(nuAxPrime))) #Hz
+
+
+        ## Calculate Scalar Prefactors #############
+        #Geometric factors
+        Theta = np.arccos(self.cPos[0]/self.pPos[0])
+        alpha = np.cos(Theta)
+        beta = np.sin(Theta) 
+        inv_beta = 1/beta
+
+        #Other scalar calculations
+        nu0 = ion['nu0']
+        if self.useIonFrac: Nion = ion['N']
+        else: Nion = self.nE # num/cm^3    
+        deltaNu = nu0 * Vth / self.env.c #1/s
+        scalarFactor = self.lenCm * self.env.hergs * nu0 / (4*np.pi) * ion['B12'] * Nion * dNu * self.findSunSolidAngle() #  hz*hz 
+        g = ion['E'] + 3*(1-ion['E'])*alpha*alpha      
+        Rfactor = g/(np.pi * beta * deltaNu*deltaNu) # 1/(hz*hz)
+        preFactor = scalarFactor * Rfactor # unitless
+
+        ## The main matrix kernal ##################
+        #Create a column and a row vector
+        zeta =      (ion['nuAx'] -nu0) / deltaNu - los_Vth
+        zetaPrime = (nuAxPrime   -nu0) / deltaNu - rad_Vth
+
+        zetaTall = zeta[np.newaxis].T
+        zetaDiffBlock = (zetaTall-alpha*zetaPrime)*inv_beta
+
+        #Use the vectors to create a matrix
+        R = np.exp(-zetaPrime*zetaPrime)*np.exp(-zetaDiffBlock*zetaDiffBlock) #unitless
+
+        #Apply that matrix to the incident light profile
+        profileRnu = preFactor * np.dot(R, nuI0Array) #ergs/s/cm^2/sr/Hz
+
+        #Convert from nu back to lam
+        profileR = profileRnu * ion['nuAx'] / ion['lamAx'] #ergs/s/cm^2/sr/Angstrom
+
+        ## Plot Stuff ##############################
+        #Plot the slice being used as incident light
+        stepdown = 0.4
+        if False and self.pPos[0] + stepdown < self.env.lastPos:
+            self.env.lastPos = self.pPos[0]
+            
+            plt.figure()
+            plt.axvline(self.env.cm2ang(lowLam))
+            plt.axvline(self.env.cm2ang(highLam))
+            plt.axvline(self.env.cm2ang(lamCenter))
+            plt.title("{}_{}".format(ion['ionString'], ion['ion']))
+            plt.plot(ion['lamAxPrime'], ion['I0array'], label="Full")
+            plt.plot(lamAxPrime, I0array, '.-', label = "Slice")
+            ionName= "{}_{}".format(ion['ionString'], ion['ion'])
+            plt.title("{}\nR = {:.3}, X,Z = {:.3}, {:.3}\n radialV = {:.4}".format(ionName, self.pPos[0], self.cPos[0], self.cPos[2], self.env.cm2km(radialV)))
+            plt.legend()
+
+            if True:
+                plt.show()
+            else:
+                savePath = "../fig/2018/steps"
+                plt.savefig("{}/{:.3}.png".format(savePath,self.pPos[0]))
+                plt.close()
+
+        #Plot the Generated Profile
+        #if ion['ionString'] == 's':
+        #plt.plot(lamAx, profileR, '.-')
+        #plt.show() #leave this blank to see them all on the same graph
+
+        ## Store values and return
+        ion['profileR'] = profileR
+        ion['totalIntR'] = np.sum(ion['profileR'])
+        return ion['profileR']
+
+
+        ##THE SLOW WAY
+        #profileR = []
+        #for lam in ion['lamAx'].tolist():
+        #    lightOut = 0
+        #    for lamPrime, I0 in zip(ion['lamAxPrime'].tolist(), I0list):
+        #        #WHY this is so slow dang
+
+        #        #zeta = (nu - nu0)/deltaNu - self.vLOS/Vth
+        #        #zetaPrime = (nuPrime - nu0)/deltaNu - np.dot(self.cU, radialNorm)/Vth
+        #        #R = g/(np.pi * beta *deltaNu**2)*np.exp(-zetaPrime**2)*np.exp(-((zeta-alpha*zetaPrime)/beta)**2)
+
+        #        zeta =      (lam0-lam)      * dLamFactor - los_Vth
+        #        zetaPrime = (lam0-lamPrime) * dLamFactor - rad_Vth
+
+        #        R = Rfactor / lamPrime**2 *np.exp(-zetaPrime**2)*np.exp(-((zeta-alpha*zetaPrime)/beta)**2)
+
+        #        lightOut += preFactor * nn * I0 * R
+        #    profileR.append(lightOut)
+
+
+
+    def findSunSolidAngle(self):
+        """Return the proportion of the sky covered by the sun"""
+        return 0.5*(1-np.sqrt(1-(1/self.rx)**2))
+
+    def resonantProfileOld(self, ion):
         """Generate the resonantly scattered line profile"""
 
         #Fudged Parameters for now
@@ -1797,6 +1998,7 @@ class simpoint:
 
         #Apply that matrix to the incident light profile
         profileR = fudgeScale * preFactor * Nion * Rfactor * np.dot(R, ion['I0array']) 
+
         #profileR has shape of lamAx
         #if ion['ionString'] == 'n':
         #    plt.plot(ion['lamAx'], profileR)
@@ -1810,32 +2012,6 @@ class simpoint:
         ion['totalIntR'] = np.sum(ion['profileR'])
         #if ion['totalIntR'] ==0: import pdb; pdb.set_trace()
         return ion['profileR']
-
-
-        ##THE SLOW WAY
-        #profileR = []
-        #for lam in ion['lamAx'].tolist():
-        #    lightOut = 0
-        #    for lamPrime, I0 in zip(ion['lamAxPrime'].tolist(), I0list):
-        #        #WHY this is so slow dang
-
-        #        #zeta = (nu - nu0)/deltaNu - self.vLOS/Vth
-        #        #zetaPrime = (nuPrime - nu0)/deltaNu - np.dot(self.cU, radialNorm)/Vth
-        #        #R = g/(np.pi * beta *deltaNu**2)*np.exp(-zetaPrime**2)*np.exp(-((zeta-alpha*zetaPrime)/beta)**2)
-
-        #        zeta =      (lam0-lam)      * dLamFactor - los_Vth
-        #        zetaPrime = (lam0-lamPrime) * dLamFactor - rad_Vth
-
-        #        R = Rfactor / lamPrime**2 *np.exp(-zetaPrime**2)*np.exp(-((zeta-alpha*zetaPrime)/beta)**2)
-
-        #        lightOut += preFactor * nn * I0 * R
-        #    profileR.append(lightOut)
-
-
-
-    def findSunSolidAngle(self):
-        """Return the proportion of the sky covered by the sun"""
-        return 0.5*(1-np.sqrt(1-(1/self.rx)**2))
 
   ## Velocity ##########################################################################
 
@@ -2481,6 +2657,10 @@ class simulate:
 
         #Setting the Title
         if multiPlot: property = 'MultiPlot'
+
+        zz =np.unique(self.get('cPos', 2))
+
+        if len(zz) == 1: property = property + ", Z = {}".format(zz[0])
 
         if ion is None: ionstring = ''
         elif ion == -1: ionstring = 'All Ions'

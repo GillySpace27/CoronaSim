@@ -59,7 +59,7 @@ if __name__ == '__main__':
     iterations = 1
 
     maxEnvs = 1
-    sim.environment.maxIons = 10
+    sim.environment.maxIons = 1
     timeAx = [0]#np.arange(0, 400) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
     b0 =  1.015
@@ -249,13 +249,26 @@ if __name__ == '__main__':
                 position, target = [x, y, z], [-x, y, z]
                 myLine = grid.sightline(position, target, coords = 'cart')
                 lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True, printOut=True)
+                #plt.xlim((0.000012382, 0.000012396))
+                #plt.yscale('log')
+                #plt.show()
                 #profR = lineSim.profilesR[0]
                 #lamax = np.squeeze(lineSim.ions[0]['lamAx'])
                 #plt.plot(lamax, profR, 'k', lw=3)
                 ##plt.yscale('log')
                 #plt.show()            
-                lineSim.plot(['totalIntR'], ion = -1, yscale='log', abscissa = 'cPos', frame = False)
 
+                ions = [0]
+                ax = lineSim.plot(['totalIntC','totalIntR'], ion = ions, yscale='log', abscissa = 'cPos', frame = False, show = True)
+                
+                #r = 1
+                #for ii in ions:
+                #    int = np.max(lineSim.ions[ii]['I0array'])
+                #    plt.plot(r, int, 'o', label = "SUMER Amplitude")
+                
+                
+                #plt.show()
+                #lineSim.plot(['radialV', 'ur'], ion = -1, abscissa = 'cPos', frame = False)
             #lineSim.plot('N', ion = -1, abscissa = 'cPos', yscale = 'log', norm = True)
             #lineSim.plot('delta', abscissa='cPos')
             #print(env.interp_f1(3.5))
