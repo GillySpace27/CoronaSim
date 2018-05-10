@@ -91,6 +91,9 @@ class ProgressBar():
             benchmarkValue = benchmark[1]
             
             incrementRate = ((current - benchmarkValue) / secondsSinceBenchmark)
+
+            if force:
+                incrementRate = current / (self.totalSeconds(now - self.start))
             # Prepare the eta display
             if(elapsedSeconds < 1 or percent == 0 or incrementRate == 0):
                 # For the first little while, the ETA is absolute nonsense.

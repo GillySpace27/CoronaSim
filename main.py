@@ -31,39 +31,41 @@ if __name__ == '__main__':
     
 
     #Batch Name
-    batchName = 'test'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'ionFreeze'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
-    simOne = True  
+    simOne = False 
 
     #1D Stuff - ImpactSim Parameters
     compute = False
     analyze = False 
     
     try: #Plotflags
-        sim.batchjob.pMass = False #Plot with temperature and non-thermal velocity from fits
+        sim.batchjob.pMass = True #Plot with temperature and non-thermal velocity from fits
         sim.batchjob.pIon = False #Plot with just the binned widths for all ions
         sim.batchjob.pMFit = False #Plot with straight fit lines on the ions
-        sim.batchjob.pWidth = True #Plot with the hist velocities for each of the elements on its own plot
+        sim.batchjob.pWidth = False #Plot with the hist velocities for each of the elements on its own plot
         sim.batchjob.pPB = False #Plot the polarization brightness
         sim.batchjob.pProportion = False #Plot the 4 ways of looking at the model parameters
         sim.batchjob.plotIon = 1
+        sim.batchjob.pIntRat = 'save'  #Plot the intensities and fraction CvR # set = to 'save' to save images
 
+        #For statistics:
         sim.batchjob.resonant = True #Use resonantly scattered light 
-        sim.batchjob.collisional = False #Use collisionally excited light
+        sim.batchjob.collisional = True #Use collisionally excited light
     except: pass
 
-    impactPoints = 5
+    impactPoints = 10
     iterations = 1
 
     maxEnvs = 1
-    sim.environment.maxIons = 1
+    sim.environment.maxIons = 3
     timeAx = [0]#np.arange(0, 400) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
-    b0 =  1.015
-    b1 =  3.5 #6 #1.6 #46
+    b0 =  1.05
+    b1 =  5 #6 #1.6 #46
     spacing = 'lin'
 
     N_line = (600,3000)
@@ -117,7 +119,7 @@ if __name__ == '__main__':
 
     #Run in parallel?
 
-    parallel = True
+    parallel = False
     cores = 7
 
     ##Plotting Flags
@@ -243,10 +245,10 @@ if __name__ == '__main__':
                 #Plot a sightline
                 y = 0.001
                 x = 20 
-                z = 1.5
-                N = 200
+                z = 1.01
+                N = 2000
 
-                position, target = [x, y, z], [-x, y, z]
+                position, target = [x,y, z], [-x, y, z]
                 myLine = grid.sightline(position, target, coords = 'cart')
                 lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True, printOut=True)
                 #plt.xlim((0.000012382, 0.000012396))
@@ -256,10 +258,11 @@ if __name__ == '__main__':
                 #lamax = np.squeeze(lineSim.ions[0]['lamAx'])
                 #plt.plot(lamax, profR, 'k', lw=3)
                 ##plt.yscale('log')
-                #plt.show()            
+                #plt.show()           
 
-                ions = [0]
-                ax = lineSim.plot(['totalIntC','totalIntR'], ion = ions, yscale='log', abscissa = 'cPos', frame = False, show = True)
+                ions = [2]
+                
+                ax = lineSim.plot(['totalIntC','totalIntR'], yscale='log', frame = False, show = True, abscissa= 'cPos', ion = ions, savename=z)
                 
                 #r = 1
                 #for ii in ions:
