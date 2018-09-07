@@ -28,6 +28,10 @@ import scipy.stats as stats
 from scipy.optimize import curve_fit, approx_fprime, minimize_scalar
 import copy
 
+from scipy import integrate
+
+from findiff import FinDiff
+
 #import warnings
 #with warnings.catch_warnings():
 #    warnings.simplefilter("ignore")
@@ -120,6 +124,7 @@ class environment:
     KB = 1.380e-16 #ergs/Kelvin
     K_ev = 8.6173303e-5 #ev/Kelvin
     r_Mm = 695.5 #Rsun in Mega meters
+    r_Cm = r_Mm * 10**8
     mH = 1.67372e-24 #grams per hydrogen
     mE = 9.10938e-28 #grams per electron
     mP = 1.6726218e-24 #grams per proton
@@ -155,14 +160,21 @@ class environment:
     def __init__(self, Bfile = None, bkFile = None, analyze = False, name = "Default", fFile = None):
         #Initializes
         self.name = name
+        print('Initializing {}...'.format(name))
         self._bfileLoad(Bfile, plot=False)
         self.__processBMap(thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False)
         if analyze: self.analyze_BMap2()
         
+        print('Loading Plasma Stuff...', end = '')
         self._plasmaLoad(bkFile)
+        print('done')
+        print('Loading Spectra...', end = '')
         self.spectrumLoad()
+        print('done')
         self.expansionCalc()
+        print('Loading ion information...')
         self.ionLoad()
+        print('done')
         self._fLoad(fFile)
         self._hahnLoad()
         self._LOS2DLoad()
@@ -213,10 +225,10 @@ class environment:
             #ax2.set_ylabel('Density', color='r')
             ax2.tick_params('y', colors='r')
 
-            lns1 = ax1.loglog(self.rx_raw, self.cm2km(self.ur_raw), label = 'Wind Speed (km/s)')
-            lns2 = ax2.loglog(self.rx_raw, self.rho_raw, 'r:', label = 'Density (g/$cm^3$)')
-            lns3 = ax1.loglog(self.rx_raw, self.cm2km(self.vAlf_raw), label = 'Alfven Speed (km/s)')
-            lns4 = ax1.loglog(self.rx_raw, self.T_raw, label = 'Temperature (K)')
+            lns1 = ax1.loglog(self.rx_raw-1, self.cm2km(self.ur_raw), label = 'Wind Speed (km/s)')
+            lns2 = ax2.loglog(self.rx_raw-1, self.rho_raw, 'r:', label = 'Density (g/$cm^3$)')
+            lns3 = ax1.loglog(self.rx_raw-1, self.cm2km(self.vAlf_raw), label = 'Alfven Speed (km/s)')
+            lns4 = ax1.loglog(self.rx_raw-1, self.T_raw, label = 'Temperature (K)')
 
             #ax1.set_title('ZEPHYR Outputs')
             ax1.set_xlabel('r / $R_\odot$')
@@ -429,39 +441,44 @@ class environment:
 
     def _chiantiLoad(self):
         """Load the chianti info for each of the desired ions"""
+        bar = pb.ProgressBar(len(self.ions))
+        
+        print('    Progress:')
+        bar.display()
+        print('')
 
         #Load Chianti Data for every ion
         for ion in self.ions:
-
+            print("{}_{}".format(ion['ionString'], ion['ion']))
             ##Load things from files###############
-
+            
             #Load the ionization fraction file
-            self.cLoadIonFraction(ion)
-
+            self.cLoadIonFraction(ion)           
+            
             #Load in elemental abundance info 
             self.cLoadAbund(ion)
-
+            
             #Load in upsilon(T) info 
             self.cLoadUpsilon(ion)
-
+            
             #Load in statistical weights 
             #self.cLoadStatWeight(ion) #Depricated
 
             #Load in Angular Momenta and Stat Weights
             self.cLoadAngularMomentum(ion)
-
+            
             #Load the Einstein coefficients
             self.cLoadEinstein(ion)
-
+            
             #Load the Ionization Potential
             self.cLoadIonization(ion)
-
+            
             #Load the Recombination rate TO this ion
             self.cLoadRecombination(ion)
-
+            
             #Load the collision rate
             self.cLoadCollision(ion)
-
+            
             ##Do Calculations######################
 
             #Make the nGrid for this Element
@@ -475,6 +492,9 @@ class environment:
 
             #Check if there are multiple lines here
             #self.checkOverlap(ion)
+            bar.increment()
+            bar.display()
+            print('')
           
             if False: #Plot the info
                 fig, ax1 = plt.subplots()
@@ -537,6 +557,7 @@ class environment:
                         break
 
                     if getTemps == True:
+
                         ion['upsTemps'] = [float(x) for x in data]
                         getUps = True
                         continue
@@ -546,9 +567,12 @@ class environment:
                         getTemps = True
             
             ion['splinedUpsX'] = np.linspace(0,1,200)
-            ion['splinedUps'] = interp.spline(ion['upsTemps'], ion['ups'], ion['splinedUpsX'])
+            
+            ion['splinedUps'] = interp.spline(ion['upsTemps'], ion['ups'], ion['splinedUpsX']) #I FOUND THE ERROR AND IT IS RIGHT HERE
+            
             #ion['gf'] = ion['upsInfo'][3]
         except: raise ValueError('Transition {}_{}:{}->{} not found in scups file'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower']))
+        
         return ion['splinedUpsX'], ion['splinedUps'] 
 
     def cLoadAngularMomentum(self,ion):
@@ -639,7 +663,6 @@ class environment:
         print('{}, num= {}\n {}'.format(fullstring, len(matchList), matchList))
         #print(ion['I0Width'])
 
-
     def cLoadIonization(self, ion):
         """Find the ionization potential for this ion""" #TODO Check this is right
         ionizationPath = os.path.normpath('{}/ip/chianti.ip'.format(self.def_ionpath))
@@ -659,7 +682,6 @@ class environment:
 
         hc = 1.9864458e-16 #erg * cm
         ion['ionizationPotential'] = np.abs(thisE - nextE) * hc #ergs
-
 
     def cLoadOneRecombRate(self, ionString, ionNum):
         '''Load in the recombination rate from ion ionNum, as a function of temperature'''
@@ -752,6 +774,7 @@ class environment:
             pm *= 2
         if lam0 < 225:
             pm *= 2
+
         lamAxPrime, I0array = self.returnSolarSpecLam(lam0-pm, lam0+pm) #ergs/s/cm^2/sr/Angstrom
         #lamAxPrime = np.linspace(lam0-pm, lam0+pm, rez)
         #I0array = self.solarInterp(lamAxPrime) 
@@ -776,6 +799,7 @@ class environment:
 
         #Store the Irradiance array
         #Watts/cm^2/sr/Angstrom
+
         ion['lamAxPrime'], ion['I0array'] = self.returnSolarSpecLam(lowLimit, highLimit)
         ion['I0interp'] = interp.interp1d(ion['lamAxPrime'], ion['I0array'])#, kind='cubic') #ergs/s/cm^2/sr/Angstrom
         #ion['lamAxPrime'] = np.linspace(lowLimit, highLimit, rez)
@@ -879,11 +903,9 @@ class environment:
     def recomb3(self, A, eta, T):
         return A * (T/ 10000)**(-eta)
 
-  
     def findSunSolidAngle(self, rx):
         """Return the proportion of the sky covered by the sun"""
         return 0.5*(1-np.sqrt(1-(1/rx)**2))
-
 
     def particleTimes(self,ion,R):
         """Determine the Collision and the Expansion time at a Radius"""
@@ -910,19 +932,31 @@ class environment:
         t_C, t_E = self.particleTimes(ion, R)
         return np.abs(t_C - t_E)
 
+
+    def printFreezeHeights(self):
+        """Print all of the ions' freezing height"""
+        print("Ion Freezing-in Radii:")
+        for ion in self.ions:
+            print("{}_{}: {:.4}".format(ion['ionString'], ion['ion'], ion['r_freeze']))
+
+
     def findFreeze2(self,ion):
         """Determine the freezing radius and rho and T for an ion"""
-        #Actually determine r_freeze
+
+        #Determine r_freeze
         func = partial(self.particleTimeDiff, ion)
-        rez = minimize_scalar(func,method = 'Bounded', bounds = [1.0002,10])
-        r_freeze = rez.x
+        result = minimize_scalar(func,method = 'Bounded', bounds = [1.0002,10])
+        r_freeze = result.x
 
         ion['r_freeze'] = r_freeze
         ion['rhoCrit'] = self.interp_rho(r_freeze)
         ion['TCrit'] = self.interp_T(r_freeze)
 
+
         #Plot
         if False:
+            print("{}_{}: {:.4}".format(ion['ionString'], ion['ion'], ion['r_freeze']))
+
             fig, ax2 = plt.subplots()
 
             rr = np.linspace(1.05, 10, 1000)
@@ -944,9 +978,6 @@ class environment:
             ax2.set_ylabel('Time')
             plt.show()
 
-   
-
-
     def ionLoad(self):
         """Read the spreadsheet indicating the ions to be simulated"""
         self.ions = []
@@ -962,6 +993,7 @@ class environment:
                         else: row[key] = int(row[key])
                 row['lamAx'] = self.makeLamAxis(row['ln'], row['lam0'], row['lamPm'])
                 self.ions.append(row)
+
         self._chiantiLoad()
 
     def plot2DV(self):
@@ -1230,7 +1262,7 @@ class environment:
         environment.mapCount += 1
 
         plt.hist(thisMap, histtype = 'step', bins = 100, label = "%s, %0.2f%%" % (self.thisLabel, inside))
-
+        plt.show()
         if environment.mapCount == NENV:
             environment.fullMin /= NENV
             environment.fullMax /= NENV
@@ -1251,7 +1283,7 @@ class environment:
     def plotBmap(self):
         fig = plt.figure()
 
-        map = self.BMap_raw
+        map = copy.copy(self.BMap_raw)
         map[map == 0] = np.nan
         map = np.ma.masked_invalid(map)
 
@@ -1402,7 +1434,7 @@ class environment:
         abs = os.path.join(script_dir, path)    
         return abs
 
-    def __find_nearest(self,array,value):
+    def find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
         array = array-value
         np.abs(array, out = array)
@@ -1412,7 +1444,7 @@ class environment:
         A3 = np.abs(np.asarray(A1)-np.asarray(A2))
         return xx[A3.argmin()]
 
-    #def __find_nearest(self,array,value):
+    #def find_nearest(self,array,value):
     #    idx = np.searchsorted(array, value, side="left")
     #    if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
     #        return idx-1
@@ -1539,7 +1571,7 @@ class environment:
         return val1 + diffstep*(slope)
 
     def interp_map(self, map, x, y):
-        return map[self.__find_nearest(self.BMap_x, x)][self.__find_nearest(self.BMap_y, y)]
+        return map[self.find_nearest(self.BMap_x, x)][self.find_nearest(self.BMap_y, y)]
 
     #def interp_spectrum(self, lamAx):
     #    interp.interp1d()
@@ -1691,49 +1723,46 @@ class element:
         self.env = env
         self.ion = ion
 
-        
         #Get elemental data
         self.abundance = ion['abundance']
         self.mAtom = ion['mIon']
         self.nIons = ion['element'] + 1
         self.name = ion['ionString']
         
-        self.ratList = self.loadRatList() 
-
-        #ionNum = 5
-        #tlist = list(np.logspace(3,8,100))
-        #ratios = [self.ratio(ionNum, Temp) for Temp in tlist]
-        #plt.semilogx(tlist, ratios)
-        #plt.show()
-
-        #Make a Height Axis
-        self.nRGrid = 2000
-        #self.rGrid = np.linspace(1.04, 10, self.nRGrid).tolist()
-        
-        base = 10
-        self.rGrid = np.logspace(np.log(1.04)/np.log(base), np.log(20)/np.log(base), self.nRGrid, base = base).tolist()
-        self.zGrid = [r-1 for r in self.rGrid]
-
-        #plt.loglog(self.rGrid, np.ones_like(self.rGrid), 'o')
-        #plt.show()
+        self.loadRateLists() 
 
         self.simulate_equilibrium()
         self.simulate_all_NLTE()
 
         #self.plotTimes()
-        self.plotAll()
+        #self.plotAll()
 
 
     def simulate_equilibrium(self):
         """Find the equilibrium ionization balance for every temperature"""
 
+        #Make a Height Axis
+        self.nRGrid = 4000
+                
+        base = 10 #
+
+        zmin = 0.001
+        zmax = 100
+        self.zGrid = np.logspace(np.log(zmin)/np.log(base), np.log(zmax)/np.log(base), self.nRGrid, base = base).tolist()
+        self.rGrid = [r+1 for r in self.zGrid]
+
+
         #Find the N_element as a function of height
         self.rhoGrid = [self.env.interp_rho(rx) for rx in self.rGrid] #g/cm^3
+        self.logRhoGrid = [np.log(r) for r in self.rhoGrid]
+
         nTotals = [rho*self.abundance/self.mAtom for rho in self.rhoGrid] #1/cm^3
 
         #Make a temperature axis as a function of height
-        self.tGrid = [self.env.interp_T(rx) for rx in self.rGrid] # # 
-        self.tGrid = np.logspace(3,8,self.nRGrid)#
+        self.tGrid = [self.env.interp_T(rx) for rx in self.rGrid]
+
+        ##Use this to see ionization vs temperature
+        #self.tGrid = np.logspace(3,8,self.nRGrid) 
 
         #Create an empty matrix
         nGrid = np.zeros((self.nIons+1,self.nRGrid))
@@ -1751,248 +1780,327 @@ class element:
 
             normGrid[0][jj] = nGrid[0][jj] / nTot
             normGrid[1][jj] = nGrid[1][jj] / nTot
-          
+            
+
+            small = -50
             #Determine the populations of the higher states
             for ionNum in np.arange(2,self.nIons+1):
-                nGrid[ionNum][jj] = nGrid[ionNum-1][jj] * self.recRate(ionNum, temp) / self.colRate(ionNum - 1, temp)
+                nGrid[ionNum][jj] = nGrid[ionNum-1][jj] * self.colRate(ionNum-1, temp) / self.recRate(ionNum, temp) 
+
+                #Low density floor
+                if nGrid[ionNum][jj] / nGrid[0][jj] < 10**small: nGrid[ionNum][jj] = 10**small * nGrid[0][jj]
+                
+                #Store Normed Version
                 normGrid[ionNum][jj] = nGrid[ionNum][jj] / nTot
                 
-        #Store Values
+        #Store Equilibrium Values
         self.nGrid = nGrid #1/cm^3
         self.normGrid = normGrid
 
-
-        #rlong = [0] + self.rGrid
-        ##np.arange(self.nIons+2),rlong,
-        #plt.pcolormesh(np.log(self.normGrid), vmin = -20, vmax = 1)
-        #plt.xlabel('Height')
-        #plt.colorbar()
-        #plt.ylabel('Ion')
-        #plt.title('Equilibrium Ionization')
-        #plt.show()
-
-
-    def nRead(self, ionNum, r): 
-        return self.env.interp(self.rGrid, self.nGrid[ionNum], r)
-
+        if False:
+            rlong = self.rGrid
+            xlong = np.arange(self.nIons+1)
+            #import pdb; pdb.set_trace()
+            #np.arange(self.nIons+2),rlong,
+            plt.pcolormesh(rlong, xlong, np.log(self.normGrid), vmin = -20, vmax = 1)
+            plt.xlabel('Height')
+            plt.colorbar()
+            plt.ylabel('Ion')
+            plt.title('Equilibrium Ionization')
+            plt.show()
 
     def groundSeries(self, temp):
-        series = 1
-        thisList = np.arange(len(self.ratList)).tolist()
-        for i in self.ratList:
+        '''Solve for the equilibrium ground state'''
+
+        series = 0
+        thisList = (np.arange(1,self.nIons)+1).tolist()
+        for i in np.arange(self.nIons):
             #For each necessary term in the series
             term = 1
-            # print(thisList)
-            for ii in thisList:
+
+            for ionNum in thisList:
                 #Make that term the multiplication of the remaining ratios
-                term *= self.ratio(ii+2, temp)
-            # print(term)
+                term *= self.colRate(ionNum-1, temp) / self.recRate(ionNum, temp)   
+
             series += term
-            (thisList.pop()) #pop the highest valued ratio
-        # print('series = {}'.format(series))
+
+            if len(thisList)>0: thisList.pop() #pop the highest valued ratio
 
         return series
-
 
     def simulate_all_NLTE(self):
         """Find the NLTE densities as a function of densfac"""
 
-        doPlot = False
         #Define the grid in the densfac dimension
-        self.densPoints = 1
-        dMin = 1
-        dMax = 3
-        densGrid = np.linspace(dMin, dMax, self.densPoints).tolist()
+        self.densPoints = 4 #12
+        dMin = 0.5
+        dMax = 12.5
+        base = 10
+        self.densGrid = np.logspace(np.log(dMin)/np.log(base), np.log(dMax)/np.log(base), self.densPoints, base = base).tolist()
 
-        #Create a multidimensional array to hold everything
-        self.bigGrid = np.zeros((self.densPoints, self.nIons+1, self.nRGrid))
-        self.bigNormGrid = np.zeros_like(self.bigGrid)
+        #Define the grid in the R direction
+        base = 10
+        self.rPoints = 2000
+        zmin = 0.0015
+        zmax = 50
+        self.zEval = np.logspace(np.log(zmin)/np.log(base), np.log(zmax)/np.log(base), self.rPoints, base = base).tolist()
+        self.rEval = [r+1 for r in self.zEval]
+
+        self.evalR0 = zmin + 1
+        self.evalRf = zmax + 1
+
+        #Create arrays to hold everything
+        self.bigNLTEGrid = np.zeros((self.densPoints, self.nIons+2, self.rPoints))
+        self.bigNormGrid = np.zeros_like(self.bigNLTEGrid)
+
+        bar = pb.ProgressBar(self.densPoints)
+        bar.display()
+
+        #Populate the arrays
+        for densfac, dd in zip(self.densGrid, np.arange(self.densPoints)):
+            self.bigNLTEGrid[dd], self.bigNormGrid[dd] = self.simulate_one_NLTE(densfac)
+            bar.increment()
+            bar.display()
+            #self.plotGrid(dd)
+        print('')
+
+        #Transpose the arrays
+        self.bigNLTEGrid = self.bigNLTEGrid.transpose((1,0,2)) #nion, densfac, rpoints
+        self.bigNormGrid = self.bigNormGrid.transpose((1,0,2))
+
+        self.makeInterps()
+
+    def makeInterps(self):
+        self.nInterps = []
+        for ionNum in np.arange(self.nIons+2):
+            thisState = np.abs(self.bigNLTEGrid[ionNum])
+
+            self.nInterps.append(interp.RectBivariateSpline(self.densGrid, self.rEval, thisState))
+
+    def getN(self, ionNum, densfac, rx):
+        """Return the number density of this ion at this height and densfac""" 
+
+        actual = np.abs(self.nInterps[ionNum](densfac, rx)[0][0])
+        minimum = 1e-100
+        return max(actual, minimum)  #TODO Remove this abs hopefully
+
+
+    def plotGrid(self, dd):
+        """Plots the results of the NLTE Calculation with the Equilibrium Calculation"""
+        doPlot = True
+        doNorm = True
+
+        if doNorm: 
+            big = self.bigNormGrid
+            equil = self.normGrid
+        else:
+            big = self.bigNLTEGrid
+            equil = self.nGrid
 
         colors = ['k','C1','C2','C3','C4','C5','C6','C7','C8','C9']
         colorcycler = cycle(colors)
 
-        #Populate the array
-        for densfac, dd in zip(densGrid, np.arange(self.densPoints)):
-            self.bigGrid[dd], self.bigNormGrid[dd] = self.simulate_one_NLTE(densfac)
-            
-            doNorm = False
+        lw = 2
+        if doPlot:
+            plt.figure()
+            for nn in np.arange(self.nIons+1):
 
-            lw = 2
-            if doPlot:
-                plt.figure()
-                for nn in np.arange(self.nIons+1):
-                    clr = next(colorcycler)
+                clr = next(colorcycler)
+                    
+                #Plot NLTE Calculation
 
-                    if doNorm:
-                        plt.loglog(self.zGrid, self.bigNormGrid[dd,nn],c=clr, marker='o', lw=lw, label=nn)
-                        plt.loglog(self.zGrid, self.normGrid[nn],   c=clr,ls=':', label=nn)
-                    else:
-                        plt.loglog(self.zGrid, self.bigGrid[dd,nn], marker='o',c=clr,lw=lw, label=nn)
-                        plt.loglog(self.zGrid, self.nGrid[nn],   c=clr,ls=':', label=nn)
-                    lw=1
-                #plt.pcolormesh(np.log(self.bigGrid[dd]), vmin = -20, vmax = 1)
-                plt.legend()
-                plt.xlabel('Height')
-                plt.ylabel('Ion')
-                plt.title(self.name)
-                #plt.ylim([10**-8,1])
-                #plt.title('NLTE Ionization')
-                plt.show()
+                toPlot = big[dd][nn]
+                positive = toPlot.copy()
+                negative = -toPlot.copy()
+                positive[positive < 0] = np.nan
+                negative[negative < 0] = np.nan
 
+                plt.loglog(self.bigZAxis[dd], positive,c=clr, marker='o', lw=lw, label=nn)
+                plt.loglog(self.bigZAxis[dd], negative,c=clr, marker='x', lw=lw, label=nn)
+                #Plot equilibrium Calculation
+                plt.loglog(self.zGrid, equil[nn],   c=clr,ls=':', label=nn)
 
+                try:plt.axvline(self.startHeights[nn], c=clr)
+                except:pass
 
+            #plt.pcolormesh((self.bigGrid[dd]))#, vmin = -20, vmax = 1)
+            #print(big[0,-1])
+            plt.legend(loc="upper left", bbox_to_anchor=(1,1))
+            plt.xlabel('Height')
+            plt.ylabel('Density {}'.format('' if doNorm else '(1/cm^3)'))
+            #plt.title(self.name)
+            #plt.ylim([10**-8,10**3])
+            plt.suptitle('NLTE Ionization')
+            try:plt.title('densfac = {}, ion: {}'.format(self.densGrid[dd], self.name))
+            except:plt.title('ion: {}'.format(self.name))
+            plt.show()
 
     def simulate_one_NLTE(self, densfac):
+        """Simulate the NLTE densities at a given densfac"""
 
-        #Parameter for when to start NLTE
-        self.LTEstart = 100
+        self.createInitialGrid(densfac)
 
-        #Pull in the equilibrium calculation and adjust density
-        neGrid = copy.deepcopy(self.nGrid * densfac)
+        #Perform the actual integration
+        #neGrid, normGrid, rAxis = self.manualIonIntegrate()
+        neGrid, normGrid = self.stiffIntegrator()
+
+        return neGrid, normGrid#, rAxis
+
+    def createInitialGrid(self, densfac):
+        """Mostly just creates dudr at this point"""
+
+        #Pull in the equilibrium calculation and adjust density (Initial Conditions)
+        self.thisDensfac = densfac
+        self.neGrid = copy.deepcopy(self.nGrid * densfac)        
+
+        #Calculate the rho and wind velocities on the rGrid
+        self.rhoGrid = [self.env.interp_rho(rx) * densfac for rx in self.rGrid] # g/cm^3
+        self.uGrid = [self.env.interp_wind(rx)/densfac**0.5 for rx in self.rGrid] # cm/s
+
+        #Calculate the Derivative of the wind speed
+        d_dr = FinDiff(0, np.asarray(self.rGrid)* self.env.r_Cm, acc=10)
+        self.dudrAll = d_dr(np.asarray(self.uGrid))
+
+
+        #Plot the inputs 
+        if False: 
+            plt.loglog(self.rGrid, self.tGrid, label='T')
+            plt.loglog(self.rGrid, self.uGrid, label='U')
+            #plt.loglog(self.rGrid, self.rhoGrid, label=r'$\rho$')
+            plt.loglog(self.rGrid, self.nGrid[0], label='N0_{}'.format(self.ion['ionString']))
+            plt.legend()
+            plt.show()
+
+        #This just prints the function and derivative
+        if False:
+            fig, ax = plt.subplots()
+            line1 = ax.loglog(self.zGrid, dudrAll, 'ob', label = 'Derivative')
+            ax2 = ax.twinx()
+            line2 = ax2.loglog(self.zGrid, self.uGrid, 'or', label = "Function")
+            lns = line1 + line2
+            labs = [l.get_label() for l in lns]
+            ax.legend(lns, labs, loc=8)
+            plt.show()
+
+    def stiffIntegrator(self):
+        """A more advanced approach to the problem"""
+
+        #Pull in the initial conditions
+        neGrid = self.neGrid
+        cGrid = np.zeros_like(neGrid)
+        eventGrid = np.zeros_like(neGrid)
         normGrid = copy.deepcopy(self.normGrid)
 
-        #Calculate the wind velocities on the rGrid
-        self.uGrid = [self.env.interp_wind(rx)/densfac**0.5 for rx in self.rGrid] #cm/s
+        #Define Range of Integration
+        r0 = self.evalR0   
+        rf = self.evalRf   
 
-        rs2cm = self.env.r_Mm * 10**8
+        ind = self.env.find_nearest(np.asarray(self.rGrid), r0)-1
+        r00 = self.rGrid[ind] *self.env.r_Cm
+        rf0 = rf *self.env.r_Cm
 
-        #Iterate up in r
-        for temp, rr, ur, jj in zip(self.tGrid, self.rGrid, self.uGrid, np.arange(self.nRGrid)):
-            r = rr * rs2cm #cm
-            if jj < 1: continue #Skip the first column
+        r_eval = np.asarray(self.rEval) *self.env.r_Cm
 
-            #For every height point
-            dr = (self.rGrid[jj] - self.rGrid[jj-1]) * rs2cm #change in height    #cm
-            du = self.uGrid[jj] - self.uGrid[jj-1] #change in wind over that height #cm/s
-
-            rho = self.rhoGrid[jj] #g/cm^3
-            nE = rho*0.9/self.env.mP # num/cm^3
-
-            #Get the densities of all ions at the last height
-            n = neGrid[:, jj-1] #1/cm^3
-            n = np.append(n, 0) #make there be a zero density higher state
-            
-            for ionNum in np.arange(1,self.nIons+1):
-                #For each ion
-
-                ##Should we use NLTE here?
-                t_C,t_E = self.particleTimes(ionNum, jj) #s
-                timeRatio = t_E/t_C
-                #if collisions are happening: do not
-                if timeRatio > self.LTEstart: continue
-                
-                #Ionization and Recombination
-                C = n[ionNum-1]*self.colRate(ionNum-1, temp) + n[ionNum+1]*self.recRate(ionNum+1, temp) 
-                - n[ionNum] * (self.colRate(ionNum, temp) + self.recRate(ionNum, temp))
-                #1/cm^3 * cm^3/s = 1/s
-
-                RHS = 0
-                RHS +=  10**0 * nE*C/ur # 1/cm^3 * 1/s * s/cm = 1/cm^4
-                RHS -=  2*n[ionNum]/r # 1/cm^3 / cm = 1/cm^4
-                RHS -=  n[ionNum]/ur*du/dr # 1/cm^3 * s/cm * cm/s / cm = 1/cm^4
-
-                #RHS =  nE*C/ur - 2*n[ionNum]/r  - n[ionNum]/ur*du/dr
-
-                change = dr * RHS
-                neGrid[ionNum, jj] = n[ionNum] + dr * RHS
-                normGrid[ionNum, jj] = neGrid[ionNum, jj]/neGrid[0,jj]
+        #Get the initial densities
+        nl = neGrid[:, ind] #1/cm^3
+        nl = np.append(nl, 0) #make there be a zero density higher state
 
 
-        return neGrid, normGrid
+        #Integrate!
+        method = 'Radau' #'BDF', 'LSODA', 'RK45'
+        atol = 1e-36
 
-    def particleTimes(self,ionNum,jj):
-        """Determine the Collision and the Expansion time at a Radius"""
+        results = integrate.solve_ivp(self.ionDerivativeR, (r00,rf0), nl, method = method, atol = atol, t_eval = r_eval)
+
+        #rAxis = results.t
+        neGrid = np.abs(results.y)
+
+        #Make the n0 row actually be the sum of the other rows
+        neGrid[0, :] = 0
+        neGrid[0, :] = np.sum(neGrid, axis=0)
         
-        #Aquire relevant parameters
-        rho = self.rhoGrid[jj] #g/cm^3
+        #Normalize the Normgrid
+        normGrid = neGrid / neGrid[0, :] 
+
+        #Create the z axis output
+        #zAxis = rAxis/self.env.r_Cm - 1
+
+        return neGrid, normGrid #, zAxis
+
+    def ionDerivativeR(self,r,nl):
+        """The RHS function for the ionization balance"""
+
+        #Convert inputs
+        rx = r / self.env.r_Cm
+        RHS = np.zeros_like(nl)
+
+        #Density
+        densfac = self.thisDensfac
+        rho = self.env.interp_rho(rx) * densfac #g/cm^3
         nE = rho*0.9/self.env.mP # num/cm^3
-        T = self.tGrid[jj] #Kelvin
-        wind = self.uGrid[jj] #cm/s
 
-        #Do a derivative
-        rs_cm = self.env.r_Mm * 10**8
-        dr = (self.rGrid[jj] - self.rGrid[jj-1]) * rs_cm #cm
-        drho = self.rhoGrid[jj] - self.rhoGrid[jj-1] #g/cm^3
-
-        #Expansion Time
-        t_E = np.abs(rho*dr/(wind*drho)) #Expansion Time in s
-     
-
-        #Find rates to state below
-        recomb1 = self.recRate(ionNum, T) #cm^3/s
-        collis1 = self.colRate(ionNum-1, T) #cm^3/s
-
-        #Find rates to state above
-        recomb2 = self.recRate(ionNum+1, T) #cm^3/s
-        collis2 = self.colRate(ionNum, T) #cm^3/s
+        #Solar Wind
+        ur = self.env.interp_wind(rx)/densfac**0.5
+        dudr = self.env.interp(self.rGrid, self.dudrAll, rx)
         
-        #Find times for both rates
-        t_C1 = 1/(nE*(recomb1+collis1)) #Collisional Time in s
-        t_C2 = 1/(nE*(recomb2+collis2)) #Collisional Time in s
+        #Temperature
+        T = self.env.interp_T(rx)
 
-        #Use only the appropriate times
-        if ionNum < 2: t_C = t_C2
-        elif ionNum >= self.nIons: t_C = t_C1
-        else: #What would be the appropriate average to use here?
-            #t_C = (t_C1 + t_C2)/2
-            t_C = np.sqrt(t_C1*t_C2)
-
-        return t_C, t_E
-
-    def plotTimes(self):
-        plt.figure()
         for ionNum in np.arange(1,self.nIons+1):
-            col = []
-            exp = []
-            for jj in np.arange(self.nRGrid):
-                t_C,t_E = self.particleTimes(ionNum, jj)
-                col.append(t_C)
-                exp.append(t_E)
-            
-            #plt.loglog(self.rGrid, col)
-            #plt.loglog(self.rGrid, exp, 'b')
-            plt.loglog(self.zGrid, [e/c for c,e in zip(col, exp)])
-            plt.ylabel('Seconds')
-            plt.xlabel('Solar Radii')
-            plt.axhline(10**2, ls=':', c='k')
-        plt.show()
+            #Ionization and Recombination
+            C1 =   nl[ionNum-1]*self.colRate(ionNum-1, T)
+            C2 =   nl[ionNum+1]*self.recRate(ionNum+1, T) 
+            C3 = - nl[ionNum] * (self.colRate(ionNum, T))
+            C4 = - nl[ionNum] * (self.recRate(ionNum, T))
 
-    def ratio(self, ionNum, temp):
-        """Returns recomb(ionNum) / collis(ionNum - 1)"""
-        return self.recRate(ionNum, temp) / self.colRate(ionNum - 1, temp)
+            C = C1 + C2 + C3 + C4
+            #1/cm^3 * cm^3/s = 1/s
+
+            RHS[ionNum] +=  nE*C/ur       # 1/cm^3 * 1/s * s/cm = 1/cm^4
+            RHS[ionNum] -=  2*nl[ionNum]/r # 1/cm^3 / cm = 1/cm^4
+            RHS[ionNum] -=  nl[ionNum]/ur*dudr # 1/cm^3 * s/cm * cm/s / cm = 1/cm^4
+
+            #RHS =  nE*C/ur - 2*n[ionNum]/r  - n[ionNum]/ur*du/dr
+
+        return RHS  
 
     def recRate(self, ionNum, temp):
         """Return R, the recombination from I to I-1"""
-        ind = ionNum - 2
-        if ind < 0: return 0
-        if ind > len(self.ionArray)-1: return 0
-        return self.ratList[ind][1](temp) #cm^3/s
+        if not 2 <= ionNum <= self.nIons: return 0
+        return self.recombList[ionNum](temp) #cm^3/s
  
     def colRate(self, ionNum, temp):
         """Return C, the collision rate from I to I+1"""
-        ind = ionNum - 1
-        if ind < 0: return 0
-        if ind > len(self.ionArray)-1: return 0
-        return self.ratList[ind][0](temp) #cm^3/s
+        if not 1 <= ionNum < self.nIons: return 0
+        return self.collisList[ionNum](temp) #cm^3/s
 
+    def nRead(self, ionNum, r): 
+        return self.env.interp(self.rGrid, self.nGrid[ionNum], r)
 
-
-
-    def loadRatList(self):
+    def loadRateLists(self):
         '''Load in the recombination and collision rates for all of the ions of this element'''
-        ratList = []
-        self.ionArray = np.arange(1, self.nIons)
+        #self.ratList = []
+        self.recombList = []
+        self.collisList = []
+        self.ionArray = np.arange(self.nIons+1)
 
-        colors = ['C0','C1','C2','C3','C4','C5','C6','C7','C8','C9']
-        colorcycler = cycle(colors)
+        self.colors = ['C0','C1','C2','C3','C4','C5','C6','C7','C8','C9']
+        colorcycler = cycle(self.colors)
 
         for ionNum in self.ionArray:
-            T_array, thisRecomb = self.env.cLoadOneRecombRate(self.ion['ionString'], ionNum + 1)
-            T_array, thisCollis = self.env.cLoadOneCollisRate(self.ion['element'], ionNum)
-            
-            recombFunc = partial(self.env.interp,T_array,thisRecomb)
-            collisFunc = partial(self.env.interp,T_array,thisCollis)
-            ratList.append((recombFunc, collisFunc))
+            #Load Recombination Rate out of this ion
+            if not 2 <= ionNum <= self.nIons: self.recombList.append(0)
+            else:
+                T_array, thisRecomb = self.env.cLoadOneRecombRate(self.ion['ionString'], ionNum)
+                recombFunc = partial(self.env.interp,T_array,thisRecomb)
+                self.recombList.append(recombFunc) #cm^3/s
+
+            #Load Collison Rate out of this ion
+            if not 1 <= ionNum < self.nIons: self.collisList.append(0)
+            else:
+                T_array, thisCollis = self.env.cLoadOneCollisRate(self.ion['element'], ionNum)
+                collisFunc = partial(self.env.interp,T_array,thisCollis)
+                self.collisList.append(collisFunc) #cm^3/s
 
             if False:
                 #Plot all the recombination and collision times
@@ -2004,13 +2112,16 @@ class element:
                 plt.xlabel('Temperature')
                 plt.ylabel('Rate')
         #plt.show()
+        #print(self.ionArray.tolist())
+        #print(self.recombList)
+        #print(self.collisList)
 
 
-        return ratList
+        #import pdb; pdb.set_trace()
+        return
 
-    def getN(self, ionNum, rx):
-        thisState = self.nGrid[ionNum]
-        self.env.interp(self.rGrid, thisState, rx)
+
+
 
     def plotAll(self):
         #import pdb; pdb.set_trace()
@@ -2025,8 +2136,8 @@ class element:
         # plt.show()
         plt.figure()
 
-        absolute = False
-        vsHeight = False
+        absolute = True
+        vsHeight = True
 
         if absolute:
             plt.title('{}, absolute'.format(self.ion['ionString']))
@@ -2053,6 +2164,214 @@ class element:
         plt.yscale('log')
         plt.show()
 
+    ###Depricated
+    def manualIonIntegrate(self):
+        """A forward Euler Approach to the Problem"""
+
+        #Pull in the initial conditions
+        neGrid = self.neGrid
+        cGrid = np.zeros_like(neGrid)
+        eventGrid = np.zeros_like(neGrid)
+        normGrid = copy.deepcopy(self.normGrid)
+
+        #Do the Math
+        for writeEnabled in [False,True]:
+            if writeEnabled: self.startHeights = self.findStartHeights(eventGrid)
+            for temp, rr, ur, jj in zip(self.tGrid, self.rGrid, self.uGrid, np.arange(self.nRGrid)):
+                if jj < 1: continue #Skip at least the lowest column
+                r = rr * self.env.r_Cm #cm
+                z = rr - 1
+
+                dr = (self.rGrid[jj] - self.rGrid[jj-1]) * self.env.r_Cm #change in height    #cm
+                dudr = self.dudrAll[jj]
+
+                #h = (self.rGrid[jj] - self.rGrid[jj-1]) * self.env.r_Cm #change in height    #cm
+                #du = self.uGrid[jj] - self.uGrid[jj-1] #change in wind over that height #cm/s
+                #dudr1 = du/h
+
+                rho = self.rhoGrid[jj-1] #g/cm^3
+                nE = rho*0.9/self.env.mP # num/cm^3
+
+                #Get the densities of all ions at the last height
+                nl = neGrid[:, jj-1] #1/cm^3
+
+                nl = np.append(nl, 0) #make there be a zero density higher state
+            
+                for ionNum in np.arange(1,self.nIons+1):
+                    #For each ion
+                
+                    #Ionization and Recombination
+                    C1 =   nl[ionNum-1]*self.colRate(ionNum-1, self.tGrid[jj-1])
+                    C2 =   nl[ionNum+1]*self.recRate(ionNum+1, self.tGrid[jj-1]) 
+                    C3 = - nl[ionNum] * (self.colRate(ionNum, self.tGrid[jj-1]))
+                    C4 = - nl[ionNum] * (self.recRate(ionNum, self.tGrid[jj-1]))
+
+                    C = C1 + C2 + C3 + C4
+                    #1/cm^3 * cm^3/s = 1/s
+
+                    if not writeEnabled: 
+                        pf = nE/ur
+                        CR1 = np.abs(pf*C1)
+                        CR2 = np.abs(pf*C2)
+                        CR3 = np.abs(pf*C3)
+                        CR4 = np.abs(pf*C4)
+                        collisMax = max(CR1, CR2, CR3, CR4)
+
+                        GR1 = np.abs(2*nl[ionNum]/r)
+                        GR2 = np.abs(nl[ionNum]/ur*dudr)
+                        geoMax = max(GR1, GR2)
+                        
+
+                        eventGrid[ionNum, jj] = collisMax/geoMax
+                        cGrid[ionNum, jj] = dudr
+                        continue
+
+                    if z <= self.startHeights[ionNum]: continue
+                    
+                    RHS = 0
+                    RHS +=  nE*C/ur       # 1/cm^3 * 1/s * s/cm = 1/cm^4
+                    RHS -=  2*nl[ionNum]/r # 1/cm^3 / cm = 1/cm^4
+                    RHS -=  nl[ionNum]/ur*dudr # 1/cm^3 * s/cm * cm/s / cm = 1/cm^4
+
+                    #RHS =  nE*C/ur - 2*n[ionNum]/r  - n[ionNum]/ur*du/dr
+
+                    change = dr * RHS # 1/cm^3
+                    neGrid[ionNum, jj] = nl[ionNum] + change
+                    normGrid[ionNum, jj] = neGrid[ionNum, jj] / neGrid[0,jj]
+
+        #Plot whatever is in the cGrid
+        if False:
+            self.cName = "collis/geo"
+            plt.figure()
+            colorcycler = cycle(self.colors)
+            for ii in self.ionArray.tolist():
+                #if ii < 5: continue
+                clr = next(colorcycler)
+                plt.loglog(self.zGrid, cGrid[ii], 'o-'+clr, label=ii)
+                plt.axvline(self.startHeights[ii], c=clr, alpha = 0.7)
+
+                #thismax = np.abs(np.mean(cGrid)) #np.max(np.abs(cGrid[ii]))
+                #plt.loglog(self.zGrid, normGrid[ii], 'o'+clr, label=ii)
+                #plt.semilogx(self.zGrid, cGrid[ii]/thismax, clr, label = ii)
+            #print(cGrid[-1])
+            plt.legend()
+            plt.ylabel('C')
+            plt.axhline(self.cutThreshold)
+            plt.xlabel('height')
+            plt.title(self.cName)
+            plt.show()
+
+        return neGrid, normGrid, self.zGrid
+
+    def findStartHeights(self, eventGrid):
+        startHeights = np.zeros_like(eventGrid[:, 0])
+        self.cutThreshold = 300
+        
+        for ionNum in np.arange(1, self.nIons+1):
+            inds = np.argwhere(eventGrid[ionNum] > self.cutThreshold)
+            lastInd = int(inds[-1])
+            startHeights[ionNum] = self.zGrid[lastInd]
+        
+        #print(startHeights)
+        return startHeights
+
+    def particleTimes(self,ionNum,jj, useMax = False):
+        """Determine the Collision and the Expansion time at a Radius"""
+
+        t_E = self.expansionTime(jj) #Seconds
+        t_C = self.collisionTime(jj, ionNum, useMax) #Seconds
+
+        return t_C, t_E
+
+    def expansionTime(self, jj):
+        """Return the Expansion Timescale"""
+
+        #Aquire relevant parameters
+        rho = self.rhoGrid[jj] #g/cm^3       
+        wind = self.uGrid[jj] #cm/s
+
+        #Finite Difference
+        rs_cm = self.env.r_Mm * 10**8 #cm/solar radius
+        h = (self.rGrid[jj] - self.rGrid[jj-1]) * rs_cm #cm
+
+        var = self.rhoGrid #g/cm^3
+        try: drhodr = (var[jj+1] - var[jj-1]) / (2*h) #g/cm^4
+        except IndexError: drhodr = (var[jj] - var[jj-1]) / h #g/cm^4
+
+        #Calculate Timescale
+        t_E = np.abs((rho/wind)*(1/drhodr)) #seconds
+
+        return t_E #Seconds
+
+    def collisionTime(self, jj, ionNum, useMax = False):
+        """Return the collisional equilibrium timescale"""
+
+        #Aquire relevant parameters
+        rho = self.rhoGrid[jj] #g/cm^3
+        nE = rho*0.9/self.env.mP # num/cm^3
+        T = self.tGrid[jj] #Kelvin
+
+        #Find rates to state below
+        recomb1 = self.recRate(ionNum, T) #cm^3/s
+        collis1 = self.colRate(ionNum-1, T) #cm^3/s
+
+        #Find rates to state above
+        recomb2 = self.recRate(ionNum+1, T) #cm^3/s
+        collis2 = self.colRate(ionNum, T) #cm^3/s
+        
+        #Find times for both rates
+        t_C1 = 1/(nE*(recomb1+collis1)) #Collisional Time in s
+        t_C2 = 1/(nE*(recomb2+collis2)) #Collisional Time in s
+
+        slowest = max(recomb1, collis1, recomb2, collis2)
+        t_C_slow = 1/(nE*slowest)
+
+        #t_C_slow = max(t_C1, t_C2)
+
+        #Use only the appropriate times
+        if useMax: t_C = t_C_slow
+        else:
+            if ionNum < 2: t_C = t_C2
+            elif ionNum >= self.nIons: t_C = t_C1
+            else: t_C = np.sqrt(t_C1*t_C2)
+
+        return t_C
+
+    def plotTimes(self):
+        plt.figure()
+        for ionNum in np.arange(1,self.nIons+1):
+            col = []
+            exp = []
+            for jj in np.arange(self.nRGrid):
+                t_C,t_E = self.particleTimes(ionNum, jj)
+                col.append(t_C)
+                exp.append(t_E)
+            
+            #plt.loglog(self.rGrid, col)
+            #plt.loglog(self.rGrid, exp, 'b')
+            plt.loglog(self.zGrid, [e/c for c,e in zip(col, exp)])
+            plt.ylabel('Seconds')
+            plt.xlabel('Solar Radii')
+            plt.axhline(10**2, ls=':', c='k')
+        plt.show()
+        #while True:
+        #    
+        #atolMin = 1e-60
+        #increment = 1e-2
+        #thisIncrement = 1e-2
+        #negList = ['']
+        #    #Check for any Negative Values
+        #    negList = []
+        #    for nn in np.arange(self.nIons+1):
+        #        long = len(neGrid[nn, :])
+        #        aLine = neGrid[nn, int(long/2):]
+        #        nNeg = len(np.argwhere(aLine < 0))
+        #        if nNeg > 0: negList.append('{}_{}: {}'.format(self.name, nn, nNeg))
+        #    print(atol, negList)
+        #    atol = atol * thisIncrement
+        #    thisIncrement *= increment
+        #    if len(negList) < 1: break
+        #    if atol < atolMin: break
 
 
 ####################################################################                            
@@ -2134,7 +2453,7 @@ class simpoint:
         if self.useB:
             if self.voroB: self.footB = self.env.interp_map(self.env.BMap, x, y)
             else: self.footB = self.env.interp_map(self.env.BMap_smoothed, x, y)
-            #self.footB = self.env.BMap[self.__find_nearest(self.env.BMap_x, x)][self.__find_nearest(self.env.BMap_y, y)]
+            #self.footB = self.env.BMap[self.find_nearest(self.env.BMap_x, x)][self.find_nearest(self.env.BMap_y, y)]
 
         else: self.footB = 0
 
@@ -2154,7 +2473,7 @@ class simpoint:
         x = self.foot_cPos[0]
         y = self.foot_cPos[1]
         self.streamIndex = self.env.interp_map(self.env.label_im, x, y)
-        #self.streamIndex = self.env.label_im[self.__find_nearest(self.env.BMap_x, x)][self.__find_nearest(self.env.BMap_y, y)]
+        #self.streamIndex = self.env.label_im[self.find_nearest(self.env.BMap_x, x)][self.find_nearest(self.env.BMap_y, y)]
 
   ## Density ##########################################################################
     def findDensity(self):
@@ -2165,7 +2484,9 @@ class simpoint:
 
         for ion in self.ions:
             ion['frac'] = self.env.findIonFrac(ion, self.T, self.rho) if self.useIonFrac else 1 #ion fraction
-            ion['N'] = np.abs(0.8 * ion['frac'] * ion['abundance'] * self.rho/self.env.mP) #ion number density 
+            ion['Neq'] = np.abs(0.8 * ion['frac'] * ion['abundance'] * self.rho/self.env.mP) #ion number density 
+            ion['N'] = self.env.elements[ion['ionString']].getN(ion['ion'], self.densfac, self.rx)
+
 
     def __findDensFac(self):
         # Find the density factor
@@ -2650,7 +2971,7 @@ class simpoint:
 
   ## Misc Methods ##########################################################################
 
-    def __find_nearest(self,array,value):
+    def find_nearest(self,array,value):
         #Returns the index of the point most similar to a given value
         array = array-value
         np.abs(array, out = array)
@@ -3277,6 +3598,7 @@ class simulate:
                 print('\nGenerating Light...')
                 bar = pb.ProgressBar(len(self.sims) * len(self.timeAx))
 
+            #Primary Loop
             for point, step in zip(self.sims, self.steps):
 
                 lenCm = step * self.throwCm
@@ -5037,6 +5359,18 @@ class batchjob:
         ax1.set_xlabel('Impact Parameter')
         ax1.set_ylabel('$v_{1/e}$ (km/s)')
         plt.show(False)
+
+    def weightedPlotTemp(self):
+        fig, ax1 = plt.subplots()
+        for ion in self.ions:
+            label = '{}_{}'.format(ion['ionString'], ion['ion'])
+            ax1.errorbar(self.doneLabels, self.binStdV[ion['idx']], yerr = self.binStdVsig[ion['idx']], fmt = 'o', label = label, capsize=6)
+        ax1.legend()
+        ax1.set_title('Binned Profile Measurements')
+        ax1.set_xlabel('Impact Parameter')
+        ax1.set_ylabel('$v_{1/e}$ (km/s)')
+        plt.show(False)
+
 
     def massPlot(self):
         """Plot each of the ions width vs mass"""

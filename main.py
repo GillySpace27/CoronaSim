@@ -19,9 +19,9 @@ root = rank == 0
 size = comm.Get_size()
 
 if __name__ == '__main__':
-
+    
     #Environment Parameters
-    envsName = 'ionFreeze2'
+    envsName = 'ionization'
     fFileName = 'hq'
     sim.environment.fFileName = fFileName
     
@@ -31,20 +31,20 @@ if __name__ == '__main__':
     
 
     #Batch Name
-    batchName = 'ionFreeze'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'ionFreeze2'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
-    simOne = False 
+    simOne = True 
 
     #1D Stuff - ImpactSim Parameters
     compute = False
     analyze = False 
     
     try: #Plotflags
-        sim.batchjob.pMass = True #Plot with temperature and non-thermal velocity from fits
-        sim.batchjob.pIon = False #Plot with just the binned widths for all ions
+        sim.batchjob.pMass = False #Plot with temperature and non-thermal velocity from fits
+        sim.batchjob.pIon = True #Plot with just the binned widths for all ions
         sim.batchjob.pMFit = False #Plot with straight fit lines on the ions
         sim.batchjob.pWidth = False #Plot with the hist velocities for each of the elements on its own plot
         sim.batchjob.pPB = False #Plot the polarization brightness
@@ -57,15 +57,15 @@ if __name__ == '__main__':
         sim.batchjob.collisional = True #Use collisionally excited light
     except: pass
 
-    impactPoints = 10
+    impactPoints = 20
     iterations = 1
 
     maxEnvs = 1
-    sim.environment.maxIons = 3
+    sim.environment.maxIons = 300
     timeAx = [0]#np.arange(0, 400) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
     b0 =  1.05
-    b1 =  5 #6 #1.6 #46
+    b1 =  3 #6 #1.6 #46
     spacing = 'lin'
 
     N_line = (600,3000)
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     #Simulation Properties
     sim.simpoint.useB = False
-    sim.simpoint.g_useWaves = False   
+    sim.simpoint.g_useWaves = True   
     sim.simpoint.g_useWind = True
 
     sim.simpoint.voroB = True #Use the voronoi average instead of the raw Bmap
@@ -102,7 +102,7 @@ if __name__ == '__main__':
     sim.simpoint.wavesVsR = True
     sim.simpoint.g_useFluxAngle = True
     sim.simpoint.useIonFrac = True #Use Ionization Fractions
-    sim.environment.ionFreeze = False #Freeze ionization states at freezing height
+    sim.environment.ionFreeze = True #Freeze ionization states at freezing height
 
     sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
     sim.multisim.keepAll = False
@@ -171,9 +171,9 @@ if __name__ == '__main__':
 
         if processEnvironments:
             if root:
+                
                 envrs1 = sim.envrs(envsName, fFileName)
                 envs = envrs1.processEnvs(maxEnvs)
-                #envrs1.showEnvs(maxEnvs)
                 sys.stdout.flush()
         comm.barrier()
         if not calcFFiles: fFileName = None
@@ -213,6 +213,9 @@ if __name__ == '__main__':
             print('Beginning...')
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnvs(100)[0]
+
+            #env.printFreezeHeights()
+
             #env.fPlot()
             #env.plot2DV()
 
@@ -250,7 +253,7 @@ if __name__ == '__main__':
 
                 position, target = [x,y, z], [-x, y, z]
                 myLine = grid.sightline(position, target, coords = 'cart')
-                lineSim = sim.simulate(myLine, env, N = N, findT = True, getProf = True, printOut=True)
+                lineSim = sim.simulate(df.poleLine, env, N = N, findT = True, getProf = False, printOut=True)
                 #plt.xlim((0.000012382, 0.000012396))
                 #plt.yscale('log')
                 #plt.show()
@@ -260,9 +263,9 @@ if __name__ == '__main__':
                 ##plt.yscale('log')
                 #plt.show()           
 
-                ions = [2]
+                ions = [4,5,6,7]
                 
-                ax = lineSim.plot(['totalIntC','totalIntR'], yscale='log', frame = False, show = True, abscissa= 'cPos', ion = ions, savename=z)
+                ax = lineSim.plot(['N','Neq'], xscale = 'log', yscale='log', frame = False, show = True, abscissa= 'pPos', ion = ions, savename=z)
                 
                 #r = 1
                 #for ii in ions:
