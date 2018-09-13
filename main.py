@@ -21,32 +21,33 @@ size = comm.Get_size()
 if __name__ == '__main__':
     
     #Environment Parameters
-    envsName = 'ionization'
+    envsName = 'ionizationShort'
     fFileName = 'hq'
     sim.environment.fFileName = fFileName
     
     refineBmin = False
-    processEnvironments = True
+    processEnvironments = False
     calcFFiles = False #Turn off B
     
 
     #Batch Name
-    batchName = 'ionFreeze2'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'newIonsTime'  #NoB'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
     #Single Sim Playground
-    simOne = True 
+    simOne = False 
 
     #1D Stuff - ImpactSim Parameters
-    compute = False
-    analyze = False 
+    compute = False 
+    analyze = True
+    
     
     try: #Plotflags
-        sim.batchjob.pMass = False #Plot with temperature and non-thermal velocity from fits
+        sim.batchjob.pMass = False  #Plot with temperature and non-thermal velocity from fits
         sim.batchjob.pIon = True #Plot with just the binned widths for all ions
         sim.batchjob.pMFit = False #Plot with straight fit lines on the ions
-        sim.batchjob.pWidth = False #Plot with the hist velocities for each of the elements on its own plot
+        sim.batchjob.pWidth = 'save' #Plot with the hist velocities for each of the elements on its own plot
         sim.batchjob.pPB = False #Plot the polarization brightness
         sim.batchjob.pProportion = False #Plot the 4 ways of looking at the model parameters
         sim.batchjob.plotIon = 1
@@ -54,7 +55,7 @@ if __name__ == '__main__':
 
         #For statistics:
         sim.batchjob.resonant = True #Use resonantly scattered light 
-        sim.batchjob.collisional = True #Use collisionally excited light
+        sim.batchjob.collisional = False #Use collisionally excited light
     except: pass
 
     impactPoints = 20
@@ -62,10 +63,10 @@ if __name__ == '__main__':
 
     maxEnvs = 1
     sim.environment.maxIons = 300
-    timeAx = [0]#np.arange(0, 400) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
+    timeAx = np.arange(0, 30, 3) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
     b0 =  1.05
-    b1 =  3 #6 #1.6 #46
+    b1 =  5 #6 #1.6 #46
     spacing = 'lin'
 
     N_line = (600,3000)
@@ -75,21 +76,22 @@ if __name__ == '__main__':
     sim.simulate.randTime = False
     length = 10
     
+    try:
+        #3D Stuff - ImageSim Parameters
+        compute3d = False
+        analyze3d = False
 
-    #3D Stuff - ImageSim Parameters
-    compute3d = False
-    analyze3d = False
-
-    NN3D = [100,100]
-    sim.imagesim.N = 600
-    sim.imagesim.timeAx3D = [0]#np.arange(0, 120, 2)
-    rez3D =  [1,1]
-    target3D = [0,1.5]
-    len3D = 10
-    envInd = 0
-    sim.imagesim.corRez = 1000
-    sim.imagesim.filt = 1
-    sim.imagesim.smooth = True
+        NN3D = [100,100]
+        sim.imagesim.N = 600
+        sim.imagesim.timeAx3D = [0]#np.arange(0, 120, 2)
+        rez3D =  [1,1]
+        target3D = [0,1.5]
+        len3D = 10
+        envInd = 0
+        sim.imagesim.corRez = 1000
+        sim.imagesim.filt = 1
+        sim.imagesim.smooth = True
+    except:pass
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     #Simulation Properties
@@ -104,13 +106,14 @@ if __name__ == '__main__':
     sim.simpoint.useIonFrac = True #Use Ionization Fractions
     sim.environment.ionFreeze = True #Freeze ionization states at freezing height
 
+    sim.environment.shrinkEnv = True #Reduce the bitsize of the los data
     sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
     sim.multisim.keepAll = False
     sim.multisim.useMasters = False
     
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
-    sim.batchjob.redoStats = True
+    sim.batchjob.redoStats = False
     sim.batchjob.plotbinFits = False #Plots the binned and the non-binned lines, and their fits, during stats only
     sim.batchjob.plotheight = 1
 

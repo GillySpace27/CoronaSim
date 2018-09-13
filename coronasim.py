@@ -30,7 +30,6 @@ import copy
 
 from scipy import integrate
 
-from findiff import FinDiff
 
 #import warnings
 #with warnings.catch_warnings():
@@ -129,6 +128,7 @@ class environment:
     mE = 9.10938e-28 #grams per electron
     mP = 1.6726218e-24 #grams per proton
     amu = 1.6605e-24 #Grams per amu
+    rtPi = np.sqrt(np.pi)
 
     #Parameters
     rstar = 1
@@ -161,6 +161,8 @@ class environment:
         #Initializes
         self.name = name
         print('Initializing {}...'.format(name))
+
+        #20 mb
         self._bfileLoad(Bfile, plot=False)
         self.__processBMap(thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False)
         if analyze: self.analyze_BMap2()
@@ -168,18 +170,24 @@ class environment:
         print('Loading Plasma Stuff...', end = '')
         self._plasmaLoad(bkFile)
         print('done')
+
         print('Loading Spectra...', end = '')
         self.spectrumLoad()
         print('done')
+
         self.expansionCalc()
-        print('Loading ion information...')
+
+        print('Loading ion information...', end = '')
+        #40 mb
         self.ionLoad()
         print('done')
+
         self._fLoad(fFile)
         self._hahnLoad()
+
+        #40 mb with shrink (double without)
         self._LOS2DLoad()
 
-        self.rtPi = np.sqrt(np.pi)
 
         print("Done")
         print('')
@@ -319,7 +327,7 @@ class environment:
         #Create primary deliverable: Interpolation object
         self.solarLamAx = lamAxHigh #Angstroms
         self.solarSpec = solarSpecHigh #ergs/s/cm^2/sr/Angstrom 
-        self.solarInterp = interp.interp1d(lamAxHigh, solarSpecHigh)#, kind='cubic') #ergs/s/cm^2/sr/Angstrom
+        #self.solarInterp = interp.interp1d(lamAxHigh, solarSpecHigh)#, kind='cubic') #ergs/s/cm^2/sr/Angstrom
         pass
         
 
@@ -417,6 +425,10 @@ class environment:
         xistd = np.std(xi)
         xinorm = xi / xistd
         self.xi1_raw = xinorm
+
+        #plt.plot(self.xi1_t, self.xi1_raw)
+        #plt.show()
+
         pass
 
     def _hahnLoad(self):
@@ -434,7 +446,11 @@ class environment:
         self.R_nzx = x.nzx
         self.R_time = x.time
         self.R_zx = x.zx
-        self.R_vlos = x.vxlos
+        if self.shrinkEnv: self.R_vlos = np.float32(x.vxlos)
+        else: self.R_vlos = x.vxlos
+
+        #import pdb; pdb.set_trace()
+
         self._xiLoad()
 
   ## Ion Stuff ##########################################################################
@@ -801,7 +817,7 @@ class environment:
         #Watts/cm^2/sr/Angstrom
 
         ion['lamAxPrime'], ion['I0array'] = self.returnSolarSpecLam(lowLimit, highLimit)
-        ion['I0interp'] = interp.interp1d(ion['lamAxPrime'], ion['I0array'])#, kind='cubic') #ergs/s/cm^2/sr/Angstrom
+        #ion['I0interp'] = interp.interp1d(ion['lamAxPrime'], ion['I0array'])#, kind='cubic') #ergs/s/cm^2/sr/Angstrom
         #ion['lamAxPrime'] = np.linspace(lowLimit, highLimit, rez)
         #ion['I0array'] = self.solarInterp(ion['lamAxPrime']) 
 
@@ -1720,6 +1736,7 @@ class envrs:
 
 class element:
     def __init__(self, env, ion):
+        
         self.env = env
         self.ion = ion
 
@@ -1832,11 +1849,12 @@ class element:
         """Find the NLTE densities as a function of densfac"""
 
         #Define the grid in the densfac dimension
-        self.densPoints = 4 #12
+        self.densPoints = 4
         dMin = 0.5
         dMax = 12.5
         base = 10
         self.densGrid = np.logspace(np.log(dMin)/np.log(base), np.log(dMax)/np.log(base), self.densPoints, base = base).tolist()
+        #self.densGrid = [1, 2]
 
         #Define the grid in the R direction
         base = 10
@@ -1874,7 +1892,6 @@ class element:
         self.nInterps = []
         for ionNum in np.arange(self.nIons+2):
             thisState = np.abs(self.bigNLTEGrid[ionNum])
-
             self.nInterps.append(interp.RectBivariateSpline(self.densGrid, self.rEval, thisState))
 
     def getN(self, ionNum, densfac, rx):
@@ -1958,9 +1975,14 @@ class element:
         self.uGrid = [self.env.interp_wind(rx)/densfac**0.5 for rx in self.rGrid] # cm/s
 
         #Calculate the Derivative of the wind speed
-        d_dr = FinDiff(0, np.asarray(self.rGrid)* self.env.r_Cm, acc=10)
-        self.dudrAll = d_dr(np.asarray(self.uGrid))
+        #d_dr = self.env.FinDiff(0, np.asarray(self.rGrid)* self.env.r_Cm, acc=10)
+        #self.dudrAll = d_dr(np.asarray(self.uGrid))
+        self.dudrAll = np.gradient(np.asarray(self.uGrid), np.asarray(self.rGrid) * self.env.r_Cm)
 
+        #plt.plot(self.rGrid, self.dudrAll, label = "numpy")
+        ##plt.plot(self.rGrid, dudrAll, label='numpy')
+        #plt.legend()
+        #plt.show()
 
         #Plot the inputs 
         if False: 
@@ -2354,24 +2376,6 @@ class element:
             plt.xlabel('Solar Radii')
             plt.axhline(10**2, ls=':', c='k')
         plt.show()
-        #while True:
-        #    
-        #atolMin = 1e-60
-        #increment = 1e-2
-        #thisIncrement = 1e-2
-        #negList = ['']
-        #    #Check for any Negative Values
-        #    negList = []
-        #    for nn in np.arange(self.nIons+1):
-        #        long = len(neGrid[nn, :])
-        #        aLine = neGrid[nn, int(long/2):]
-        #        nNeg = len(np.argwhere(aLine < 0))
-        #        if nNeg > 0: negList.append('{}_{}: {}'.format(self.name, nn, nNeg))
-        #    print(atol, negList)
-        #    atol = atol * thisIncrement
-        #    thisIncrement *= increment
-        #    if len(negList) < 1: break
-        #    if atol < atolMin: break
 
 
 ####################################################################                            
@@ -2644,7 +2648,18 @@ class simpoint:
         #    print("E: {}, throw = {:.3}, rez = {}".format(ion['ionString'], throw, rez))
 
         lamAxPrime = np.linspace(lowLam, highLam, rez)
-        I0array = ion['I0interp'](lamAxPrime) ##ergs/cm^2/sr/Angstrom
+        I0array = [self.env.interp(ion['lamAxPrime'], ion['I0array'], ll) for ll in lamAxPrime]
+
+        #I0array = ion['I0interp'](lamAxPrime) ##ergs/cm^2/sr/Angstrom
+
+        #plt.plot(lamAxPrime, I0array_old, label="old")
+        #plt.plot(lamAxPrime, I0array, ':', label="new")
+        #plt.legend()
+        #plt.show()
+
+
+
+
         #lamAxPrime = self.env.cm2ang(lamAxPrime)
 
         #Just use the whole thing
@@ -5550,41 +5565,17 @@ class batchjob:
             ax2.legend()
             plt.show(False)
 
+
     def plotMultiWidth(self):
+        """Plot the widthplot for every ion"""
+        print('Plotting Widthplots...', end ='')
+        for ion in self.ions:
+            self.plotWidth(ion)
+        print('Done')
+        return
 
-        #Determine Shape of Subplot Array
-        nIon = len(self.ions)
-        sq = np.sqrt(nIon)
-        intSq = int(np.floor(sq))
-        W = intSq
-        H = intSq
-        if sq > intSq: H += 1
-        if W*H < nIon: W += 1
 
-        #Create Figure
-        if False:
-            f, axArray = plt.subplots(H, W, sharex = True, sharey = True)
-            f.canvas.set_window_title(self.batchName)
-        else: 
-            axArray = np.asarray([plt.subplots()[1] for ion in self.ions])
-            f = axArray[0].figure
-        #Format the header
-        try: self.completeTime
-        except: self.completeTime = 'Incomplete Job'
-        
-        str1 = "{}: {}\nEnvs: {}; Lines per Env: {}; Lines per Impact: {}\n".format(self.batchName, self.completeTime, self.Nenv, self.Nrot, self.Npt)
-        str2 = "usePsf: {}                                          reconType: {}".format(self.usePsf, self.reconType)
-        f.suptitle(str1 + str2)
 
-        self.plotLabel()
-
-        #Fill each subplot
-        for ion, ax in zip(self.ions, axArray.flatten()):
-            self.plotWidth(ion, ax)
-
-        grid.maximizePlot()
-        
-        plt.show(False)
             
     def plotLabel(self):
         #Display the run flags
@@ -5594,20 +5585,14 @@ class batchjob:
         try: self.intTime
         except: self.intTime = np.nan
         plt.figtext(left, height + 0.08, "Lines/Impact: {}".format(self.Npt))
-        plt.figtext(left, height + 0.06, "Seconds: {}".format(self.intTime))
+        plt.figtext(left, height + 0.06, "Seconds: {} ({})".format(self.intTime, self.timeAx[-1]))
         plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.windWasOn))
         plt.figtext(left, height + 0.02, "Waves: {}".format(self.copyPoint.waveWasOn))
         plt.figtext(left, height, "B: {}".format(self.copyPoint.bWasOn))    
         plt.figtext(left+ 0.1, height, "Batch: {}".format(self.batchName))     
 
-    def plotWidth(self, ion, ax):
-        """Generate the primary plot"""
 
-        ionStr = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam00'])
-        ax.set_title(ionStr)
-
-        labels = self.getLabels()
-
+    def plotHistograms(self,ion, ax):
         #Plot the actual distribution of line widths in the background
         histLabels = []
         edges = []
@@ -5625,7 +5610,7 @@ class batchjob:
             small = int(min(small, newSmall))
             big = int(max(big, newBig))
         throw = int(np.abs(np.ceil(big-small))) / 5
-        throw = np.arange(0,400,5)
+        throw = np.arange(0,self.histMax,5)
         spread = 2
         vmax = 0
         for stdlist, label in zip(self.allStd[ion['idx']], self.doneLabels):
@@ -5666,7 +5651,30 @@ class batchjob:
         self.lineWidths = self.statV[ion['idx']][2][0]
         self.lineWidthErrors = self.statV[ion['idx']][2][1]
         ax.errorbar(histLabels, self.lineWidths, yerr = self.lineWidthErrors, fmt = 'bo', label = 'Simulation', capsize=4)
+        self.histlabels = histLabels
 
+    def plotWidth(self, ion):
+        """Generate the primary plot"""
+
+        self.histMax = 500
+
+        #Create the plot and label it
+        fig, ax = plt.subplots(figsize=(12,8))
+
+        self.plotLabel()
+
+        str1 = "{}: {}\nEnvs: {}; Lines per Env: {}; Lines per Impact: {}\n".format(self.batchName, self.completeTime, self.Nenv, self.Nrot, self.Npt)
+        str2 = "usePsf: {}                                          reconType: {}".format(self.usePsf, self.reconType)
+        fig.suptitle(str1 + str2)
+
+        ionStr = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam00'])
+        ax.set_title(ionStr)
+
+        labels = self.getLabels()
+
+        #Plot the histograms in the background
+        self.plotHistograms(ion, ax)
+        
         #Do the chi-squared test
         self.makeVrms(ion)  
         self.chiTest(ion)
@@ -5701,8 +5709,8 @@ class batchjob:
 
 
         #flr = np.ones_like(self.doneLabels)*minrez
-        ax.axhline(minrez, color = 'k', linewidth = 2)
-        ax.axhline(psfrez, color = 'k', linewidth = 2, linestyle = ':')
+        ax.axhline(minrez, color = 'k', linewidth = 2, label='Lam Rez')
+        ax.axhline(psfrez, color = 'k', linewidth = 2, linestyle = ':', label='PSF Rez')
         #plt.plot(self.doneLabels, flr, label = "Rez Limit", color = 'k', linewidth = 2)
 
         ##Put numbers on plot of widths
@@ -5718,12 +5726,29 @@ class batchjob:
         if ion['idx'] == len(self.ions)-1: ax.set_xlabel(self.xlabel)
         plt.setp(ax.get_xticklabels(), visible=True)
         ax.set_ylabel('Km/s')
-        spread = 0.02
-        ax.set_xlim([histLabels[0]-spread, histLabels[-1]+spread]) #Get away from the edges
-        ax.set_ylim([0,400])
+        ax.set_xlabel('Impact Parameter')
+        spread = 0.2
+        ax.set_xlim([self.doneLabels[0]-spread, self.doneLabels[-1]+spread]) #Get away from the edges
+        ax.set_ylim([0,self.histMax])
         
-        self.histlabels = histLabels
+        
         if self.plotRatio: self.ratioPlot()
+
+        plt.legend()
+
+        #grid.maximizePlot()
+
+        filePath = '../fig/2018/widths/'
+
+        if self.pWidth == 'save': 
+            plt.savefig(filePath + '{}_{}_{}.png'.format(ion['ionString'], ion['ion'], ion['lam00']))
+            plt.close(fig)
+        else: plt.show(False)
+        
+        
+        
+        return
+
 
     def ratioPlot(self):
         #Plots the ratio between the raw fits and the reconstructed fits.
@@ -5815,6 +5840,14 @@ class batchjob:
         
         self.rChi_bin = self.chi_bin / N
         self.rChi_mean = self.chi_mean / N
+
+        #height = 0.9
+        #left = 0.65 + 0.09
+        #shift = 0.1
+        #plt.figtext(left + shift, height + 0.04, "Fit to the Mean")
+        #plt.figtext(left + shift, height + 0.02, "Chi2 = {:0.3f}".format(self.chi_mean))
+        #plt.figtext(left + shift, height, "Chi2_R = {:0.3f}".format(self.rChi_mean))
+
 
     def getLabels(self):
         try:
