@@ -44,8 +44,10 @@ class generator:
     def setStep(self, step):
         self.step = step
 
-
+    def setEnvInd(self, index):
+        self.envInd = index
         
+
     def decStep(self, mult):
         if self.step > self.minStep:
             self.step = max(self.step / mult, self.minStep)
@@ -176,7 +178,7 @@ class sightline(generator):
     default_N = 1000
 
     def __init__(self, position = None, target = None, 
-            iL = 1, coords = 'Cart', findT = True, rez = None, size = None):
+            iL = 1, coords = 'Cart', findT = True, rez = None, size = None, envInd = 0):
         #print('Initializing Sightline, Observer at {pos}, looking at {targ}'.format(pos = position, targ = target))
         if position is None:
             position, target = [2, 1*np.pi/4, 1e-8], [2, -np.pi/4, 1e-8]
@@ -189,6 +191,7 @@ class sightline(generator):
         self.currLine = 0
         self.look(position, target, coords)
         self.stepChange = 4
+        self.envInd = envInd
         if rez is not None:
             self.makeLineList(rez, size)
  
@@ -281,11 +284,12 @@ class plane(generator):
     #TODO Make plane adaptive
     default_N = 1000
 
-    def __init__(self, normal = [1,0,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False, absolute = False):
+    def __init__(self, normal = [1,0,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False, absolute = False, envInd = 0):
         #print("Initializing Plane, normal = {}, offset = {}".format(normal, offset))
         self.absolute = absolute
         self.findT = findT
         self.iL = iL
+        self.envInd = envInd
         self.rotArray = np.asarray(rotAxis)
         if ncoords.lower() == 'cart':
             self.normal = np.asarray(normal).astype(float)
@@ -442,19 +446,21 @@ def impactLines(N=5, b0 = 1.05, b1= 1.5, len = 50):
     #List of grids, list of labels
     return [lines, bax] 
 
-def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, rez = None, size = None, findT = True):
+def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, rez = None, size = None, findT = True, envInd = 0):
     #Generate lines with a fixed impact parameter but varying angle
-    lines = []
+    work = []
     y0 = 1e-8
-    angles = np.linspace(0, np.pi*(1 - 1/N), N)
+    angles = np.float16(np.linspace(0, np.pi*(1 - 1/N), N))
     for theta in angles:
         theta += offset
         x = x0 * np.sin(theta) + y0 * np.cos(theta)
         y = x0 * np.cos(theta) - y0 * np.sin(theta)
-        thisLine = sightline([x,y,b], [-x,-y,b], findT = findT, rez = rez, size = size)
-        #thisLine.plot(show = True)
-        lines.append(thisLine)
-    return [lines, angles]      
+        thisLine = sightline([x,y,b], [-x,-y,b], findT = findT, rez = rez, size = size, envInd = envInd)
+        
+        work.append(thisLine)
+
+    return work
+
 
 def image(N = [20,20], rez=[0.5,0.5], target = [0,1.5], len = 10):
     yy = np.linspace(target[0] - rez[0]/2, target[0] + rez[0]/2, N[0])

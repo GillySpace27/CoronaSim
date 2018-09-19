@@ -90,7 +90,7 @@ class environment:
     def_abund = os.path.join(datFolder, 'abundance.tsv')
     def_f1File = os.path.join(datFolder, 'f1_fix.txt')
     def_f2File = os.path.join(datFolder, 'f2_fix.txt')
-    def_ionpath = os.path.abspath('../chianti/chiantiData/')
+    def_ionpath = os.path.abspath('../dat/chianti/chiantiData/')
     def_hahnFile = os.path.join(datFolder, 'hahnData.txt')
     def_2DLOSFile = os.path.join(datFolder, 'vxnew_2D_gilly40401.sav')
     def_ionFile = os.path.join(datFolder, 'useIons.csv')
@@ -98,7 +98,8 @@ class environment:
     def_solarSpecFileLow = os.path.abspath(os.path.join(datFolder, 'solarSpectrum/EVE_L3_merged_2017347_006.fit'))
     #def_solarSpecFileLong = os.path.abspath(os.path.join(datFolder, 'solarSpectrum/recent.txt'))
 
-
+    def_magPath = os.path.abspath('../dat/magnetograms')
+    
     #For doing high level statistics
     fullMin = 0
     fullMax = 0
@@ -141,18 +142,7 @@ class environment:
     lastPos = 1e8
     plotMore = True
 
-    ##Element Being Observed
-    #mI = 9.2732796e-23 #grams per Iron
-    #ionString = 'fe'
-    #element = 26
-    #ion = 11
-    #lower = 1 #lower energy level
-    #upper = 38 #upper energy level
 
-    ##LamAxis Stuff   #######################
-    #Ln = 600
-    #lam0 = 188.217
-    #lamPm = 0.35
 
     psfSig = 0.047 #Angstroms
 
@@ -160,41 +150,171 @@ class environment:
     def __init__(self, Bfile = None, bkFile = None, analyze = False, name = "Default", fFile = None):
         #Initializes
         self.name = name
-        print('Initializing {}...'.format(name))
+        print('Initializing {}:'.format(name))
 
-        #20 mb
-        self._bfileLoad(Bfile, plot=False)
-        self.__processBMap(thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False)
-        if analyze: self.analyze_BMap2()
+        #Load in all the bmaps: 40mb
+        self.loadAllBfiles()
         
-        print('Loading Plasma Stuff...', end = '')
+        #Load in the plasma parameters
         self._plasmaLoad(bkFile)
-        print('done')
-
-        print('Loading Spectra...', end = '')
+        
+        #Load in solar spectral data
         self.spectrumLoad()
-        print('done')
 
-        self.expansionCalc()
-
-        print('Loading ion information...', end = '')
-        #40 mb
+        #Do all the ion calculations and I/O: 40 mb
         self.ionLoad()
-        print('done')
 
+        #Load in the F files and the Hahn observations
         self._fLoad(fFile)
         self._hahnLoad()
 
-        #40 mb with shrink (double without)
+        #Load in the Alfven wave information: 40 mb with shrink (double without)
         self._LOS2DLoad()
 
-
-        print("Done")
+        print("Done with Environment Initialization!")
         print('')
 
   ## File IO ##########################################################################
+    def loadAllBfiles(self):
+        """Load each of the Bfiles"""
+        print('Loading Bmaps...', end = ''); sys.stdout.flush()
+
+        mag_files = glob.glob(os.path.abspath(self.def_magPath +'/*.sav'))
+
+        self.BXs = []
+        self.BYs = []
+        self.BMAPs = []
+        self.BLABELs = []
+        self.nBmap = 0
+
+        for file in mag_files:
+            xx,yy,Braw = self.loadOneBfile(file)
+            BMap_final, label_im = self.processOneBMap(Braw)
+            self.BXs.append(xx)
+            self.BYs.append(yy)
+            self.BMAPs.append(BMap_final)
+            self.BLABELs.append(label_im)
+            self.nBmap += 1
+
+        #if analyze: self.analyze_BMap2()
+        print('ingested {}'.format(self.nBmap))
+
+    def loadOneBfile(self, path):
+        """Load in a single Bmap"""
+        Bobj = io.readsav(path)
+        xx = Bobj.get('x_cap')
+        yy = Bobj.get('y_cap')
+        Braw = Bobj.get('data_cap')
+
+        if False:
+            plt.imshow((np.abs(Braw)))
+            plt.colorbar()
+            plt.show()
+
+        return xx, yy, Braw
+
+    def processOneBMap(self, BMap_raw, thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False):
+
+        #Gaussian smooth the image
+        if sigSmooth == 0:
+            BMap_smoothed = BMap_raw
+        else:
+            BMap_smoothed = ndimage.filters.gaussian_filter(BMap_raw, sigSmooth)
+
+        #Find all above the threshold and label
+        bdata = np.abs(BMap_smoothed)
+        blist = bdata.flatten().tolist()
+        bmean =  np.mean([v for v in blist if v!=0])
+        bmask = bdata > bmean * thresh
+        label_im_1, nb_labels_1 = ndimage.label(bmask)
+        
+        #Create seeds for voronoi
+        coord = ndimage.maximum_position(bdata, label_im_1, np.arange(1, nb_labels_1))
+
+        #Get voronoi transform
+        label_im, nb_labels, voroBMap = self.__voronoify_sklearn(label_im_1, coord, bdata)
+        
+        if addThresh:
+            #Add in threshold regions
+            highLabelIm = label_im_1 + nb_labels
+            label_im *= np.logical_not(bmask)
+            label_im += highLabelIm * bmask
+        
+        #Clean Edges
+        validMask = BMap_raw != 0
+        label_im *= validMask
+        voroBMap *= validMask
+        BMap_final = voroBMap  
+
+        rawTot = np.nansum(np.abs(BMap_raw))
+        proTot = np.nansum(BMap_final)
+        bdiff = np.abs(rawTot-proTot)
+        #print("\nThe total raw field is {:0.4}, and the total processed field is {:.4}".format(rawTot, proTot))
+        #print("The ratio of processed over raw is {:.4}".format(proTot/rawTot))
+
+        #Everything below is plotting/analysis
+        if False:
+            hist, edges = np.histogram(self.Bmap_means, 25)
+            numLess = len([x for x in np.abs(self.Bmap_means) if x < 2])
+            edges = edges[0:-1]
+            fig, ax = plt.subplots()
+            ax.step(edges, hist)
+            ax.set_xlabel("Gauss")
+            ax.set_ylabel('Number of Cells')
+            ax.set_title('With Abs, Sum = {}, lessThan = {}'.format(np.sum(hist), numLess))
+            plt.show()
+
+
+        #fig, ax2 = plt.subplots()
+        #pCons = self.mask(ax2, self.bFluxCons)
+        #i5 = ax2.imshow(pCons, cmap = "RdBu", aspect = 'auto')
+        #plt.colorbar(i5, ax = [ax2], label = "Percentage")
+        #plt.show()
+
+        if False: #Plot Slice of Map
+            fig, ax0 = plt.subplots()
+            f2, ax = plt.subplots()
+
+            #Detect Color Range
+            f = 5
+            st1 = np.std(voroBMap.flatten())
+            m1 = np.mean(voroBMap.flatten())
+            vmin = 0#m1 - f*st1
+            vmax = m1 + f*st1
+
+
+            #Plot Raw Field Map
+            image = label_im + 37
+            newBmap = self.mask(ax0, image) 
+            i0 = ax0.imshow(newBmap, cmap = 'prism', aspect = 'auto', vmin = 0)#, vmin = vmin, vmax = vmax)
+            plt.colorbar(i0, ax=[ax0], label='Index')#, extend = 'max')
+            ax0.set_title('Raw Magnetic Field')
+
+            self.plotEdges(ax0, label_im)
+
+            #Plot the Voromap
+            newVoroBMap = self.mask(ax, voroBMap) 
+            i2 = ax.imshow((newVoroBMap), cmap = 'magma', interpolation='none', aspect = 'equal')#, vmin = vmin, vmax = vmax)
+            ax.set_title('Final Field Map')
+
+            self.plotEdges(ax, label_im)
+
+            #Plot the maxima points
+            coordinates = []
+            for co in coord: coordinates.append(co[::-1])
+            for co in coordinates:
+                ax0.plot(*co, marker = 'o', markerfacecolor='r', markeredgecolor='k', markersize = 6)
+                ax.plot(*co, marker = 'o', markerfacecolor='w', markeredgecolor='k', markersize = 6)
+
+            plt.tight_layout()
+            plt.colorbar(i2, ax=[ax], label='Gauss')#, extend = 'max')
+            plt.show()
+            
+
+        return BMap_final, label_im
 
     def _bfileLoad(self, Bfile, plot = False):
+        """Depricated"""
         #Load Bmap
         if Bfile is None: self.Bfile = self.def_Bfile 
         else: self.Bfile = self.__absPath(Bfile)
@@ -214,6 +334,7 @@ class environment:
             plt.show()
 
     def _plasmaLoad(self, bkFile = None):
+        print('Loading Plasma Stuff...', end = ''); sys.stdout.flush()
         #Load Plasma Background
         if bkFile is None: self.bkFile = self.def_bkFile 
         else: self.bkFile = self.__absPath(bkFile)
@@ -254,8 +375,13 @@ class environment:
 
             plt.show()
 
+        #Calculate superradial expansion from zephyr
+        self.expansionCalc()
+        print("done")
+
     def spectrumLoad(self):
         """Load the spectral data for the resonant profiles"""
+        print('Loading Spectra...', end = ''); sys.stdout.flush()
         ##TODO find the correct absolute scaling for these measurements
 
         ###Load in the EVE data
@@ -328,6 +454,7 @@ class environment:
         self.solarLamAx = lamAxHigh #Angstroms
         self.solarSpec = solarSpecHigh #ergs/s/cm^2/sr/Angstrom 
         #self.solarInterp = interp.interp1d(lamAxHigh, solarSpecHigh)#, kind='cubic') #ergs/s/cm^2/sr/Angstrom
+        print('done')
         pass
         
 
@@ -441,6 +568,7 @@ class environment:
         self.hahnError = line2-line1
 
     def _LOS2DLoad(self):
+        print('Loading Wave information...', end = ''); sys.stdout.flush()
         x = io.readsav(self.def_2DLOSFile)
         self.R_ntime = x.ntime
         self.R_nzx = x.nzx
@@ -452,12 +580,34 @@ class environment:
         #import pdb; pdb.set_trace()
 
         self._xiLoad()
+        print('done')
+
+
 
   ## Ion Stuff ##########################################################################
+    def ionLoad(self):
+        """Read the spreadsheet indicating the ions to be simulated"""
+        print('Loading Ion information...'); sys.stdout.flush()
+        self.ions = []
+        import csv
+        with open(self.def_ionFile) as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                if '#' in row['ionString']:
+                    continue
+                for key in row.keys():
+                    if not key.casefold() == 'ionstring':
+                        if '.' in row[key]: row[key] = float(row[key])
+                        else: row[key] = int(row[key])
+                row['lamAx'] = self.makeLamAxis(row['ln'], row['lam0'], row['lamPm'])
+                self.ions.append(row)
+
+        self._chiantiLoad()
 
     def _chiantiLoad(self):
         """Load the chianti info for each of the desired ions"""
-        bar = pb.ProgressBar(len(self.ions))
+        nElements = len(set([ion['element'] for ion in self.ions]))
+        bar = pb.ProgressBar(nElements, color = 'GREEN')
         
         print('    Progress:')
         bar.display()
@@ -498,7 +648,7 @@ class environment:
             ##Do Calculations######################
 
             #Make the nGrid for this Element
-            self.simulate_ionization(ion)
+            didIt = self.simulate_ionization(ion)
 
             #Find the freezing density
             self.findFreeze2(ion)
@@ -508,9 +658,11 @@ class environment:
 
             #Check if there are multiple lines here
             #self.checkOverlap(ion)
-            bar.increment()
-            bar.display()
-            print('')
+
+            if didIt:
+                bar.increment()
+                bar.display()
+                print('')
           
             if False: #Plot the info
                 fig, ax1 = plt.subplots()
@@ -535,7 +687,8 @@ class environment:
                 plt.figtext(left, height + 0.06, "Abundance: {:0.4E}".format(ion['abundance']))
                 plt.figtext(left, height + 0.03, "Weight: {}".format(ion['wi']))
                 plt.show()
-            pass     
+            pass
+        print('Done with Ions')
 
     def cLoadIonFraction(self, ion):
         """Load in the ionization fracion in equilibrium as per Chianti"""
@@ -994,24 +1147,6 @@ class environment:
             ax2.set_ylabel('Time')
             plt.show()
 
-    def ionLoad(self):
-        """Read the spreadsheet indicating the ions to be simulated"""
-        self.ions = []
-        import csv
-        with open(self.def_ionFile) as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                if '#' in row['ionString']:
-                    continue
-                for key in row.keys():
-                    if not key.casefold() == 'ionstring':
-                        if '.' in row[key]: row[key] = float(row[key])
-                        else: row[key] = int(row[key])
-                row['lamAx'] = self.makeLamAxis(row['ln'], row['lam0'], row['lamPm'])
-                self.ions.append(row)
-
-        self._chiantiLoad()
-
     def plot2DV(self):
         fig, ax = plt.subplots()
         mean = np.mean(self.R_vlos.flatten())
@@ -1036,12 +1171,16 @@ class environment:
 
         if not ion['ionString'] in self.elements:
             self.elements[ion['ionString']] = element(self, ion)
+            return True
+        else: 
+            print('Element Already Complete')
+            return False
             #self.elements[ion['ionString']].plotAll()
 
 
   ## Magnets ##########################################################################
         
-    def __processBMap(self, thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False):
+    def __processBMap(self, BMap_raw, thresh = 0.9, sigSmooth = 4, plot = False, addThresh = False):
 
         #Gaussian smooth the image
         if sigSmooth == 0:
@@ -1054,13 +1193,13 @@ class environment:
         blist = bdata.flatten().tolist()
         bmean =  np.mean([v for v in blist if v!=0])
         bmask = bdata > bmean * thresh
-        label_im, nb_labels = ndimage.label(bmask)
+        label_im_1, nb_labels_1 = ndimage.label(bmask)
         
         #Create seeds for voronoi
-        coord = ndimage.maximum_position(bdata, label_im, np.arange(1, nb_labels))
+        coord = ndimage.maximum_position(bdata, label_im_1, np.arange(1, nb_labels_1))
 
         #Get voronoi transform
-        self.label_im, self.nb_labels, self.voroBMap = self.__voronoify_sklearn(label_im, coord, bdata)
+        self.label_im, self.nb_labels, self.voroBMap = self.__voronoify_sklearn(label_im_1, coord, bdata)
         
         if addThresh:
             #Add in threshold regions
@@ -1165,8 +1304,6 @@ class environment:
                 newMask = self.mask(ax, mask) 
                 ax.imshow(newMask, cmap = my_cmap, aspect = 'auto')
             else: ax.imshow(mask, cmap = my_cmap, aspect = 'auto')
-
-
 
     def mask(self, ax, array):
         almostmasked = np.asarray(array, 'float')
@@ -1319,7 +1456,6 @@ class environment:
         fig.text(0.04, 0.5, 'Wave Velocity (km/s)', va='center', rotation='vertical')
 
         plt.show()
-
 
     def expansionCalc(self):
         """Calculate the super-radial expansion from the Zephyr Inputs"""
@@ -1586,8 +1722,10 @@ class environment:
         diffstep = diff / step
         return val1 + diffstep*(slope)
 
-    def interp_map(self, map, x, y):
-        return map[self.find_nearest(self.BMap_x, x)][self.find_nearest(self.BMap_y, y)]
+    def interp_map(self, thisMap, envInd, x, y):
+        xind = int(self.find_nearest(self.BXs[envInd], x))
+        yind = int(self.find_nearest(self.BYs[envInd], y))
+        return thisMap[envInd][xind][yind]
 
     #def interp_spectrum(self, lamAx):
     #    interp.interp1d()
@@ -1655,8 +1793,10 @@ class envrs:
         self.name = name
         self.fFile = fFile
         self.slash = os.path.sep            
-        self.savPath = os.path.normpath('../dat/envs/' + self.name)
-        self.envPath = os.path.normpath('../dat/magnetograms')
+        self.savPath = os.path.abspath('../dat/envs/' + self.name)
+        os.makedirs(self.savPath, exist_ok=True)
+        self.filePath = os.path.abspath(self.savPath + self.slash + self.name)
+        #self.envPath = os.path.normpath('../dat/magnetograms')
         
         return
     
@@ -1733,6 +1873,39 @@ class envrs:
         self.__saveEnvs(maxN)
         if show: plt.show(False)
         return self.envs
+
+    ### Single Env Versions
+
+    def processEnv(self, show=False):
+        """Create a single environment"""
+        self.env = environment(name = self.name, fFile = self.fFile)
+        self.saveEnv()
+        if show: plt.show(False)
+        return self.env
+
+    def saveEnv(self):
+        """Save the Environment"""
+        self.env.save(self.filePath + '.env')
+
+        #Save contents of environment to text file
+        infoEnv = self.env
+        with open(self.filePath + '.txt', 'w') as output:
+            output.write(time.asctime() + '\n\n')
+            myVars = (infoEnv.__class__.__dict__, vars(infoEnv))
+            for pile in myVars:
+                for ii in sorted(pile.keys()):
+                    if not callable(pile[ii]):
+                        string = str(ii) + " : " + str(pile[ii]) + '\n'
+                        output.write(string)
+                output.write('\n\n')
+
+    def loadEnv(self):
+        """Load the Environment"""
+        path = self.filePath + '.env'
+        self.env = self.__loadEnv(path)
+        return self.env
+
+
 
 class element:
     def __init__(self, env, ion):
@@ -1849,7 +2022,7 @@ class element:
         """Find the NLTE densities as a function of densfac"""
 
         #Define the grid in the densfac dimension
-        self.densPoints = 4
+        self.densPoints = 12
         dMin = 0.5
         dMax = 12.5
         base = 10
@@ -2454,9 +2627,11 @@ class simpoint:
         self.__findfoot_Pos()
         x = self.foot_cPos[0]
         y = self.foot_cPos[1]
+
         if self.useB:
-            if self.voroB: self.footB = self.env.interp_map(self.env.BMap, x, y)
-            else: self.footB = self.env.interp_map(self.env.BMap_smoothed, x, y)
+            self.footB = self.env.interp_map(self.env.BMAPs, self.grid.envInd, x, y)
+            #if self.voroB: self.footB = self.env.interp_map(self.env.BMap, x, y)
+            #else: self.footB = self.env.interp_map(self.env.BMap_smoothed, x, y)
             #self.footB = self.env.BMap[self.find_nearest(self.env.BMap_x, x)][self.find_nearest(self.env.BMap_y, y)]
 
         else: self.footB = 0
@@ -2476,7 +2651,7 @@ class simpoint:
     def __findStreamIndex(self):
         x = self.foot_cPos[0]
         y = self.foot_cPos[1]
-        self.streamIndex = self.env.interp_map(self.env.label_im, x, y)
+        self.streamIndex = self.env.interp_map(self.env.BLABELs, self.grid.envInd, x, y)
         #self.streamIndex = self.env.label_im[self.find_nearest(self.env.BMap_x, x)][self.find_nearest(self.env.BMap_y, y)]
 
   ## Density ##########################################################################
@@ -3070,7 +3245,7 @@ class simulate:
         self.randomizeTime()  
 
         self.ions = self.env.getIons(self.env.maxIons)
-
+        #import pdb; pdb.set_trace()
         self.throwCm = self.grid.norm * self.env.r_Mm * 1e8 #in cm
         self.sims = []
         self.repoint(gridObj)
@@ -4100,43 +4275,48 @@ class simulate:
 ## Level 2: Initializes many simulations (MPI Enabled) for statistics
 class multisim:
     #Level 2: Initializes many simulations
-    def __init__(self, batch, envs, N = 1000, findT = None, printOut = False, printSim = False, timeAx = [0]):
+    def __init__(self, batch, env, N = 1000, findT = None, printOut = False, printSim = False, timeAx = [0]):
         self.print = printOut
         self.printSim = printSim
         self.timeAx = timeAx
-        self.gridLabels = batch[1]
-        self.oneBatch = batch[0]
+        #self.gridLabels = batch[1]
+        self.oneBatch = batch
 
-        self.batch = []
-        self.envInd = []
-        
+        self.N = N
+        self.findT = findT
+
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.root = self.rank == 0
         self.size = self.comm.Get_size()
 
-        if type(envs) is list or type(envs) is tuple: 
 
-            self.envs = envs
-            self.Nenv = len(self.envs)
-            import copy
-            for nn in np.arange(self.Nenv):
-                self.batch.extend(copy.deepcopy(self.oneBatch))
-                self.envInd.extend([nn] * len(self.oneBatch))
-        else: 
-            self.envs = [envs]
-            self.batch = self.oneBatch
-            self.envInd = [0] * len(self.oneBatch)
+        self.env = env
+        self.batch = self.oneBatch
+        assert len(self.batch) > 0
+
+        #self.batch = []
+        #self.envInd = []
+        #if type(envs) is list or type(envs) is tuple: 
+
+        #    self.envs = envs
+        #    self.Nenv = len(self.envs)
+        #    import copy
+        #    for nn in np.arange(self.Nenv):
+        #        self.batch.extend(copy.deepcopy(self.oneBatch))
+        #        self.envInd.extend([nn] * len(self.oneBatch))
+        #else: 
+        #    self.envs = [envs]
+        #    self.batch = self.oneBatch
+        #    self.envInd = [0] * len(self.oneBatch)
         
-        self.N = N
-        self.findT = findT
-
 
         self.initLists()
-
+        
         if self.comm.size > 1:
             self.MPI_init_masterslave()
         else: self.init_serial()
+        
         #self.findProfiles()
 
     def init_Masterlines(self):
@@ -4154,22 +4334,23 @@ class multisim:
         if self.root and self.print: 
             print('Running MultiSim: ' + time.asctime())
             t = time.time() #Print Stuff
-            print('Nenv = ' + str(self.Nenv), end = '; ')
-            print('Lines\Env = ' + str(len(self.oneBatch)), end = '; ')
+            print('Nenv = ' + str(self.env.Nenv), end = '; ')
+            print('Lines\Env = ' + str(self.env.Nrot), end = '; ')
             print('JobSize = ' + str(len(self.batch)), end = '; ')
 
-            print('PoolSize = ' + str(self.size), end = '; ')
+            print('PoolSize = ' + str(self.size-1), end = '; ')
             #print('ChunkSize = ' + str(len(self.gridList)), end = '; ') 
             #print('Short Cores: ' + str(self.size * len(self.gridList) - len(self.batch)))#Print Stuff
             print('')
-            self.Bar = pb.ProgressBar(len(self.batch))
+            self.Bar = pb.ProgressBar(len(self.batch), color = "Red")
             self.Bar.display()
         else: self.Bar = None
 
         if self.useMasters: self.init_Masterlines()
         
 
-        work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
+        #work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
+        work = self.batch
 
         self.poolMPI(work, self.mpi_sim)
 
@@ -4206,14 +4387,14 @@ class multisim:
         self.temProjs.append(simulation.temProj)
         self.indices.append(simulation.index)
 
-    def mpi_sim(self, data):
-        grd, envInd = data
+    def mpi_sim(self, grd):
+        #grd, envInd = data
 
-        if self.useMasters:
-            simulation = self.workrepoint(grd, envInd)
-        else:
-            simulation = simulate(grd, self.envs[envInd], self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim, getProf = True)
-            #simulation.plot('nion', cmap = 'RdBu', center = True, abscissa = 'pPos')
+        #if self.useMasters:
+        #    simulation = self.workrepoint(grd, envInd)
+        #else:
+        simulation = simulate(grd, self.env, self.N, findT = self.findT, timeAx = self.timeAx, printOut = self.printSim, getProf = True)
+        #simulation.plot('nion', cmap = 'RdBu', center = True, abscissa = 'pPos')
 
         return simulation
 
@@ -4247,16 +4428,22 @@ class multisim:
         return chunks
 
     def init_serial(self):
+
         #Serial Version
-        self.init_Masterlines()
-        work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
+        work = self.batch 
         self.sims = []
         self.Bar = pb.ProgressBar(len(work))
-
+        self.Bar.display()
+        
         for line in work:
             self.collectVars(self.mpi_sim(line))
             self.Bar.increment()
             self.Bar.display()
+
+        nFinish = len(self.indices)
+        print('\nConfirmed: {} Lines Simulated'.format(nFinish))
+
+        
 
     def plotLines(self):
         axes = self.oneBatch[0].quadAxOnly()
@@ -4359,11 +4546,39 @@ class multisim:
 
 ## Level 3: Initializes many Multisims, varying a parameter. Does statistics. Saves and loads Batches.
 class batch:
-    def __init__(self, batchname):
+    def __init__(self, batchname, env = None):
         self.batchName = batchname
+        self.env = env
         
     #Handles loading and running of batches
-    def loadBatch(self):
+    def restartBatch(self, env = None):
+        """Finish simulating an incomplete job"""
+        env = self.getEnv(env)
+        myBatch = self.loadBatch(env)
+        myBatch.simulate_now()
+        return myBatch
+
+    def analyzeBatch(self, env = None):
+        """Run statistical analysis of a completed job"""
+        env = self.getEnv(env)
+        myBatch = self.loadBatch(env)
+        myBatch.doStats()
+        return myBatch
+
+    def loadBatch(self, env = None):
+        """Return a batchjob from file and make it useable"""
+        env = self.getEnv(env)
+        myBatch = self.__loadBatchFile()
+        myBatch.reloadEnv(env)
+        myBatch.findRank()
+        return myBatch
+
+    def getEnv(self, env = None):
+        if not env:env=self.env
+        return env
+
+    def __loadBatchFile(self):
+        """Load a batchjob from file"""
         print("Loading Batch: {}".format(self.batchName))
         batchPath = '../dat/batches/{}.batch'.format(self.batchName)
         absPth = os.path.normpath(batchPath)
@@ -4373,30 +4588,11 @@ class batch:
         except:
             sys.exit('Batch Not found')
 
-    def restartBatch(self, envs):
-        myBatch = self.loadBatch()
-        myBatch.reloadEnvs(envs)
-        myBatch.findRank()
-        myBatch.simulate_now()
-        return myBatch
-
-    def analyzeBatch(self):
-        myBatch = self.loadBatch()
-        myBatch.findRank()
-        myBatch.doStats()
-        return myBatch
-
-
 class batchjob:
     qcuts = [16,50,84]
     ## Run the Simulation ######################################################
-    def __init__(self, envs):
+    def __init__(self):
     
-        if type(envs) is list or type(envs) is tuple: 
-            self.envs = envs
-        else: self.envs = [envs]
-        #print(self.envs)
-        self.env = self.envs[0]
         self.ions = self.env.getIons(self.env.maxIons)
         self.firstRunEver = True
         self.complete = False
@@ -4406,9 +4602,6 @@ class batchjob:
         try: self.intTime = len(self.timeAx)
         except: self.intTime = np.nan
 
-
-        #self.rmsPlot()
-        #return
         self.simulate_now()
         
         self.finish()
@@ -4431,10 +4624,9 @@ class batchjob:
             self.batch = self.fullBatch
             self.initLists()
             if self.root and self.print: 
-                self.bar = pb.ProgressBar(len(self.labels))
+                self.bar = pb.ProgressBar(len(self.labels), color = 'Red')
+
                 
-
-
             self.doLabels = self.labels.tolist()
             self.doneLabels = []
         
@@ -4447,13 +4639,15 @@ class batchjob:
             ind = self.doLabels.pop(0)
             self.doneLabels.append(ind)
             thisBatch = self.batch.pop(0)
-            try:
-                self.count += 1
-            except:
-                self.count = 1
+            try:self.count += 1
+            except:self.count = 1
+
             if self.root and self.printMulti: 
                 #print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']--') 
-                print('\n\n\n--{} = {}: [{}/{}]--'.format(self.xlabel, ind, self.count, self.Nb))
+                #print('\n\n\n--{} = {}: [{}/{}]--'.format(self.xlabel, ind, self.count, self.Nb))
+                
+                print('\n\n--{} = {}: {} Lines/Env--'.format(self.xlabel, ind, self.Nrot))
+                #print(f'Total Lines:{self.Npt}, Lines/Env:{self.Nrot}')
 
             if self.autoN:
                 try: N = self.bRez.pop(0)
@@ -4464,7 +4658,7 @@ class batchjob:
             else:
                 N = self.N
             
-            thisSim = multisim(thisBatch, self.envs, N, printOut = self.printMulti, printSim = self.printSim, timeAx = self.timeAx)
+            thisSim = multisim(thisBatch, self.env, N, printOut = self.printMulti, printSim = self.printSim, timeAx = self.timeAx)
             
             comm.barrier()
 
@@ -4472,7 +4666,7 @@ class batchjob:
                 self.collectVars(thisSim)
 
                 if self.print:
-                    if self.printMulti: print('\nBatch Progress: '+ str(self.batchName))
+                    if self.printMulti: print('\n\nBatch Progress: '+ str(self.batchName))
                     self.bar.increment()
                     self.bar.display(True)
                 if self.firstRunEver: 
@@ -4513,6 +4707,7 @@ class batchjob:
         pdb.set_trace()
 
     def setFirstPoint(self):
+        
         self.copyPoint = self.sims[0].sims[0].sims[0]
 
     def initLists(self):
@@ -5656,7 +5851,7 @@ class batchjob:
     def plotWidth(self, ion):
         """Generate the primary plot"""
 
-        self.histMax = 500
+        
 
         #Create the plot and label it
         fig, ax = plt.subplots(figsize=(12,8))
@@ -5738,6 +5933,7 @@ class batchjob:
 
         #grid.maximizePlot()
 
+        #filePath = os.path.join('../fig/2018/widths/',self.batchName)
         filePath = '../fig/2018/widths/'
 
         if self.pWidth == 'save': 
@@ -5878,8 +6074,8 @@ class batchjob:
         sims = self.sims
         self.sims = []
         if dumpEnvs:
-            envs = self.envs
-            self.envs = []
+            env = self.env
+            self.env = []
 
         script_dir = os.path.dirname(os.path.abspath(__file__))   
         absPath = os.path.join(script_dir, batchPath)  
@@ -5888,12 +6084,12 @@ class batchjob:
 
         self.sims = sims
         if dumpEnvs:
-            self.envs = envs
+            self.env = env
         #self.env = env
         if printout: print('\nFile Saved')
 
-    def reloadEnvs(self, envs):
-        self.envs = envs
+    def reloadEnv(self, env):
+        self.env = env
             
     def show(self):
         """Print all properties and values except statistics"""
@@ -6028,7 +6224,7 @@ class batchjob:
 
 # For doing a multisim at many impact parameters
 class impactsim(batchjob):
-    def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
+    def __init__(self, batchName, env, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
             rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None, qcuts = [16,50,84], spacing = 'lin'):
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
@@ -6039,72 +6235,93 @@ class impactsim(batchjob):
         self.Nb = Nb
         self.batchName = batchName
         self.timeAx = timeAx
-        self.qcuts = qcuts 
-        try: self.Nenv = len(envs)
-        except: self.Nenv = 1
-        #Lines per environment
-        if self.root and self.size < self.Nenv:
-            print('**Warning: More envs than PEs, will take additional time**')
-        self.Nrot = np.floor(iter * max(1, self.size / self.Nenv))
-
-        #Lines per impact
-        self.Npt = self.Nrot * self.Nenv 
-        #print("{} lines per run".format(self.Npt))
-        #Total Lines
-        self.Ntot = self.Npt * self.Nb
-
+        self.qcuts = qcuts
+        self.env = env
+        
         self.print = printOut
         self.printMulti = printMulti
         self.printSim = printSim
 
-        self.N = N
+        self.N = N #Default Resolution
 
-        base = 200
+        #Lines per environment
+        self.Nslaves = max(self.size - 1, 1)
+        maxLines = self.Nslaves * iter
+        self.Nenv = min(self.env.nBmap, self.env.maxEnvs, maxLines)
+        self.env.Nenv = self.Nenv
+        lines_env = np.floor(maxLines / self.Nenv)
+        self.Nrot = int(max(lines_env,1))
+        self.env.Nrot = self.Nrot
 
-        #if b1 is not None: 
+        #Lines per impact
+        self.Npt = self.Nrot * self.Nenv 
+
+        #Total Lines
+        self.Ntot = self.Npt * self.Nb
+
+
+        #Create the array in R
         if b1 is not None: 
             if spacing.casefold() in 'log'.casefold():
+                base = 200
                 steps = np.linspace(b0,b1,Nb)
                 logsteps = base**steps
                 logsteps = logsteps - np.amin(logsteps)
                 logsteps = logsteps / np.amax(logsteps) * (b1-b0) + b0
                 self.labels = logsteps
 
-                #self.labels = np.round(np.logspace(np.log(b0)/np.log(base),np.log(b1)/np.log(base), Nb, base = base), 4)
             else: self.labels = np.round(np.linspace(b0,b1,Nb), 4)
         else: self.labels = np.round([b0], 4)
-        #ex = 4
-        #xx = np.linspace(0,1,100)
-        #kk = xx**ex
-
-        #kmin = 1.0001
-        #kmax = 6
-        #dif = kmax - kmin
-        #qq = kk * dif + kmin
-        #self.labels = qq
-
 
         self.impacts = self.labels
         self.xlabel = 'Impact Parameter'    
         self.fullBatch = []
         self.bRez = []
+
+        #Define the work to be done
         for b in self.impacts:
+            #Determine length in x
             long = max(length, 12*b)
             self.bRez.append(long*15)
-            self.fullBatch.append(grid.rotLines(N = self.Nrot, b = b, rez = rez, size = size, x0 = long, findT = False)) 
 
+            #Create Batch
+            gridPack = []
+            for envInd in np.arange(self.Nenv):
+                thisSet = grid.rotLines(N = self.Nrot, b = b, rez = rez, size = size, x0 = long, findT = False, envInd = envInd)
+                gridPack.extend(thisSet)
 
-        super().__init__(envs)
+            self.fullBatch.append(gridPack)
+
+        #pointsEach = len(self.fullBatch[0])
+        
+        #print(f"Points/Impact: {pointsEach}")
+        #print(f"Points/Impact: {self.Npt}")
+        #print(f"Points/Env: {self.Nrot}")
+
+        super().__init__()
 
         return  
         
-        
-        
-
 
     def hahnFit(self, r, r0 = 1.05, vth = 25.8, vnt = 32.2, H = 0.0657):
         veff = np.sqrt(vth**2+vnt**2 * np.exp(-(r-r0)/(r*r0*H))**(-1/2))
         return veff
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class timesim(batchjob):
     def __init__(self, batchName, envs, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
@@ -6125,6 +6342,7 @@ class timesim(batchjob):
         if self.root and self.size < self.Nenv:
             print('**Warning: More envs than PEs, will take additional time**')
         self.Nrot = np.floor(iter * max(1, self.size / self.Nenv))
+        
 
         #Lines per impact
         self.Npt = self.Nrot * self.Nenv 

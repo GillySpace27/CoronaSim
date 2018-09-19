@@ -2,7 +2,6 @@ import sys
 from datetime import datetime
 import struct
 
-
 class ProgressBar():
 
     """This class can be used to display a text-based progress bar.
@@ -30,7 +29,25 @@ class ProgressBar():
     
     disable = False
     
-    def __init__(self, target, updateRate=0.2):
+    def __init__(self, target, updateRate=0.2, color = None):
+
+        
+        if color is not None: 
+            try:
+                import colorama
+                colorama.init()
+
+                if color.casefold() in 'red': self.cs = "\033[91m"
+                if color.casefold() in 'green': self.cs = "\033[92m"
+                if color.casefold() in 'blue': self.cs = "\033[94m"
+                if color.casefold() in 'cyan': self.cs = "\033[96m"
+                if color.casefold() in 'purple': self.cs ="\033[95m"
+                if color.casefold() in 'yellow': self.cs = "\033[93m"
+
+                self.ce = '\033[00m'
+            except: self.cs = self.ce = ''
+        else: self.cs = self.ce = ''
+
         self.target = float(target)
         self.updateRate = updateRate
         self.current = 0
@@ -142,9 +159,9 @@ class ProgressBar():
         
         # An \r character moves the cursor to the beginning of the line
         # so we can re-print the line.
-        print("\r", end='')
+        print("\r", end=self.cs)
         print(elapsedString + percentString + iterString + rateString \
-              + progressString + etaString, end='')
+              + progressString + etaString, end=self.ce)
         # Without this, Python may buffer the output but not actually show it,
         # since we haven't finished a line.
         if force: print('')

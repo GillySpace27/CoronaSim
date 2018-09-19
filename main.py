@@ -21,7 +21,7 @@ size = comm.Get_size()
 if __name__ == '__main__':
     
     #Environment Parameters
-    envsName = 'ionizationShort'
+    envsName = 'TheOne'
     fFileName = 'hq'
     sim.environment.fFileName = fFileName
     
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     
 
     #Batch Name
-    batchName = 'newIonsTime'  #NoB'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'Wind'  #NoB'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
@@ -58,24 +58,33 @@ if __name__ == '__main__':
         sim.batchjob.collisional = False #Use collisionally excited light
     except: pass
 
-    impactPoints = 20
+    #How many iterations should it do?
     iterations = 1
 
-    maxEnvs = 1
+    sim.environment.maxEnvs = 100
     sim.environment.maxIons = 300
-    timeAx = np.arange(0, 30, 3) #[int(x) for x in np.linspace(0,4000,15)] #np.arange(0,2000,2) #['rand'] #
 
-    b0 =  1.05
-    b1 =  5 #6 #1.6 #46
+    #Time Stuff
+    timeAx = [0] #np.arange(0, 30, 3) 
+    sim.simulate.randTime = True #adds a random offset to the timeax of each simulate
+
+    #R stuff
+    impactPoints = 10
+    b0 =  1.03
+    b1 =  2 
     spacing = 'lin'
 
+    #Other parameters
     N_line = (600,3000)
     sim.batchjob.autoN = True
     rez = None #[3,3]
     size = [0.002, 0.01]
-    sim.simulate.randTime = False
     length = 10
-    
+ 
+    #Run in parallel?
+    parallel = False
+    cores = 8
+
     try:
         #3D Stuff - ImageSim Parameters
         compute3d = False
@@ -96,7 +105,7 @@ if __name__ == '__main__':
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     #Simulation Properties
     sim.simpoint.useB = False
-    sim.simpoint.g_useWaves = True   
+    sim.simpoint.g_useWaves = False   
     sim.simpoint.g_useWind = True
 
     sim.simpoint.voroB = True #Use the voronoi average instead of the raw Bmap
@@ -113,17 +122,15 @@ if __name__ == '__main__':
     
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
-    sim.batchjob.redoStats = False
+    sim.batchjob.redoStats = True
     sim.batchjob.plotbinFits = False #Plots the binned and the non-binned lines, and their fits, during stats only
     sim.batchjob.plotheight = 1
+    sim.batchjob.histMax = 300
 
     printSim = False #This makes it show the generating profile progress bar
     firstRun = True  #Overwrite any existing batch with this name
 
-    #Run in parallel?
 
-    parallel = False
-    cores = 7
 
     ##Plotting Flags
     sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
@@ -174,9 +181,8 @@ if __name__ == '__main__':
 
         if processEnvironments:
             if root:
-                
                 envrs1 = sim.envrs(envsName, fFileName)
-                envs = envrs1.processEnvs(maxEnvs)
+                env = envrs1.processEnv()
                 sys.stdout.flush()
         comm.barrier()
         if not calcFFiles: fFileName = None
@@ -185,25 +191,29 @@ if __name__ == '__main__':
         ########################
 
         if compute:
-            envs = sim.envrs(envsName).loadEnvs(maxEnvs) 
+            env = sim.envrs(envsName).loadEnv() 
             if firstRun:        
-                myBatch = sim.impactsim(batchName, envs, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim, fName = fFileName, spacing = spacing)
+                myBatch = sim.impactsim(batchName, env, impactPoints, iterations, b0, b1, N_line, rez, size, timeAx, length, printSim, fName = fFileName, spacing = spacing)
             else:
-                myBatch = sim.batch(batchName).restartBatch(envs)  
+                myBatch = sim.batch(batchName).restartBatch(env)  
         if root:      
             if analyze:
-                myBatch = sim.batch(batchName).analyzeBatch()
+                try: env
+                except: env = sim.envrs(envsName).loadEnv() 
+                myBatch = sim.batch(batchName).analyzeBatch(env)
                 #myBatch.fName='longfile'
                 #myBatch.calcFfiles()
             if showProfiles: 
+                try: env
+                except: env = sim.envrs(envsName).loadEnv() 
                 try: myBatch
-                except: myBatch = sim.batch(batchName).loadBatch()
+                except: myBatch = sim.batch(batchName).loadBatch(env)
                 myBatch.plotProfiles(maxPlotLines)
                 #myBatch.plotProfTogether(average, norm, log)
 
         if compute3d:
-            envs = sim.envrs(envsName).loadEnvs(maxEnvs)[envInd]
-            myBatch = sim.imagesim(batchName, envs, NN3D, rez3D, target3D, len3D)
+            env = sim.envrs(envsName).loadEnvs(maxEnvs)[envInd]
+            myBatch = sim.imagesim(batchName, env, NN3D, rez3D, target3D, len3D)
         if analyze3d and root:
             try: myBatch
             except: myBatch = sim.batch(batchName).loadBatch()
@@ -215,7 +225,7 @@ if __name__ == '__main__':
         if simOne and root:
             print('Beginning...')
             df = grid.defGrid()
-            env = sim.envrs(envsName).loadEnvs(100)[0]
+            env = sim.envrs(envsName).loadEnv()
 
             #env.printFreezeHeights()
 
@@ -254,9 +264,12 @@ if __name__ == '__main__':
                 z = 1.01
                 N = 2000
 
+                thisLine = df.poleLine
+                thisLine.setEnvInd(0)
+
                 position, target = [x,y, z], [-x, y, z]
                 myLine = grid.sightline(position, target, coords = 'cart')
-                lineSim = sim.simulate(df.poleLine, env, N = N, findT = True, getProf = False, printOut=True)
+                lineSim = sim.simulate(thisLine, env, N = N, findT = True, getProf = False, printOut=True)
                 #plt.xlim((0.000012382, 0.000012396))
                 #plt.yscale('log')
                 #plt.show()
