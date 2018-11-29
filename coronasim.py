@@ -83,22 +83,20 @@ class environment:
     datFolder = os.path.abspath("../dat/data/")
 
     def_Bfile = os.path.join(datFolder, 'mgram_iseed0033.sav')
-    def_xiFile1 = os.path.join(datFolder, 'new_xi1.dat')
-    def_xiFile2 = os.path.join(datFolder, 'new_xi2.dat')
     def_bkFile = os.path.join(datFolder, 'gilly_background_cvb07.dat')
     def_ioneq = os.path.join(datFolder, 'formattedIoneq.tsv')
     def_abund = os.path.join(datFolder, 'abundance.tsv')
-    def_f1File = os.path.join(datFolder, 'f1_fix.txt')
-    def_f2File = os.path.join(datFolder, 'f2_fix.txt')
     def_ionpath = os.path.abspath('../dat/chianti/chiantiData/')
     def_hahnFile = os.path.join(datFolder, 'hahnData.txt')
     def_2DLOSFile = os.path.join(datFolder, 'vxnew_2D_gilly40401.sav')
     def_ionFile = os.path.join(datFolder, 'useIons.csv')
+    def_collisPath = os.path.join(datFolder, 'collisions.dat')
     def_solarSpecFileHigh = os.path.abspath(os.path.join(datFolder, 'solarSpectrum/xIsun_whole.dat'))
     def_solarSpecFileLow = os.path.abspath(os.path.join(datFolder, 'solarSpectrum/EVE_L3_merged_2017347_006.fit'))
     #def_solarSpecFileLong = os.path.abspath(os.path.join(datFolder, 'solarSpectrum/recent.txt'))
 
     def_magPath = os.path.abspath('../dat/magnetograms')
+    def_rmsPath = os.path.join(datFolder, 'vrms_table_zephyr.dat')
     
     #For doing high level statistics
     fullMin = 0
@@ -187,14 +185,15 @@ class environment:
         self.BLABELs = []
         self.nBmap = 0
 
-        for file in mag_files:
-            xx,yy,Braw = self.loadOneBfile(file)
-            BMap_final, label_im = self.processOneBMap(Braw)
-            self.BXs.append(xx)
-            self.BYs.append(yy)
-            self.BMAPs.append(BMap_final)
-            self.BLABELs.append(label_im)
-            self.nBmap += 1
+        if True:
+            for file in mag_files:
+                xx,yy,Braw = self.loadOneBfile(file)
+                BMap_final, label_im = self.processOneBMap(Braw)
+                self.BXs.append(xx)
+                self.BYs.append(yy)
+                self.BMAPs.append(BMap_final)
+                self.BLABELs.append(label_im)
+                self.nBmap += 1
 
         #if analyze: self.analyze_BMap2()
         print('ingested {}'.format(self.nBmap))
@@ -354,13 +353,18 @@ class environment:
             #ax2.set_ylabel('Density', color='r')
             ax2.tick_params('y', colors='r')
 
-            lns1 = ax1.loglog(self.rx_raw-1, self.cm2km(self.ur_raw), label = 'Wind Speed (km/s)')
-            lns2 = ax2.loglog(self.rx_raw-1, self.rho_raw, 'r:', label = 'Density (g/$cm^3$)')
-            lns3 = ax1.loglog(self.rx_raw-1, self.cm2km(self.vAlf_raw), label = 'Alfven Speed (km/s)')
-            lns4 = ax1.loglog(self.rx_raw-1, self.T_raw, label = 'Temperature (K)')
+            lns1 = ax1.plot(self.rx_raw-1, np.log10(self.cm2km(self.ur_raw)), label = 'Wind Speed (km/s)')
+            lns2 = ax2.plot(self.rx_raw-1, np.log10(self.rho_raw), 'r:', label = 'Density (g/$cm^3$)')
+            lns3 = ax1.plot(self.rx_raw-1, np.log10(self.cm2km(self.vAlf_raw)), label = 'Alfven Speed (km/s)')
+            lns4 = ax1.plot(self.rx_raw-1, np.log10(self.T_raw), label = 'Temperature (K)')
+
+            ax1.set_xscale('log')
+            ax2.set_xscale('log')
+            #ax1.set_yscale('log')
+            #ax2.set_yscale('log')
 
             #ax1.set_title('ZEPHYR Outputs')
-            ax1.set_xlabel('r / $R_\odot$')
+            ax1.set_xlabel('r / $R_\odot$ - 1')
 
 
             lns = lns1+lns2+lns3+lns4
@@ -371,13 +375,14 @@ class environment:
 
             #ax1.legend()
             #ax2.legend()
-            ax1.set_xlim([1.001, 20])
+            ax1.set_xlim([10**-2, 10**2])
 
             plt.show()
 
         #Calculate superradial expansion from zephyr
         self.expansionCalc()
         print("done")
+
 
     def spectrumLoad(self):
         """Load the spectral data for the resonant profiles"""
@@ -486,15 +491,10 @@ class environment:
 
 
 
-    def _fLoad(self, fFile = None):
-        if fFile is None: 
-            f1File = self.def_f1File
-            f2File = self.def_f2File
-            f3File = self.def_f3File
-        else: 
-            f1File = os.path.join(self.datFolder, 'f1_{}.txt'.format(fFile))
-            f2File = os.path.join(self.datFolder, 'f2_{}.txt'.format(fFile))
-            f3File = os.path.join(self.datFolder, 'f3_{}.txt'.format(fFile))
+    def _fLoad(self, fFile):
+        f1File = os.path.join(self.datFolder, 'f1_{}.txt'.format(fFile))
+        f2File = os.path.join(self.datFolder, 'f2_{}.txt'.format(fFile))
+        f3File = os.path.join(self.datFolder, 'f3_{}.txt'.format(fFile))
         x = np.loadtxt(f1File)
         y = np.loadtxt(f2File)
         z = np.loadtxt(f3File)
@@ -524,40 +524,6 @@ class environment:
         ax.legend()
         plt.show()
 
-    def _xiLoad(self):
-        ##Load Xi
-        #self.xiFile1 = self.def_xiFile1 
-        #self.xiFile2 = self.def_xiFile2 
-        ##plt.figure()
-
-        #x = np.loadtxt(self.xiFile1, skiprows=1)
-        #self.xi1_t = x[:,0]
-        #self.xi1_raw = x[:,1]
-        #self.last_xi1_t = x[-1,0]
-        ##plt.plot(self.xi1_t, self.xi1_raw)
-
-        #y = np.loadtxt(self.xiFile2, skiprows=1)
-        #self.xi2_t = y[:,0]
-        #self.xi2_raw = y[:,1]
-        #self.last_xi2_t = y[-1,0]
-
-        #self.tmax = int(min(self.last_xi1_t, self.last_xi2_t))
-        ##plt.plot(self.xi2_t, self.xi2_raw)
-        ##plt.show()
-        self.xi1_t = self.R_time
-        self.last_xi1_t = self.xi1_t[-1]
-        self.tmax = self.last_xi1_t
-
-        xi = self.R_vlos[-1,:].flatten()
-        xistd = np.std(xi)
-        xinorm = xi / xistd
-        self.xi1_raw = xinorm
-
-        #plt.plot(self.xi1_t, self.xi1_raw)
-        #plt.show()
-
-        pass
-
     def _hahnLoad(self):
         x = np.loadtxt(self.def_hahnFile)
         self.hahnAbs = x[:,0]
@@ -567,46 +533,188 @@ class environment:
         self.hahnPoints = line1
         self.hahnError = line2-line1
 
+    ##### Wave Stuff 
+
     def _LOS2DLoad(self):
-        print('Loading Wave information...', end = ''); sys.stdout.flush()
+        """Load the 2D wave information from file"""
+        print('Loading Wave information...', end = '', flush=True)
+
+        #Read in and store data
         x = io.readsav(self.def_2DLOSFile)
         self.R_ntime = x.ntime
         self.R_nzx = x.nzx
         self.R_time = x.time
         self.R_zx = x.zx
+
+        self.xi1_t = self.R_time
+        self.tmax = self.xi1_t[-1]
+        
         if self.shrinkEnv: self.R_vlos = np.float32(x.vxlos)
-        else: self.R_vlos = x.vxlos
+        else: self.R_vlos = x.vxlos #km/s
 
-        #import pdb; pdb.set_trace()
 
-        self._xiLoad()
+
+        #Create a normalized wave for above the top
+        xi = self.R_vlos[-1,:].flatten()
+        xistd = np.std(xi)
+        xinorm = xi / xistd
+        self.xi1_raw = xinorm
+
+        #Extract the Vrms from each height
+        rms = np.std(self.R_vlos, axis = 1)
+        normedV2D = (self.R_vlos.T/rms).T
+
+        self.raw_rms = self.km2cm(rms)  #cm/s
+        self.normedV2D = normedV2D #unitless
+
+        ###Make an extended rms curve
+
+        ##Find the top
+        #topInd = np.argmax(rms)
+        #topZ = self.R_zx[topInd] 
+        #topRms = rms[topInd]
+
+        ##make a flat line over the top
+        #highZ = np.linspace(topZ, 150, 50)
+        #highRMS = np.ones_like(highZ)*topRms #cm/s
+
+        ##pull in data below the top
+        #lowZ = self.R_zx[0:topInd]
+        #lowRMS = rms[0:topInd] #cm/s
+
+        ##put them together
+        #self.flat_rms = np.concatenate((lowRMS, highRMS)) #cm/s
+        #self.R_zx_long = np.concatenate((lowZ, highZ)) # Z
+
+        #Load in the vrms curve we would like to use.
+        self._vrmsLoad()
+
+        #Plot the rms as fn of z
+        if False:
+            plt.figure()
+            plt.semilogx(self.R_zx, self.raw_rms, label = "Braid")
+            plt.semilogx(self.vrms_z, self.vrms_v, label = 'Zephyr')
+            np.savetxt("braidCalc.txt", (self.R_zx, self.raw_rms))
+        
+            plt.title("Flattening the RMS")
+            plt.legend()
+            plt.xlim((10**-2, 10**1))
+            #plt.ylim((20,70))
+            plt.ylabel('cm/s')
+            plt.xlabel('Z')
+            plt.show()
+
+        #Plot each of the time points seperately in normed and not normed case
+        if False:
+            skip = 20
+            plt.figure()
+            plt.title('Raw')
+            plt.semilogx(self.R_zx, self.R_vlos[:,::skip])
+            plt.semilogx(self.R_zx, rms, 'k')
+            plt.xlim((10**-2, 2))
+            plt.xlabel('Z')
+            plt.ylabel('km/s')
+
+            plt.figure()
+
+            plt.title('Normed')
+            plt.semilogx(self.R_zx, normedV2D[:,::skip])
+            plt.xlim((10**-2, 2))
+            plt.xlabel('Z')
+            plt.ylabel('unitless')
+            plt.show()
+
+            #plt.imshow(self.R_vlos, origin = 'bottom')
+            #plt.show()
+            #plt.plot(self.xi1_t, self.xi1_raw)
+            #plt.show()
+
         print('done')
 
+        #self.plot2DV()
 
+        pass
+
+
+    def _vrmsLoad(self, rmsPath = None):
+        if rmsPath is None: rmsPath = self.def_rmsPath
+
+        x = np.loadtxt(rmsPath, skiprows=3)
+        self.vrms_z = x[:,0] #Solar Radii
+        self.vrms_v = self.km2cm(x[:,1]) #cm/s
+
+
+    def plot2DV(self):
+        fig, ax = plt.subplots()
+        mean = np.mean(self.R_vlos.flatten())
+        std = np.std(self.R_vlos.flatten())
+        sp = 4
+        vmin = mean - sp*std
+        vmax = mean + sp*std
+        im = ax.pcolormesh(self.R_time, self.R_zx + 1, self.R_vlos, vmin = vmin, vmax = vmax, cmap = 'RdBu')
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label('km/s')
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('$R_{\odot}$')
+        ax.set_title('Alfven Waves from Braid Code')
+        plt.tight_layout()
+        plt.show()
+
+    #def findvRms(self, r):
+    #    #RMS Velocity
+    #    ind = np.searchsorted(self.vrms_z + 1, r) -1
+    #    V = self.vrms_v[ind] #km/s
+    #    return self.env.km2cm(V)
+
+    def interpVrms(self, r):
+        """Return the rms wave amplitude at a given height in cm/s"""
+        X = self.vrms_z + 1
+        Y = self.vrms_v #cm/s
+        return self.interp(X, Y, r)
 
   ## Ion Stuff ##########################################################################
+    
+  
     def ionLoad(self):
         """Read the spreadsheet indicating the ions to be simulated"""
         print('Loading Ion information...'); sys.stdout.flush()
         self.ions = []
+
         import csv
         with open(self.def_ionFile) as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
-                if '#' in row['ionString']:
+                if '#' in row['eString']:
                     continue
                 for key in row.keys():
-                    if not key.casefold() == 'ionstring':
+                    if not key.casefold() == 'estring':
                         if '.' in row[key]: row[key] = float(row[key])
                         else: row[key] = int(row[key])
                 row['lamAx'] = self.makeLamAxis(row['ln'], row['lam0'], row['lamPm'])
+                row['ionString'] = f"{row['eString']}_{row['ionNum']}"
+                row['fullString'] = f"{row['ionString']}: {row['lam0']}"
+
                 self.ions.append(row)
-
+        
         self._chiantiLoad()
+        self.assignColors()
 
+    def assignColors(self):
+        """Give each ion a unique color"""
+
+        cList = ['r', 'darkorange', 'g', 'b', 'darkviolet', 'firebrick', 'plum', 'goldenrod', 'darkseagreen', 'slateblue','m','lawngreen', 'cyan', 'magenta', 'gold','cornflowerblue','c']
+
+        cNum = 0
+        for ion in self.ions:
+                ion['cNum'] = cNum
+                ion['c'] = cList[cNum%len(cList)]
+                cNum += 1
+        self.nIons = cNum
+
+    ##### Chianti Stuff
     def _chiantiLoad(self):
         """Load the chianti info for each of the desired ions"""
-        nElements = len(set([ion['element'] for ion in self.ions]))
+        nElements = len(set([ion['eNum'] for ion in self.ions]))
         bar = pb.ProgressBar(nElements, color = 'GREEN')
         
         print('    Progress:')
@@ -615,9 +723,10 @@ class environment:
 
         #Load Chianti Data for every ion
         for ion in self.ions:
-            print("{}_{}".format(ion['ionString'], ion['ion']))
+
+            print(ion['fullString'])
             ##Load things from files###############
-            
+
             #Load the ionization fraction file
             self.cLoadIonFraction(ion)           
             
@@ -680,7 +789,7 @@ class environment:
                 ax1.set_ylabel('Upsilon', color='r')
                 ax1.tick_params('y', colors='r')
 
-                plt.title("Data for {}_{}:{}->{} \n $\lambda$ = {}".format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'],ion['lam00']))
+                plt.title("Data for {}_{}:{}->{} \n $\lambda$ = {}".format(ion['eString'], ion['ionNum'], ion['upper'], ion['lower'],ion['lam00']))
 
                 height = 0.9
                 left = 0.09
@@ -696,8 +805,8 @@ class environment:
         #Load in the ionization fraction info
         chi = np.loadtxt(self.def_ioneq)
         for idx in np.arange(len(chi[:,0])):
-            if chi[idx,0] == ion['element'] and chi[idx,1] == ion['ion']: break
-        else: raise ValueError('{}_{} Not Found in fraction file'.format(ion['ionString'], ion['ion']))
+            if chi[idx,0] == ion['eNum'] and chi[idx,1] == ion['ionNum']: break
+        else: raise ValueError('{}_{} Not Found in fraction file'.format(ion['eString'], ion['ionNum']))
 
         ion['chTemps'] = chi[0,2:]
         ion['chFracs'] = chi[idx,2:] + 1e-100
@@ -706,13 +815,13 @@ class environment:
     def cLoadAbund(self, ion):
         """Load the elemental abundance for this element"""
         abund = np.loadtxt(self.def_abund, usecols=[1])
-        ion['abundance'] = 10**(abund[ion['element']-1]-abund[0])
+        ion['abundance'] = 10**(abund[ion['eNum']-1]-abund[0])
         return ion['abundance']
 
     def cLoadUpsilon(self, ion):
         """Load in the upsilon(T) file"""
-        fullstring = ion['ionString'] + '_' + str(ion['ion'])
-        ionpath = (self.def_ionpath +'/'+ ion['ionString'] + '/' + fullstring)
+        fullstring = ion['eString'] + '_' + str(ion['ionNum'])
+        ionpath = (self.def_ionpath +'/'+ ion['eString'] + '/' + fullstring)
         fullpath = os.path.normpath(ionpath + '/'+ fullstring + '.scups')
 
         getTemps = False
@@ -740,14 +849,14 @@ class environment:
             ion['splinedUps'] = interp.spline(ion['upsTemps'], ion['ups'], ion['splinedUpsX']) #I FOUND THE ERROR AND IT IS RIGHT HERE
             
             #ion['gf'] = ion['upsInfo'][3]
-        except: raise ValueError('Transition {}_{}:{}->{} not found in scups file'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower']))
+        except: raise ValueError('Transition {}_{}:{}->{} not found in scups file'.format(ion['eString'], ion['ionNum'], ion['upper'], ion['lower']))
         
         return ion['splinedUpsX'], ion['splinedUps'] 
 
     def cLoadAngularMomentum(self,ion):
         """Load in the angular momenta for the upper and lower levels"""
-        fullstring = ion['ionString'] + '_' + str(ion['ion'])
-        ionpath = (self.def_ionpath +'/'+ ion['ionString'] + '/' + fullstring)       
+        fullstring = ion['eString'] + '_' + str(ion['ionNum'])
+        ionpath = (self.def_ionpath +'/'+ ion['eString'] + '/' + fullstring)       
         fullpath2 = os.path.normpath(ionpath + '/'+ fullstring + '.elvlc')   
         found1 = False
         found2 = False
@@ -761,8 +870,8 @@ class environment:
                     ion['JU'] = float(data[-3])
                     found2 = True
                 if found1 and found2: break
-        if not found1: raise ValueError('Angular Momemntum {}_{}:{} not found in elvlc file'.format(ion['ionString'], ion['ion'], ion['lower']))
-        if not found2: raise ValueError('Angular Momemntum {}_{}:{} not found in elvlc file'.format(ion['ionString'], ion['ion'], ion['upper']))
+        if not found1: raise ValueError('Angular Momemntum {}_{}:{} not found in elvlc file'.format(ion['eString'], ion['ionNum'], ion['lower']))
+        if not found2: raise ValueError('Angular Momemntum {}_{}:{} not found in elvlc file'.format(ion['eString'], ion['ionNum'], ion['upper']))
 
         ion['dj'] = ion['JU'] - ion['JL']
         j = ion['JL']
@@ -787,8 +896,8 @@ class environment:
 
     def cLoadEinstein(self, ion):
         """Load in the Einstein Coefficients and the Chianti line wavelengths"""
-        fullstring = ion['ionString'] + '_' + str(ion['ion'])
-        ionpath = (self.def_ionpath +'/'+ ion['ionString'] + '/' + fullstring)
+        fullstring = ion['eString'] + '_' + str(ion['ionNum'])
+        ionpath = (self.def_ionpath +'/'+ ion['eString'] + '/' + fullstring)
         fullpath3 = os.path.normpath(ionpath + '/'+ fullstring + '.wgfa')
         found = False
         with open(fullpath3) as f3:     
@@ -801,18 +910,19 @@ class environment:
                     ion['A21'] = float(data[4]) # inverse seconds
                     found = True
                     break
-        if found == False: raise ValueError('Einstein Coefficient for {}_{}:{} not found in wgfa file'.format(ion['ionString'], ion['ion'], ion['lower']))
+        if found == False: raise ValueError('Einstein Coefficient for {}_{}:{} not found in wgfa file'.format(ion['eString'], ion['ionNum'], ion['lower']))
            
         ion['B21'] = ion['A21'] * self.c**2 / (2*self.hergs*ion['nu00']**3) #1/s * cm^2 / s^2 * 1/(ergs *s) * s^3 = cm^2 / (erg * s)
         ion['B12'] = ion['B21'] * ion['wiU'] / ion['wi'] #cm^2 / (erg*s)
 
+        ion['fullString'] = f"{ion['ionString']}: {ion['lam00']}"
         #print("A = {}, B21 = {}".format(ion['A21'], ion['B21']))
         #print('WiL: {}, WiU: {}'.format(ion['wi'], ion['wiU']))
 
     def checkOverlap(self, ion):
         '''See if there are any other lines of this ion nearby'''
-        fullstring = ion['ionString'] + '_' + str(ion['ion'])
-        ionpath = (self.def_ionpath +'/'+ ion['ionString'] + '/' + fullstring)
+        fullstring = ion['eString'] + '_' + str(ion['ionNum'])
+        ionpath = (self.def_ionpath +'/'+ ion['eString'] + '/' + fullstring)
         fullpath3 = os.path.normpath(ionpath + '/'+ fullstring + '.wgfa')
 
         #Check for multiple overlapping lines
@@ -841,12 +951,12 @@ class environment:
                 data_raw = line.split()
                 data = [float(x) if '.' in x else int(x) for x in data_raw]
                     
-                if data[0] == ion['element']:
-                    if data[1] == ion['ion']:
+                if data[0] == ion['eNum']:
+                    if data[1] == ion['ionNum']:
                         thisE = data[2] #cm^-1
-                    if data[1] == ion['ion'] + 1:
+                    if data[1] == ion['ionNum'] + 1:
                         nextE = data[2] #cm^-1
-                if data[0] > ion['element']:
+                if data[0] > ion['eNum']:
                     break
 
         hc = 1.9864458e-16 #erg * cm
@@ -893,12 +1003,12 @@ class environment:
         
     def cLoadRecombination(self, ion):
         '''Load in the recombination rate to this ion'''
-        ion['recomb_T'], ion['recomb'] = self.cLoadOneRecombRate(ion['ionString'], ion['ion']+1)
+        ion['recomb_T'], ion['recomb'] = self.cLoadOneRecombRate(ion['eString'], ion['ionNum']+1)
         return ion['recomb_T'], ion['recomb']
 
     def cLoadOneCollisRate(self, thisElement, ionNum):
         """Load in the collisional ionization rate as F(T) out of ion ionNum"""
-        path = os.path.join(self.datFolder, 'collisions.dat')
+        path = self.def_collisPath 
         with open(path) as f:
             for line in f:
                 newLine = ''
@@ -929,7 +1039,7 @@ class environment:
 
     def cLoadCollision(self, ion):
         """Load the collision rate as F(T)"""
-        ion['collis_T'], ion['collis'] = self.cLoadOneCollisRate(ion['element'], ion['ion'])
+        ion['collis_T'], ion['collis'] = self.cLoadOneCollisRate(ion['eNum'], ion['ionNum'])
         return ion['collis'], ion['collis_T']
 
     def makeIrradiance(self, ion):
@@ -984,7 +1094,7 @@ class environment:
 
 
         #plt.plot(ion['nuAxPrime'], ion['nuI0array'])
-        #plt.title("{}_{}".format(ion['ionString'], ion['ion']))
+        #plt.title("{}_{}".format(ion['eString'], ion['ionNum']))
         #plt.show()
         if False:
             #Plot the irradiance array stuff
@@ -1004,7 +1114,7 @@ class environment:
             plt.plot(ion['lamAxPrime'], self.gauss_function(ion['lamAxPrime'],fits[0], lamLow,fits[2], fits[3]))
             
             plt.plot(ion['lamAxPrime'], ion['I0array'], "c.", lw=3)
-            plt.title("{}_{}".format(ion['ionString'], ion['ion']))
+            plt.title("{}_{}".format(ion['eString'], ion['ionNum']))
             plt.show()
 
     def lamAx2nuAx(self, lamAx):
@@ -1106,7 +1216,7 @@ class environment:
         """Print all of the ions' freezing height"""
         print("Ion Freezing-in Radii:")
         for ion in self.ions:
-            print("{}_{}: {:.4}".format(ion['ionString'], ion['ion'], ion['r_freeze']))
+            print("{}_{}: {:.4}".format(ion['eString'], ion['ionNum'], ion['r_freeze']))
 
 
     def findFreeze2(self,ion):
@@ -1124,7 +1234,7 @@ class environment:
 
         #Plot
         if False:
-            print("{}_{}: {:.4}".format(ion['ionString'], ion['ion'], ion['r_freeze']))
+            print("{}_{}: {:.4}".format(ion['eString'], ion['ionNum'], ion['r_freeze']))
 
             fig, ax2 = plt.subplots()
 
@@ -1141,27 +1251,16 @@ class environment:
             ax2.plot(rr, tt2, label = 'Expansion')
             ax2.legend()
             ax2.set_title('Frozen in at R = {:.4}'.format(r_freeze))
-            fig.suptitle('Finding the Freezing Height/Density for Ion: {}_{}'.format(ion['ionString'], ion['ion']))
+            fig.suptitle('Finding the Freezing Height/Density for Ion: {}_{}'.format(ion['eString'], ion['ionNum']))
             ax2.set_yscale('log')
             ax2.set_xlabel('Impact Parameter')
             ax2.set_ylabel('Time')
             plt.show()
 
-    def plot2DV(self):
-        fig, ax = plt.subplots()
-        mean = np.mean(self.R_vlos.flatten())
-        std = np.std(self.R_vlos.flatten())
-        sp = 4
-        vmin = mean - sp*std
-        vmax = mean + sp*std
-        im = ax.pcolormesh(self.R_time, self.R_zx + 1, self.R_vlos, vmin = vmin, vmax = vmax, cmap = 'RdBu')
-        cbar = fig.colorbar(im, ax=ax)
-        cbar.set_label('km/s')
-        ax.set_xlabel('Time (s)')
-        ax.set_ylabel('$R_{\odot}$')
-        ax.set_title('Alfven Waves from Braid Code')
-        plt.tight_layout()
-        plt.show()
+        pass
+
+
+
 
     def simulate_ionization(self, ion):
 
@@ -1169,13 +1268,13 @@ class environment:
         try: self.elements
         except: self.elements = dict()
 
-        if not ion['ionString'] in self.elements:
-            self.elements[ion['ionString']] = element(self, ion)
+        if not ion['eString'] in self.elements:
+            self.elements[ion['eString']] = element(self, ion)
             return True
         else: 
             print('Element Already Complete')
             return False
-            #self.elements[ion['ionString']].plotAll()
+            #self.elements[ion['eString']].plotAll()
 
 
   ## Magnets ##########################################################################
@@ -1567,12 +1666,36 @@ class environment:
     def smallify(self):
         self.label_im = []
 
-    def save(self, name):
-        path = self.__absPath(name)
-        if os.path.isfile(path):
-            os.remove(path)
-        with open(path, 'wb') as output:
+    def save(self, name=None, fPath = None):
+        if name is None: name = self.name
+        print("Saving Environment: {}...".format(name), end='', flush=True)
+
+        if fPath is None:
+            #Check for directory
+            savPath = os.path.abspath('../dat/envs/' + name)
+            os.makedirs(savPath, exist_ok=True)
+            fPath = os.path.join(savPath, name)
+
+        #Save the environment itself
+        envPath = fPath + '.env'
+        if os.path.isfile(envPath):
+            os.remove(envPath)
+        with open(envPath, 'wb') as output:
             pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+
+        #Save contents of environment to text file
+        infoEnv = self
+        txtPath = fPath + '.txt'
+        with open(txtPath, 'w') as output:
+            output.write(time.asctime() + '\n\n')
+            myVars = (infoEnv.__class__.__dict__, vars(infoEnv))
+            for pile in myVars:
+                for ii in sorted(pile.keys()):
+                    if not callable(pile[ii]):
+                        string = str(ii) + " : " + str(pile[ii]) + '\n'
+                        output.write(string)
+                output.write('\n\n')
+        print('done')
         
     def randomize(self):
         self.randOffset = int(self.primeRand.uniform(0, 10000))
@@ -1604,25 +1727,9 @@ class environment:
     #        return idx
 
 
-    def findvRms(self, rr):
-        #RMS Velocity
-        #S0 = 7.0e5 #* np.sqrt(1/2)
-        #return np.sqrt(S0*self.vAlf/((self.vPh)**2 * 
-        #    self.rx**2*self.f*self.rho))
-        if rr < 3:
-            return self.extractVrms(rr)
-        else:
-            vTop = 6090764.71206 - 25000
-            rTop = 2.98888888889
-            return vTop*(rr/rTop)**-0.3
 
-    def extractVrms(self, b):
-        try:
-            bInd = np.searchsorted(self.R_zx + 1, b) -1
-            R_Array = self.R_vlos[bInd,:].flatten()
-            V = np.std(R_Array)
-            return V * 1e5
-        except: return np.nan
+        
+    
         
     def interp_T(self, rx):
         return self.interp_rx_dat_log(rx, self.T_raw) #K
@@ -1783,13 +1890,59 @@ class environment:
         plt.title(property)
         grid.maximizePlot()
         plt.show()
+
+
+    def plotElements(self):
+
+        for el in self.elements:
+            self.elements[el].plotGrid()
+            
+        return
+
+    def plotChargeStates(self):
+        """Plot the charge states for all the ions we are using as fn of height"""
+
+        zaxis = np.logspace(-1.9, 1)
+        raxis = zaxis + 1
+
+        densfac = 1
+        colors = ['k','C1','C2','C3','C4','C5','C6','C7','C8','C9']
+        colorcycler = cycle(colors)
+        
+
+        fig, (ax0,ax1) = plt.subplots(1,2, True)
+
+        for ion in self.ions:
+            clr = next(colorcycler)
+            thisElement = self.elements[ion['eString']]
+            chargeStates = thisElement.getManyN(ion['ionNum'],densfac,raxis)
+            chargeStatesEQ = thisElement.getManyN(ion['ionNum'],densfac,raxis, eq=True)
+
+            ax0.loglog(zaxis,chargeStates, c=clr, label = f"{ion['eString']}_{ion['ionNum']}")
+            ax1.loglog(zaxis,chargeStates/chargeStates[-1], c=clr, label = f"{ion['eString']}_{ion['ionNum']}")
+
+            #ax0.loglog(zaxis,chargeStatesEQ, ':', c=clr)#, label = f"EQ: {ion['eString']}_{ion['ionNum']}")
+            #ax1.loglog(zaxis,chargeStatesEQ/chargeStatesEQ[-1], ':', c=clr)
+            #ax1.loglog(zaxis,chargeStates/chargeStates[-1], label = f"{ion['eString']}_{ion['ionNum']}")
+
+        plt.suptitle("Charge states for just the ions we care about")
+        ax0.set_title("Absolute")
+        ax1.set_title("Normalized")
+        ax0.set_ylabel("Density")
+        ax0.set_xlabel("Z")
+        ax1.set_xlabel("Z")
+        ax0.legend()
+        ax1.legend()
+        plt.show()
+
+
         
 #envs Class handles creation, saving, and loading of environments
 class envrs:
 
     #envs Class handles creation, saving, and loading of environments
     
-    def __init__(self, name = '', fFile = None):
+    def __init__(self, name = 'Default', fFile = None):
         self.name = name
         self.fFile = fFile
         self.slash = os.path.sep            
@@ -1883,21 +2036,11 @@ class envrs:
         if show: plt.show(False)
         return self.env
 
-    def saveEnv(self):
+    def saveEnv(self, filePath = None):
         """Save the Environment"""
-        self.env.save(self.filePath + '.env')
+        if filePath == None: filePath = self.filePath
+        self.env.save(fPath = filePath)
 
-        #Save contents of environment to text file
-        infoEnv = self.env
-        with open(self.filePath + '.txt', 'w') as output:
-            output.write(time.asctime() + '\n\n')
-            myVars = (infoEnv.__class__.__dict__, vars(infoEnv))
-            for pile in myVars:
-                for ii in sorted(pile.keys()):
-                    if not callable(pile[ii]):
-                        string = str(ii) + " : " + str(pile[ii]) + '\n'
-                        output.write(string)
-                output.write('\n\n')
 
     def loadEnv(self):
         """Load the Environment"""
@@ -1908,6 +2051,7 @@ class envrs:
 
 
 class element:
+    minDens = 1e-100
     def __init__(self, env, ion):
         
         self.env = env
@@ -1916,8 +2060,9 @@ class element:
         #Get elemental data
         self.abundance = ion['abundance']
         self.mAtom = ion['mIon']
-        self.nIons = ion['element'] + 1
-        self.name = ion['ionString']
+        self.nIons = ion['eNum'] + 1
+        self.nLevels = self.nIons + 1
+        self.name = ion['eString']
         
         self.loadRateLists() 
 
@@ -1955,7 +2100,7 @@ class element:
         #self.tGrid = np.logspace(3,8,self.nRGrid) 
 
         #Create an empty matrix
-        nGrid = np.zeros((self.nIons+1,self.nRGrid))
+        nGrid = np.zeros((self.nLevels,self.nRGrid))
         normGrid = np.zeros_like(nGrid)
 
         for temp, nTot, jj in zip(self.tGrid, nTotals, np.arange(self.nRGrid)):
@@ -1974,7 +2119,7 @@ class element:
 
             small = -50
             #Determine the populations of the higher states
-            for ionNum in np.arange(2,self.nIons+1):
+            for ionNum in np.arange(2,self.nLevels):
                 nGrid[ionNum][jj] = nGrid[ionNum-1][jj] * self.colRate(ionNum-1, temp) / self.recRate(ionNum, temp) 
 
                 #Low density floor
@@ -1984,20 +2129,25 @@ class element:
                 normGrid[ionNum][jj] = nGrid[ionNum][jj] / nTot
                 
         #Store Equilibrium Values
-        self.nGrid = nGrid #1/cm^3
+        self.nGrid = nGrid #1/cm^3, [ionNum, r]
         self.normGrid = normGrid
 
         if False:
             rlong = self.rGrid
-            xlong = np.arange(self.nIons+1)
+            xlong = np.arange(self.nLevels)
             #import pdb; pdb.set_trace()
             #np.arange(self.nIons+2),rlong,
-            plt.pcolormesh(rlong, xlong, np.log(self.normGrid), vmin = -20, vmax = 1)
+            #plt.pcolormesh(rlong, xlong, np.log(self.normGrid), vmin = -20, vmax = 1)
+            for ii in np.arange(self.nLevels):
+                plt.loglog(rlong, self.normGrid[ii], label = ii)
             plt.xlabel('Height')
-            plt.colorbar()
+            plt.legend()
+            #plt.colorbar()
             plt.ylabel('Ion')
-            plt.title('Equilibrium Ionization')
+            plt.title(f'Equilibrium Ionization, nIons = {self.nIons}')
             plt.show()
+
+        pass
 
     def groundSeries(self, temp):
         '''Solve for the equilibrium ground state'''
@@ -2022,7 +2172,7 @@ class element:
         """Find the NLTE densities as a function of densfac"""
 
         #Define the grid in the densfac dimension
-        self.densPoints = 12
+        self.densPoints = 10 #Must be at least 4
         dMin = 0.5
         dMax = 12.5
         base = 10
@@ -2041,7 +2191,7 @@ class element:
         self.evalRf = zmax + 1
 
         #Create arrays to hold everything
-        self.bigNLTEGrid = np.zeros((self.densPoints, self.nIons+2, self.rPoints))
+        self.bigNLTEGrid = np.zeros((self.densPoints, self.nLevels, self.rPoints))
         self.bigNormGrid = np.zeros_like(self.bigNLTEGrid)
 
         bar = pb.ProgressBar(self.densPoints)
@@ -2063,52 +2213,81 @@ class element:
 
     def makeInterps(self):
         self.nInterps = []
-        for ionNum in np.arange(self.nIons+2):
-            thisState = np.abs(self.bigNLTEGrid[ionNum])
-            self.nInterps.append(interp.RectBivariateSpline(self.densGrid, self.rEval, thisState))
+        self.eqInterps = []
 
-    def getN(self, ionNum, densfac, rx):
+        for ionNum in np.arange(self.nLevels):
+            thisState = np.abs(self.bigNLTEGrid[ionNum])
+            self.nInterps.append(interp.RectBivariateSpline(self.densGrid, self.rEval, thisState)) #1/cm^3
+            eqState = np.abs(self.nGrid[ionNum])
+            self.eqInterps.append(interp.InterpolatedUnivariateSpline(self.rGrid, eqState))
+
+    def getManyN(self, ionNum, densfac, rAxis, eq = False):
+        """Return the number density of this ion at many heights for given densfac
+        
+            eq=True returns the equilibrium values
+        """ 
+        if eq:
+            actual = np.abs(self.eqInterps[ionNum](rAxis))
+        else:
+            dAxis = np.ones_like(rAxis)*densfac
+            actual = np.abs(self.nInterps[ionNum](dAxis, rAxis, grid=False))       
+
+        actual[actual<self.minDens]=self.minDens
+        return actual #Number density 1/cm^3
+
+    def getN(self, ionNum, densfac, rx, eq = False):
         """Return the number density of this ion at this height and densfac""" 
 
-        actual = np.abs(self.nInterps[ionNum](densfac, rx)[0][0])
-        minimum = 1e-100
-        return max(actual, minimum)  #TODO Remove this abs hopefully
+        if eq: actual = np.abs(self.eqInterps[ionNum](rAxis, grid=False))
+        else:  actual = np.abs(self.nInterps[ionNum](densfac, rx, grid=False))
+        return max(actual, self.minDens) #Number density 1/cm^3
 
 
-    def plotGrid(self, dd):
+    def plotGrid(self, dd = 2):
         """Plots the results of the NLTE Calculation with the Equilibrium Calculation"""
         doPlot = True
-        doNorm = True
+        doNorm = False
 
         if doNorm: 
-            big = self.bigNormGrid
+            big = self.bigNormGrid[:,dd]
             equil = self.normGrid
         else:
-            big = self.bigNLTEGrid
+            big = self.bigNLTEGrid[:,dd]
             equil = self.nGrid
+
+
+        #neGrid = self.bigNLTEGrid[dd]
+        #neGrid[0, :] = 0
+        #neGrid[0, :] = np.sum(neGrid, axis=0)
+
+        
+        ##Normalize the Normgrid
+        #big = neGrid / neGrid[0, :] 
+
 
         colors = ['k','C1','C2','C3','C4','C5','C6','C7','C8','C9']
         colorcycler = cycle(colors)
+        #import pdb; pdb.set_trace()
 
         lw = 2
         if doPlot:
             plt.figure()
-            for nn in np.arange(self.nIons+1):
+            for nn in np.arange(self.nLevels):
 
                 clr = next(colorcycler)
                     
                 #Plot NLTE Calculation
 
-                toPlot = big[dd][nn]
+                toPlot = big[nn]
                 positive = toPlot.copy()
                 negative = -toPlot.copy()
                 positive[positive < 0] = np.nan
                 negative[negative < 0] = np.nan
 
-                plt.loglog(self.bigZAxis[dd], positive,c=clr, marker='o', lw=lw, label=nn)
-                plt.loglog(self.bigZAxis[dd], negative,c=clr, marker='x', lw=lw, label=nn)
+                plt.loglog(self.zEval, positive,c=clr, marker='o', lw=lw, label=nn)
+                plt.loglog(self.zEval, negative,c=clr, marker='x', lw=lw, label=nn)
                 #Plot equilibrium Calculation
-                plt.loglog(self.zGrid, equil[nn],   c=clr,ls=':', label=nn)
+                plt.loglog(self.zGrid, equil[nn]*self.densGrid[dd],   c=clr,ls=':', label=nn)
 
                 try:plt.axvline(self.startHeights[nn], c=clr)
                 except:pass
@@ -2119,12 +2298,16 @@ class element:
             plt.xlabel('Height')
             plt.ylabel('Density {}'.format('' if doNorm else '(1/cm^3)'))
             #plt.title(self.name)
-            #plt.ylim([10**-8,10**3])
+            plt.ylim([10**-30,10**1])
             plt.suptitle('NLTE Ionization')
-            try:plt.title('densfac = {}, ion: {}'.format(self.densGrid[dd], self.name))
+            try:plt.title('densfac = {:0.4}, ion: {}'.format(self.densGrid[dd], self.name))
             except:plt.title('ion: {}'.format(self.name))
             plt.show()
 
+        pass
+
+    
+            
     def simulate_one_NLTE(self, densfac):
         """Simulate the NLTE densities at a given densfac"""
 
@@ -2132,7 +2315,7 @@ class element:
 
         #Perform the actual integration
         #neGrid, normGrid, rAxis = self.manualIonIntegrate()
-        neGrid, normGrid = self.stiffIntegrator()
+        neGrid, normGrid = self.stiffIntegrator() #1/cm^3, unitless
 
         return neGrid, normGrid#, rAxis
 
@@ -2162,7 +2345,7 @@ class element:
             plt.loglog(self.rGrid, self.tGrid, label='T')
             plt.loglog(self.rGrid, self.uGrid, label='U')
             #plt.loglog(self.rGrid, self.rhoGrid, label=r'$\rho$')
-            plt.loglog(self.rGrid, self.nGrid[0], label='N0_{}'.format(self.ion['ionString']))
+            plt.loglog(self.rGrid, self.nGrid[0], label='N0_{}'.format(self.ion['eString']))
             plt.legend()
             plt.show()
 
@@ -2177,11 +2360,15 @@ class element:
             ax.legend(lns, labs, loc=8)
             plt.show()
 
+    
+    
+    
+
     def stiffIntegrator(self):
         """A more advanced approach to the problem"""
 
         #Pull in the initial conditions
-        neGrid = self.neGrid
+        neGrid = self.neGrid #1/cm^3
         cGrid = np.zeros_like(neGrid)
         eventGrid = np.zeros_like(neGrid)
         normGrid = copy.deepcopy(self.normGrid)
@@ -2213,6 +2400,9 @@ class element:
         #Make the n0 row actually be the sum of the other rows
         neGrid[0, :] = 0
         neGrid[0, :] = np.sum(neGrid, axis=0)
+
+        #Remove the fake upper level row
+        neGrid = np.delete(neGrid, self.nLevels, axis = 0)
         
         #Normalize the Normgrid
         normGrid = neGrid / neGrid[0, :] 
@@ -2220,7 +2410,7 @@ class element:
         #Create the z axis output
         #zAxis = rAxis/self.env.r_Cm - 1
 
-        return neGrid, normGrid #, zAxis
+        return neGrid, normGrid #, zAxis (Units: number density, unitless)
 
     def ionDerivativeR(self,r,nl):
         """The RHS function for the ionization balance"""
@@ -2241,17 +2431,17 @@ class element:
         #Temperature
         T = self.env.interp_T(rx)
 
-        for ionNum in np.arange(1,self.nIons+1):
+        for ionNum in np.arange(1,self.nLevels):
             #Ionization and Recombination
             C1 =   nl[ionNum-1]*self.colRate(ionNum-1, T)
             C2 =   nl[ionNum+1]*self.recRate(ionNum+1, T) 
             C3 = - nl[ionNum] * (self.colRate(ionNum, T))
             C4 = - nl[ionNum] * (self.recRate(ionNum, T))
 
-            C = C1 + C2 + C3 + C4
+            I = nE* (C1 + C2 + C3 + C4)
             #1/cm^3 * cm^3/s = 1/s
 
-            RHS[ionNum] +=  nE*C/ur       # 1/cm^3 * 1/s * s/cm = 1/cm^4
+            RHS[ionNum] +=  I/ur       # 1/cm^3 * 1/s * s/cm = 1/cm^4
             RHS[ionNum] -=  2*nl[ionNum]/r # 1/cm^3 / cm = 1/cm^4
             RHS[ionNum] -=  nl[ionNum]/ur*dudr # 1/cm^3 * s/cm * cm/s / cm = 1/cm^4
 
@@ -2277,7 +2467,7 @@ class element:
         #self.ratList = []
         self.recombList = []
         self.collisList = []
-        self.ionArray = np.arange(self.nIons+1)
+        self.ionArray = np.arange(self.nLevels)
 
         self.colors = ['C0','C1','C2','C3','C4','C5','C6','C7','C8','C9']
         colorcycler = cycle(self.colors)
@@ -2286,14 +2476,14 @@ class element:
             #Load Recombination Rate out of this ion
             if not 2 <= ionNum <= self.nIons: self.recombList.append(0)
             else:
-                T_array, thisRecomb = self.env.cLoadOneRecombRate(self.ion['ionString'], ionNum)
+                T_array, thisRecomb = self.env.cLoadOneRecombRate(self.ion['eString'], ionNum)
                 recombFunc = partial(self.env.interp,T_array,thisRecomb)
                 self.recombList.append(recombFunc) #cm^3/s
 
             #Load Collison Rate out of this ion
             if not 1 <= ionNum < self.nIons: self.collisList.append(0)
             else:
-                T_array, thisCollis = self.env.cLoadOneCollisRate(self.ion['element'], ionNum)
+                T_array, thisCollis = self.env.cLoadOneCollisRate(self.ion['eNum'], ionNum)
                 collisFunc = partial(self.env.interp,T_array,thisCollis)
                 self.collisList.append(collisFunc) #cm^3/s
 
@@ -2302,7 +2492,7 @@ class element:
                 clr = next(colorcycler)
                 plt.loglog(T_array, thisRecomb, clr + '-', label = 'recomb_{}'.format(ionNum))
                 plt.loglog(T_array, thisCollis, clr + '--', label = 'collis_{}'.format(ionNum))
-                plt.title('{}_{}'.format(self.ion['ionString'], ionNum))
+                plt.title(ion['ionString'])
                 plt.legend()
                 plt.xlabel('Temperature')
                 plt.ylabel('Rate')
@@ -2319,26 +2509,17 @@ class element:
 
 
     def plotAll(self):
-        #import pdb; pdb.set_trace()
-        #newIonArray = np.arange(self.nIons+2) - 0.5
-        # np.append(newIonArray, self.ionArray[-1]+1) 
-        # import pdb; pdb.set_trace()
-        # plt.pcolormesh(self.rGrid, newIonArray, np.log10(self.nGrid))
-        # plt.title('Element: {}'.format(self.ion['ionString']))
-        # plt.ylabel('Ionization Stage')
-        # plt.xlabel('rx')
-        # plt.colorbar()
-        # plt.show()
+
         plt.figure()
 
-        absolute = True
+        absolute = False
         vsHeight = True
 
         if absolute:
-            plt.title('{}, absolute'.format(self.ion['ionString']))
+            plt.title('{}, absolute'.format(self.ion['eString']))
             grid = self.nGrid
         else:
-            plt.title('{}, relative'.format(self.ion['ionString']))
+            plt.title('{}, relative'.format(self.ion['eString']))
             grid = self.normGrid
 
         if vsHeight:
@@ -2351,7 +2532,7 @@ class element:
             plt.ylim([1e-3, 2])
 
         plt.ylabel('Population')
-        for ionNum in np.arange(self.nIons+1):
+        for ionNum in np.arange(self.nLevels):
             plt.plot(absiss, (grid[ionNum]), label = ionNum)
         plt.legend()
         
@@ -2392,7 +2573,7 @@ class element:
 
                 nl = np.append(nl, 0) #make there be a zero density higher state
             
-                for ionNum in np.arange(1,self.nIons+1):
+                for ionNum in np.arange(1,self.nLevels):
                     #For each ion
                 
                     #Ionization and Recombination
@@ -2462,7 +2643,7 @@ class element:
         startHeights = np.zeros_like(eventGrid[:, 0])
         self.cutThreshold = 300
         
-        for ionNum in np.arange(1, self.nIons+1):
+        for ionNum in np.arange(1, self.nLevels):
             inds = np.argwhere(eventGrid[ionNum] > self.cutThreshold)
             lastInd = int(inds[-1])
             startHeights[ionNum] = self.zGrid[lastInd]
@@ -2534,7 +2715,7 @@ class element:
 
     def plotTimes(self):
         plt.figure()
-        for ionNum in np.arange(1,self.nIons+1):
+        for ionNum in np.arange(1,self.nLevels):
             col = []
             exp = []
             for jj in np.arange(self.nRGrid):
@@ -2664,7 +2845,7 @@ class simpoint:
         for ion in self.ions:
             ion['frac'] = self.env.findIonFrac(ion, self.T, self.rho) if self.useIonFrac else 1 #ion fraction
             ion['Neq'] = np.abs(0.8 * ion['frac'] * ion['abundance'] * self.rho/self.env.mP) #ion number density 
-            ion['N'] = self.env.elements[ion['ionString']].getN(ion['ion'], self.densfac, self.rx)
+            ion['N'] = self.env.elements[ion['eString']].getN(ion['ionNum'], self.densfac, self.rx)
 
 
     def __findDensFac(self):
@@ -2818,9 +2999,9 @@ class simpoint:
 
         #rez = 125
 
-        #if self.env.plotMore and not ion['ionString'] in self.didIonList: 
-        #    self.didIonList.append(ion['ionString'])
-        #    print("E: {}, throw = {:.3}, rez = {}".format(ion['ionString'], throw, rez))
+        #if self.env.plotMore and not ion['eString'] in self.didIonList: 
+        #    self.didIonList.append(ion['eString'])
+        #    print("E: {}, throw = {:.3}, rez = {}".format(ion['eString'], throw, rez))
 
         lamAxPrime = np.linspace(lowLam, highLam, rez)
         I0array = [self.env.interp(ion['lamAxPrime'], ion['I0array'], ll) for ll in lamAxPrime]
@@ -2899,20 +3080,20 @@ class simpoint:
 
         plotIncident = False 
 
-        if plotIncident and self.pPos[0] + stepdown < self.env.lastPos and ion['ionString'] == 's':
+        if plotIncident and self.pPos[0] + stepdown < self.env.lastPos and ion['eString'] == 's':
             self.env.lastPos = self.pPos[0]
             
             plt.figure()
             plt.axvline(lowLam)
             plt.axvline(highLam)
             plt.axvline(lamCenter)
-            plt.title("{}_{}".format(ion['ionString'], ion['ion']))
+            plt.title("{}_{}".format(ion['eString'], ion['ionNum']))
             plt.plot(ion['lamAxPrime'], ion['I0array'], label="Full")
             
             plt.plot(ion['lamAx'], gauss_function(ion['lamAx'], 50, lamCenter, deltaLam, 0))
 
             plt.plot(lamAxPrime, I0array, '.-', label = "Slice")
-            ionName= "{}_{}".format(ion['ionString'], ion['ion'])
+            ionName= "{}_{}".format(ion['eString'], ion['ionNum'])
             plt.title("{}\nR = {:.3}, X,Z = {:.3}, {:.3}\n radialV = {:.4}".format(ionName, self.pPos[0], self.cPos[0], self.cPos[2], self.env.cm2km(radialV)))
             plt.legend()
 
@@ -2924,14 +3105,14 @@ class simpoint:
                 plt.close()
 
         #Plot the Generated Profile
-        #if ion['ionString'] == 's':
+        #if ion['eString'] == 's':
         #plt.plot(lamAx, profileR, '.-')
         #plt.show() #leave this blank to see them all on the same graph
 
         #lastTime = time.time()      
         #thisTime =  time.time()
         #elapsed = thisTime-lastTime
-        #print('time: {:.3}, e: {}, rez: {}, rat: {:.3}'.format(elapsed*1000, ion['ionString'], rez, elapsed*100000 / rez))
+        #print('time: {:.3}, e: {}, rez: {}, rat: {:.3}'.format(elapsed*1000, ion['eString'], rez, elapsed*100000 / rez))
 
 
         return ion['profileR']
@@ -2948,42 +3129,30 @@ class simpoint:
         
         if self.useWind: self.uw = self.__findUw()
         else: self.uw = 0
-        self.vAlf = self.__findAlf()
-        self.vPh = self.__findVPh()
-        if self.useWaves: self.vRms = self.__findvRms()
-        else: self.vRms = 0
+        self.vAlf = self.__findAlf() #cm/s
+        self.vPh = self.__findVPh() #cm/s
 
         self.findWaveSpeeds(t)
 
     def findWaveSpeeds(self, t = 0):
         #Find all of the wave velocities
 
-        if self.wavesVsR and self.useWaves: 
-            offsetTime = 410.48758
-            #Set the wave time
-            self.t1 = t + self.alfT1
-            #self.t2 = t + self.alfT2
-            #Get the wave profile at that time
-            self.alfU1 = self.interp_R_wave(self.t1)
-            #self.alfU2 = self.interp_R_wave(self.t2)
-            #Match the boundary of Braid with the time method
-            if self.matchExtrap:
-                self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else self.vRms*self.xi1(self.t1- self.twave + offsetTime)].pop()
-                #self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else self.vRms*self.xi2(self.t2- self.twave)].pop()
-            else:
-                self.alfU1 = self.alfU1 if not np.isnan(self.alfU1) else [np.nan if self.zx < 0 else 0].pop() 
-                #self.alfU2 = self.alfU2 if not np.isnan(self.alfU2) else [np.nan if self.zx < 0 else 0].pop()
-            #Modify the waves based on density
-            self.alfU1 = self.alfU1/self.densfac**0.25
-            #self.alfU2 = self.alfU2/self.densfac**0.25
+        if self.useWaves:
+            self.vRms = self.env.interpVrms(self.rx) #cm/s
 
-        elif self.useWaves:
-            #Just the time method
-            self.t1 = t - self.twave + self.alfT1
-            self.t2 = t - self.twave + self.alfT2
-            self.alfU1 = self.vRms*self.xi1(self.t1) /self.densfac**0.25
-            #self.alfU2 = self.vRms*self.xi2(self.t2) /self.densfac**0.25
-        else: self.alfU1 = 0
+            if self.wavesVsR: 
+                self.alfU1 = self.vRms * self.getU1(t)
+            else:
+                #Just the time method
+                self.t1 = t - self.twave + self.alfT1
+                self.alfU1 = self.vRms*self.xi1(self.t1)
+        else: 
+            self.alfU1 = 0
+            self.vRms = 0
+
+        #Modify the waves based on density
+        self.alfU1 = self.alfU1/self.densfac**0.25
+
         #Rotate the waves and place them in correct coordinates
         uTheta = self.alfU1 #* np.sin(self.alfAngle) + self.alfU2 * np.cos(self.alfAngle)
         uPhi =   self.alfU1 #* np.cos(self.alfAngle) - self.alfU2 * np.sin(self.alfAngle)
@@ -3001,11 +3170,42 @@ class simpoint:
         self.ux, self.uy, self.uz = self.cU
         self.vLOS = self.__findVLOS()  
 
+    def getU1(self, t):
+        #Return the correct wave profile at given time
+
+        if self.zx < 0: return np.nan
+
+        #Set the wave time
+        self.t1 = t + self.alfT1
+            
+        #Get the wave profile at that time from the 2D function
+        U1 = self.interp_R_wave(self.t1)
+
+        #If that doesn't work, do it the time way
+        if np.isnan(U1):
+            offsetTime = 410.48758
+            U1 = self.xi1(self.t1- self.twave + offsetTime)
+        return U1
+
+
     def interp_R_wave(self, t):
-        t_int = int(t%self.env.R_ntime)
-        R_Array = self.env.R_vlos[:,t_int]
-        V = self.env.interp(self.env.R_zx, R_Array, self.zx)
-        return V * 1e5
+        """Return the unitless wave profile"""
+        if self.zx > self.env.R_zx[-1]: return np.nan
+        t_int = int(t%self.env.R_ntime) #find closest time
+        R_Array = self.env.normedV2D[:,t_int] #extract all heights at that time
+        V = self.env.interp(self.env.R_zx, R_Array, self.zx) #interpolate to exact height
+        return V #unitless
+
+    def xi1(self, t):
+        #Returns xi1(t)
+        if math.isnan(t):
+            return math.nan
+        else:
+            t_int = int(t % self.env.tmax)
+            xi1 = self.env.xi1_raw[t_int]
+            xi2 = self.env.xi1_raw[t_int+1]
+            return xi1+( (t%self.env.tmax) - t_int )*(xi2-xi1)
+
 
     def __findFluxAngle(self):
         dr = 1e-4
@@ -3039,7 +3239,7 @@ class simpoint:
         else: delta = 0
 
         uw = self.__findUw()
-        vRms = self.__findvRms()
+        vRms = self.env.interpVrms(self.rx)
 
         self.urProj =  (np.sin(theta + delta) *  uw )**2 * self.rho**2
         self.rmsProj = (np.cos(theta + delta) * vRms)**2 * self.rho**2
@@ -3054,7 +3254,7 @@ class simpoint:
             last1 = self.env.R_ntime
             last2 = last1
         else:
-            last1 = self.env.last_xi1_t
+            last1 = self.env.tmax
             last2 = last1
 
         self.alfT1 =  int(thisRand[0] * last1)
@@ -3074,12 +3274,9 @@ class simpoint:
         return self.interp_rx_dat(self.env.vAlf_raw) / np.sqrt(self.densfac)
 
     def __findVPh(self):
-        #Phase Velocity
+        #Phase Velocity in cm/s
         return self.vAlf + self.uw 
-    
-    def __findvRms(self):
-        return self.env.findvRms(self.rx)
-
+   
 
 
     def __findVLOS(self, nGrad = None):
@@ -3139,25 +3336,8 @@ class simpoint:
         self.findWaveSpeeds(t)
         self.__findVLOS()
 
-    def xi1(self, t):
-        #Returns xi1(t)
-        if math.isnan(t):
-            return math.nan
-        else:
-            t_int = int(t % self.env.last_xi1_t)
-            xi1 = self.env.xi1_raw[t_int]
-            xi2 = self.env.xi1_raw[t_int+1]
-            return xi1+( (t%self.env.last_xi1_t) - t_int )*(xi2-xi1)
 
-    def xi2(self, t):
-        #Returns xi2(t)
-        if math.isnan(t):
-            return math.nan
-        else:
-            t_int = int(t % self.env.last_xi2_t)
-            xi1 = self.env.xi2_raw[t_int]
-            xi2 = self.env.xi2_raw[t_int+1]
-            return xi1+( (t%self.env.last_xi2_t) - t_int )*(xi2-xi1)
+
 
   ## Misc Methods ##########################################################################
 
@@ -3448,7 +3628,7 @@ class simulate:
                 #Append to lists
                 plotList.append(thisProp)
                 labString = property 
-                if ii is not None: labString += ', {}_{}'.format(self.ions[ii]['ionString'], self.ions[ii]['ion'])
+                if ii is not None: labString += ', {}_{}'.format(self.ions[ii]['eString'], self.ions[ii]['ionNum'])
                 plotLabels.append(labString)
                 styles.append(clr+ls)
 
@@ -3594,7 +3774,7 @@ class simulate:
         elif isinstance(ion, (list, tuple)): ionstring = 'MultiIon'
         elif isinstance(ion, int): 
             i = self.ions[ion]
-            ionstring = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(i['ionString'], i['ion'], i['upper'], i['lower'], i['lam0'])
+            ionstring = '{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(i['ionString'], i['upper'], i['lower'], i['lam0'])
         else: assert False
 
         try:
@@ -4588,6 +4768,10 @@ class batch:
         except:
             sys.exit('Batch Not found')
 
+
+            
+
+            
 class batchjob:
     qcuts = [16,50,84]
     ## Run the Simulation ######################################################
@@ -4615,7 +4799,7 @@ class batchjob:
             print('Written by Chris Gilbert')
             print('-------------------------\n')
             print("Simulating Impacts: {}".format(self.labels))
-            print("Ions: {}".format(["{}_{}".format(x['ionString'], x['ion']) for x in self.ions]))
+            print("Ions: {}".format([x['ionString'] for x in self.ions]))
             print("Integration Time: {} seconds".format(len(self.timeAx)))
             sys.stdout.flush()
 
@@ -4800,8 +4984,7 @@ class batchjob:
         #Subtract the Point Spread Width in quadrature
         sigmaSubtract = np.sqrt(np.abs(sigmaCon**2 - ion['psfSig_e']**2)) #Subtract off the PSF width
 
-
-        ionStr = '{}_{} : {} -> {}, $\lambda_0$: {}, #{}'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam00'], ion['II'])
+        ionStr =  '{}_{} : {} -> {}, $\lambda_0$: {}, #{}'.format(ion['ionString'], ion['ionNum'], ion['upper'], ion['lower'], ion['lam00'], ion['II'])
         #Plot the fits
         if self.plotFits and self.binCheck:# ion['II'] < self.maxFitPlot: 
             plotax = ion['lamAx'] - ion['lam00']
@@ -5258,6 +5441,12 @@ class batchjob:
 
     ## Main Plots ########################################################################
     def plot(self):
+        
+        for ion in self.ions:
+            try:ion['eString']
+            except:
+                ion['eString'] = ion['ionString']
+                ion['ionNum'] = ion['ion']
         if self.pIon: self.ionPlot()
         self.massPlot()
         if self.pProportion: self.plotStack(self.ions[self.plotIon])
@@ -5295,7 +5484,7 @@ class batchjob:
             ax0.axhline(0, c='k')
 
             ax0.legend()
-            fig.suptitle('{}_{}'.format(ion['ionString'], ion['ion']))
+            fig.suptitle('{}_{}'.format(ion['eString'], ion['ionNum']))
 
             ax1.plot(labs, cint, 'b', label='Collisional')
             ax1.plot(labs, rint, 'r', label='Resonant')
@@ -5306,7 +5495,7 @@ class batchjob:
             ax1.legend()
 
             ax1.set_xlabel(r'Impact Parameter $b/R_\odot$')
-            if self.pIntRat == 'save': plt.savefig('../fig/2018/ratios/{}_{}_{}.png'.format(ion['ionString'], ion['ion'], ion['lam00']))
+            if self.pIntRat == 'save': plt.savefig('../fig/2018/ratios/{}_{}_{}.png'.format(ion['eString'], ion['ionNum'], ion['lam00']))
             else: plt.show()
             plt.close(fig)
             
@@ -5453,7 +5642,7 @@ class batchjob:
             ##Get model values for wind, rms, and temperature in plane of sky at this impact
             pTem = self.env.interp_rx_dat(impact, self.env.T_raw) 
             pUr = self.env.interp_rx_dat(impact, self.env.ur_raw) if self.copyPoint.windWasOn else 0
-            pRms = self.env.extractVrms(impact) if self.copyPoint.waveWasOn else 0
+            pRms = self.env.interpVrms(impact) if self.copyPoint.waveWasOn else 0
 
             vTh = 2 * self.env.KB * pTem / ion['mIon']
 
@@ -5487,7 +5676,7 @@ class batchjob:
     def plotStack(self, ion):
         self.makeVrms(ion)
         fig, ((ax,ax4), (ax2, ax3)) = plt.subplots(2,2, sharex=True)
-        fig.suptitle('{} {}: {:.2F}$\AA$'.format(ion['ionString'].capitalize(), self.write_roman(ion['ion']), ion['lam00']))
+        fig.suptitle('{} {}: {:.2F}$\AA$'.format(ion['eString'].capitalize(), self.write_roman(ion['ionNum']), ion['lam00']))
 
         xx = self.doneLabels
         
@@ -5562,7 +5751,7 @@ class batchjob:
     def ionPlot(self):
         fig, ax1 = plt.subplots()
         for ion in self.ions:
-            label = '{}_{}'.format(ion['ionString'], ion['ion'])
+            label = '{}_{}'.format(ion['eString'], ion['ionNum'])
             ax1.errorbar(self.doneLabels, self.binStdV[ion['idx']], yerr = self.binStdVsig[ion['idx']], fmt = 'o', label = label, capsize=6)
         ax1.legend()
         ax1.set_title('Binned Profile Measurements')
@@ -5573,7 +5762,7 @@ class batchjob:
     def weightedPlotTemp(self):
         fig, ax1 = plt.subplots()
         for ion in self.ions:
-            label = '{}_{}'.format(ion['ionString'], ion['ion'])
+            label = '{}_{}'.format(ion['eString'], ion['ionNum'])
             ax1.errorbar(self.doneLabels, self.binStdV[ion['idx']], yerr = self.binStdVsig[ion['idx']], fmt = 'o', label = label, capsize=6)
         ax1.legend()
         ax1.set_title('Binned Profile Measurements')
@@ -5586,7 +5775,7 @@ class batchjob:
         """Plot each of the ions width vs mass"""
         plot1 = self.pMFit   # V vs Mass
         plot2 = self.pMass    #Temperature and V vs Impact
-        twinplot2 = True
+        twinplot2 = False
         plotFlag = True
         if plot1 or plot2:
             slopes = []
@@ -5632,9 +5821,9 @@ class batchjob:
                 (sloper, inter) = np.diag(cov)**0.5
 
                 #Store Values
-                slopes.append(slope) #T
+                slopes.append(slope/10**6) #T
                 intercepts.append(intercept**0.5) #km/s
-                sloperrors.append(sloper)
+                sloperrors.append(sloper/10**6)
                 interrors.append(inter**0.5)
 
             #Plotting
@@ -5664,8 +5853,8 @@ class batchjob:
             lastIon = 'xx'
             for xy, ion in zip(zip([m -2e-5 for m in invMassList], [l+3 for l in locs]), self.ions): 
                 #Plot the ion names
-                newIon = ion['ionString'][0:2]
-                if not newIon == lastIon: ax.annotate('{}'.format(ion['ionString']), xy=xy, textcoords='data')
+                newIon = ion['eString'][0:2]
+                if not newIon == lastIon: ax.annotate('{}'.format(ion['eString']), xy=xy, textcoords='data')
                 lastIon = newIon
 
             ax.set_xlabel('Inverse Mass (Most Massive to the Left)')
@@ -5678,11 +5867,11 @@ class batchjob:
             #Initialize the Plot
             if not twinplot2:
                 fig, ax1 = plt.subplots()
-                fig.suptitle('Fit parameters as a function of height')
-                self.plotLabel()
-                fig, ax2 = plt.subplots()
-                fig.suptitle('Fit parameters as a function of height')
-                self.plotLabel()
+                #fig.suptitle('Fit parameters as a function of height')
+                #self.plotLabel()
+                #fig, ax2 = plt.subplots()
+                #fig.suptitle('Fit parameters as a function of height')
+                #self.plotLabel()
 
             else: 
                 fig, (ax1, ax2) = plt.subplots(1,2)
@@ -5690,74 +5879,80 @@ class batchjob:
                 self.plotLabel()
             labels = self.doneLabels[::-1]
 
-            #Plot the slopes - the temperatures
-            lns1, _, _ = ax1.errorbar(labels, slopes, fmt = 'bo-', yerr = sloperrors, label = 'Fit Temperature', capsize = 4)
 
-            expT = [self.env.interp_rx_dat_log(rx, self.env.T_raw) for rx in labels]
-            #gwExpT = [self.env.interp_f3(rx)*self.env.interp_rx_dat_log(rx, self.env.T_raw) for rx in labels]
-            lns3 = ax1.plot(labels, expT, 'b--', label = 'POS Model Temp')
-            #lns3 = ax1.plot(labels, gwExpT, 'b:', label = 'POS Model Temp')
-
-            #Plot the Effective Temperature
-            fig, ax4 = plt.subplots()
+            ##########Plot the Effective Temperature from Width Only
+            #fig, ax4 = plt.subplots()
+            znum = 1
             for ion in self.ions:
-                #if ion['element'] == 8:
+                #if ion['eNum'] == 8:
                 
                 widths = self.binStdV[ion['idx']][::-1]
                 yerr = self.binStdVsig[ion['idx']][::-1]
                 const = ion['mIon']/(2*self.env.KB)*10**10
                    
-                temps = [w**2*const for w in widths]
-                xerr = [dx * 2 / x * Q / const for  dx, x, Q in zip(yerr,widths,temps)]
-                lns4 = ax4.errorbar(labels, temps, yerr = xerr, fmt = 'o-', label = '{}_{}'.format(ion['ionString'], ion['ion']), capsize=2)
-            ax4.set_yscale('log')
-            ax4.set_ylim([10**6,10**9])
-            ax4.set_xlabel('Impact Parameter')
-            ax4.set_ylabel('$T_{eff}$ (Kelvin)')
-            ax4.legend(loc = 4)
+                temps = [w**2*const /10**6 for w in widths]
+                xerr = [dx * 2 / x * Q / const/10**6 for  dx, x, Q in zip(yerr,widths,temps)]
+                #lns4 = ax1.errorbar(labels, temps, zorder = znum, yerr = xerr, fmt = 'o-', label = '{}_{}'.format(ion['eString'], ion['ionNum']), capsize=2)
+                lns4 = ax1.plot(labels, temps, zorder = znum, label = '{}_{}'.format(ion['eString'], ion['ionNum']))
 
-            ax1.set_yscale('log')
-            ax1.set_ylim([10**3,10**8])
-            ax1.set_xlabel('Impact Parameter')
-            ax1.set_ylabel('Kelvin')
+                znum +=1
 
-            expWind = [self.env.cm2km(self.env.interp_rx_dat_log(rx, self.env.ur_raw)) for rx in labels]
-            lns3 = ax2.plot(labels, expWind, 'c--', label = 'POS Model Wind Speed')
+            #############Plot the POS Temperature from the Model
+            expT = [self.env.interp_rx_dat_log(rx, self.env.T_raw)/10**6 for rx in labels]
+            gwExpT = [self.env.interp_f3(rx)*self.env.interp_rx_dat_log(rx, self.env.T_raw)/10**6 for rx in labels]
+            lns3 = ax1.plot(labels, expT, 'c--', label = 'POS Temp', zorder = znum + 2, lw=3)
+            lns3 = ax1.plot(labels, gwExpT, 'm:', label = 'POS Temp GW', zorder = znum + 3, lw=3)
 
-            expWaves = [self.env.cm2km(self.env.findvRms(rx)) for rx in labels]
-            lns3 = ax2.plot(labels, expWaves, '--', label = 'POS Model Wave RMS', color = 'orange')
 
-            #expTot = [np.sqrt(x**2 + y**2) for x, y in zip(expWind, expWaves)]
-            #lns3 = ax2.plot(labels, expTot, '--', label = 'POS Model Total RMS', color = 'black')
+            ##############Plot the slopes - the temperatures Moran Style
+            lns1, _, _ = ax1.errorbar(labels, slopes, zorder = znum + 1, fmt = 'bo-', yerr = sloperrors, label = 'Fit Temperature', capsize = 4)
 
-            oneLab1 = "Full"
-            oneLab2 = "Thermal"
-            oneLab3 = "GW Wind"
-            oneLab4 = "GW Waves"
-            oneLab5 = "GW Total Non-Thermal"
-            oneLab6 = "Thermal"
-            #Plot the intercepts - the VRMS
-            for ion in self.ions:
-                self.makeVrms(ion)
-                #lns4 = ax2.plot(self.doneLabels, ion['expectedRms'], 'm:', label = oneLab1)
-                #lns4 = ax2.plot(self.doneLabels, ion['V_thermal'], 'c:', label = oneLab2)
-                #_    = ax1.plot(self.doneLabels, ion['V_thermal'], 'b:', label = oneLab6)
-                #lns4 = ax2.plot(self.doneLabels, ion['V_wind'], 'g:', label = oneLab3)
-                #lns4 = ax2.plot(self.doneLabels, ion['V_waves'], 'y:', label = oneLab4)
-                lns4 = ax2.plot(self.doneLabels, ion['V_nt'], 'k:', label = oneLab5)
-                oneLab1 = None
-                oneLab2 = None
-                oneLab3 = None
-                oneLab4 = None
-                oneLab5 = None
-                oneLab6 = None
 
-            lns2, _, _ = ax2.errorbar(labels, intercepts, fmt ='ro-', yerr = interrors, label = 'Fit Non-Thermal Velocity', capsize = 4)
-            ax2.set_xlabel('Impact Parameter')
-            ax2.set_ylabel('km/s')
-              
+            ##NON THERMAL STUFF
+
+            #expWind = [self.env.cm2km(self.env.interp_rx_dat_log(rx, self.env.ur_raw)) for rx in labels]
+            #lns3 = ax2.plot(labels, expWind, 'c--', label = 'POS Model Wind Speed')
+
+            #expWaves = [self.env.cm2km(self.env.interpVrms(rx)) for rx in labels]
+            #lns3 = ax2.plot(labels, expWaves, '--', label = 'POS Model Wave RMS', color = 'orange')
+
+            ##expTot = [np.sqrt(x**2 + y**2) for x, y in zip(expWind, expWaves)]
+            ##lns3 = ax2.plot(labels, expTot, '--', label = 'POS Model Total RMS', color = 'black')
+
+            #oneLab1 = "Full"
+            #oneLab2 = "Thermal"
+            #oneLab3 = "GW Wind"
+            #oneLab4 = "GW Waves"
+            #oneLab5 = "GW Total Non-Thermal"
+            #oneLab6 = "Thermal"
+            ##Plot the intercepts - the VRMS
+            #for ion in self.ions:
+            #    self.makeVrms(ion)
+            #    #lns4 = ax2.plot(self.doneLabels, ion['expectedRms'], 'm:', label = oneLab1)
+            #    #lns4 = ax2.plot(self.doneLabels, ion['V_thermal'], 'c:', label = oneLab2)
+            #    #_    = ax1.plot(self.doneLabels, ion['V_thermal'], 'b:', label = oneLab6)
+            #    #lns4 = ax2.plot(self.doneLabels, ion['V_wind'], 'g:', label = oneLab3)
+            #    #lns4 = ax2.plot(self.doneLabels, ion['V_waves'], 'y:', label = oneLab4)
+            #    lns4 = ax2.plot(self.doneLabels, ion['V_nt'], 'k:', label = oneLab5)
+            #    oneLab1 = None
+            #    oneLab2 = None
+            #    oneLab3 = None
+            #    oneLab4 = None
+            #    oneLab5 = None
+            #    oneLab6 = None
+
+            #lns2, _, _ = ax2.errorbar(labels, intercepts, fmt ='ro-', yerr = interrors, label = 'Fit Non-Thermal Velocity', capsize = 4)
+            #ax2.set_xlabel('Impact Parameter')
+            #ax2.set_ylabel('km/s')
+            #ax2.legend()             
+
             ax1.legend()
-            ax2.legend()
+            #ax1.set_yscale('log')
+            ax1.set_ylim([0.7,1.4])
+            ax1.set_xlabel('Impact Parameter')
+            ax1.set_ylabel('Million Kelvin')
+
+            plt.tight_layout()
             plt.show(False)
 
 
@@ -5779,12 +5974,13 @@ class batchjob:
         shift = 0.1
         try: self.intTime
         except: self.intTime = np.nan
-        plt.figtext(left, height + 0.08, "Lines/Impact: {}".format(self.Npt))
-        plt.figtext(left, height + 0.06, "Seconds: {} ({})".format(self.intTime, self.timeAx[-1]))
-        plt.figtext(left, height + 0.04, "Wind: {}".format(self.copyPoint.windWasOn))
-        plt.figtext(left, height + 0.02, "Waves: {}".format(self.copyPoint.waveWasOn))
-        plt.figtext(left, height, "B: {}".format(self.copyPoint.bWasOn))    
-        plt.figtext(left+ 0.1, height, "Batch: {}".format(self.batchName))     
+        plt.figtext(left + 0.18, height + 0.08, "Lines/Impact: {}".format(self.Npt))
+        plt.figtext(left + 0.36, height + 0.08, "Seconds: {} ({})".format(self.intTime, self.timeAx[-1]))
+        plt.figtext(left + 0.60, height + 0.08, "Batch: {}".format(self.batchName))     
+        plt.figtext(left, height + 0.08, "Wind: {}".format(self.copyPoint.windWasOn))
+        plt.figtext(left, height + 0.04, "Waves: {}".format(self.copyPoint.waveWasOn))
+        plt.figtext(left, height + 0.00, "B: {}".format(self.copyPoint.bWasOn))    
+        
 
 
     def plotHistograms(self,ion, ax):
@@ -5831,11 +6027,12 @@ class batchjob:
         xx, yy = np.meshgrid(histLabels-diff/2, ed)
         histLabels.pop()
 
-        hhist = ax.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Sim Hist")
-        hhist.cmap.set_under("#FFFFFF")
-        hhist.set_clim(1e-8,vmax)
-        #cbar = plt.colorbar()
-        #cbar.set_label('Number of Lines')
+        if self.plotBkHist:
+            hhist = ax.pcolormesh(xx, yy, array, cmap = 'YlOrRd', label = "Sim Hist")
+            hhist.cmap.set_under("#FFFFFF")
+            hhist.set_clim(1e-8,vmax)
+            #cbar = plt.colorbar()
+            #cbar.set_label('Number of Lines')
 
         #Plot the confidence intervals
         ax.plot(histLabels, low, 'c:', label = "{}%".format(self.qcuts[0]), drawstyle = "steps-mid")
@@ -5862,7 +6059,7 @@ class batchjob:
         str2 = "usePsf: {}                                          reconType: {}".format(self.usePsf, self.reconType)
         fig.suptitle(str1 + str2)
 
-        ionStr = '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam00'])
+        ionStr =  '{}_{} : {} -> {}, $\lambda_0$: {} $\AA$'.format(ion['ionString'], ion['ion'], ion['upper'], ion['lower'], ion['lam00'])
         ax.set_title(ionStr)
 
         labels = self.getLabels()
@@ -5927,7 +6124,7 @@ class batchjob:
         ax.set_ylim([0,self.histMax])
         
         
-        if self.plotRatio: self.ratioPlot()
+        #if self.plotRatio: self.ratioPlot()
 
         plt.legend()
 
@@ -6223,6 +6420,8 @@ class batchjob:
                     pass
 
 # For doing a multisim at many impact parameters
+
+
 class impactsim(batchjob):
     def __init__(self, batchName, env, Nb = 10, iter = 1, b0 = 1.05, b1= 1.50, N = (1500, 10000), 
             rez = None, size = None, timeAx = [0], length = 10, printSim = False, printOut = True, printMulti = True, fName = None, qcuts = [16,50,84], spacing = 'lin'):

@@ -26,12 +26,12 @@ if __name__ == '__main__':
     sim.environment.fFileName = fFileName
     
     refineBmin = False
-    processEnvironments = False
+    processEnvironments = True
     calcFFiles = False #Turn off B
     
 
     #Batch Name
-    batchName = 'Wind'  #NoB'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = 'Thermal'  #NoB'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
 
     # # # Which part of the program should run? # # #
 
@@ -40,36 +40,90 @@ if __name__ == '__main__':
 
     #1D Stuff - ImpactSim Parameters
     compute = False 
-    analyze = True
+    analyze = False
     
     
     try: #Plotflags
-        sim.batchjob.pMass = False  #Plot with temperature and non-thermal velocity from fits
-        sim.batchjob.pIon = True #Plot with just the binned widths for all ions
+        sim.batchjob.pMass = True  #Plot with temperature and non-thermal velocity from fits
+        sim.batchjob.pIon = False #Plot with just the binned widths for all ions
         sim.batchjob.pMFit = False #Plot with straight fit lines on the ions
-        sim.batchjob.pWidth = 'save' #Plot with the hist velocities for each of the elements on its own plot
+        sim.batchjob.pWidth = 'save' #Plot with the velocity statistics for each of the elements on its own plot
+        sim.batchjob.plotBkHist = False # Plot the hists in the background of the pWidth
         sim.batchjob.pPB = False #Plot the polarization brightness
         sim.batchjob.pProportion = False #Plot the 4 ways of looking at the model parameters
         sim.batchjob.plotIon = 1
-        sim.batchjob.pIntRat = 'save'  #Plot the intensities and fraction CvR # set = to 'save' to save images
+        sim.batchjob.pIntRat = False #'save'  #Plot the intensities and fraction CvR # set = to 'save' to save images
 
         #For statistics:
         sim.batchjob.resonant = True #Use resonantly scattered light 
-        sim.batchjob.collisional = False #Use collisionally excited light
+        sim.batchjob.collisional = True #Use collisionally excited light
     except: pass
 
     #How many iterations should it do?
     iterations = 1
 
     sim.environment.maxEnvs = 100
-    sim.environment.maxIons = 300
+    sim.environment.maxIons = 6
+
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # #
+    #Simulation Properties
+    sim.simpoint.useB = False
+    sim.simpoint.g_useWaves = False   
+    sim.simpoint.g_useWind = False
+
+    sim.simpoint.voroB = True #Use the voronoi average instead of the raw Bmap
+    #sim.simpoint.matchExtrap = True
+    sim.simpoint.wavesVsR = True
+    sim.simpoint.g_useFluxAngle = True
+    sim.simpoint.useIonFrac = True #Use Ionization Fractions
+    sim.environment.ionFreeze = True #Freeze ionization states at freezing height
+
+    sim.environment.shrinkEnv = True #Reduce the bitsize of the los data
+    sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
+    sim.multisim.keepAll = False
+    sim.multisim.useMasters = False
+    
+    sim.batchjob.usePsf = True
+    sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
+    sim.batchjob.redoStats = False
+    sim.batchjob.plotbinFits = False #Plots the binned and the non-binned lines, and their fits, during stats only
+    sim.batchjob.plotheight = 1
+    sim.batchjob.histMax = 45
+
+    printSim = False #This makes it show the generating profile progress bar
+    firstRun = True  #Overwrite any existing batch with this name
+
+
+
+    ##Plotting Flags
+    sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
+    
+    sim.batchjob.plotFits = False #Plots the Different fits to the line w/ the raw line
+    sim.batchjob.maxFitPlot = 10    
+
+    
+
+    sim.batchjob.hahnPlot = False #Plot the green Hahn Data on the primary plot
+    sim.batchjob.plotRatio = False #Plot the ratio of the reconstruction/raw fits
+
+    #Examine Batch Line Profiles
+    showProfiles = False #Plot some number of line profiles at each impact parameter
+    maxPlotLines = 30
+    average = False
+    norm = True 
+    log = False
+
+
+
+################# Misc Flags ###############
 
     #Time Stuff
     timeAx = [0] #np.arange(0, 30, 3) 
     sim.simulate.randTime = True #adds a random offset to the timeax of each simulate
 
     #R stuff
-    impactPoints = 10
+    impactPoints = 40
     b0 =  1.03
     b1 =  2 
     spacing = 'lin'
@@ -102,53 +156,6 @@ if __name__ == '__main__':
         sim.imagesim.smooth = True
     except:pass
 
-    # # # # # # # # # # # # # # # # # # # # # # # # # #
-    #Simulation Properties
-    sim.simpoint.useB = False
-    sim.simpoint.g_useWaves = False   
-    sim.simpoint.g_useWind = True
-
-    sim.simpoint.voroB = True #Use the voronoi average instead of the raw Bmap
-    sim.simpoint.matchExtrap = True
-    sim.simpoint.wavesVsR = True
-    sim.simpoint.g_useFluxAngle = True
-    sim.simpoint.useIonFrac = True #Use Ionization Fractions
-    sim.environment.ionFreeze = True #Freeze ionization states at freezing height
-
-    sim.environment.shrinkEnv = True #Reduce the bitsize of the los data
-    sim.multisim.destroySims = True #This keeps memory from building up btwn multisims
-    sim.multisim.keepAll = False
-    sim.multisim.useMasters = False
-    
-    sim.batchjob.usePsf = True
-    sim.batchjob.reconType = 'sub' #'Deconvolution' or 'Subtraction' or 'None'
-    sim.batchjob.redoStats = True
-    sim.batchjob.plotbinFits = False #Plots the binned and the non-binned lines, and their fits, during stats only
-    sim.batchjob.plotheight = 1
-    sim.batchjob.histMax = 300
-
-    printSim = False #This makes it show the generating profile progress bar
-    firstRun = True  #Overwrite any existing batch with this name
-
-
-
-    ##Plotting Flags
-    sim.simulate.plotSimProfs = False #Shows all the little gaussians added up
-    
-    sim.batchjob.plotFits = False #Plots the Different fits to the line w/ the raw line
-    sim.batchjob.maxFitPlot = 10    
-
-    
-
-    sim.batchjob.hahnPlot = False #Plot the green Hahn Data on the primary plot
-    sim.batchjob.plotRatio = False #Plot the ratio of the reconstruction/raw fits
-
-    #Examine Batch Line Profiles
-    showProfiles = False #Plot some number of line profiles at each impact parameter
-    maxPlotLines = 30
-    average = False
-    norm = True 
-    log = False
 
 ##################################################################################
 ##################################################################################
@@ -227,6 +234,58 @@ if __name__ == '__main__':
             df = grid.defGrid()
             env = sim.envrs(envsName).loadEnv()
 
+            #env._LOS2DLoad()
+            #env.save()
+
+            env.plotChargeStates()
+
+            if False: 
+                #Plot the RMS wave amplitudes as fn of height
+
+                #Get the RMS values out of the braid model
+                maxImpact = 20
+                braidRMS = []
+                braidImpacts = np.linspace(1.015,maxImpact,100)
+                for b in braidImpacts:
+                    braidRMS.append(env.interpVrms(b))
+
+                #Get the RMS values out of coronasim
+            
+                rez = 2000
+                line = sim.simulate(grid.sightline([1,0,0],[maxImpact,0,0], coords = 'Sphere'), env, rez, timeAx = [0])
+                modelRMS = line.get('vRms')
+                modelImpacts = line.get('pPos', 0)
+
+                plt.plot(braidImpacts, [env.cm2km(x) for x in braidRMS], 'b', label = 'BRAID')
+                plt.plot(modelImpacts, [env.cm2km(x) for x in modelRMS], 'r:',label = 'GHOSTS')
+                plt.legend()
+                plt.xlabel('r / $R_{\odot}$')
+                plt.ylabel('RMS Amplitude (km/s)')
+                plt.title('RMS Wave Amplitude')
+                plt.xscale('log')
+                plt.show()
+
+            if False: 
+                #Plot the alfven profile as a fn of height
+                maxImpact = 10
+                rez = 1000
+                line = sim.simulate(grid.sightline([1,0.5,0],[maxImpact,0.5,0], coords = 'Sphere'), env, rez, timeAx = [0])
+                values = line.get('alfU1')
+                abss = line.get('pPos', 0)
+
+                plt.plot(abss, values, 'o-')
+                plt.axvline(3)
+                plt.title("A wave")
+                plt.xlabel("Z")
+                plt.ylabel("Wave amplitude")
+                plt.show()
+
+
+
+            #for ion in env.ions:
+            #    print(f"{ion['ionString']}_{ion['ion']} lam00 = {ion['lam00']}: E1 = {ion['E1']}")
+
+            #1/0
             #env.printFreezeHeights()
 
             #env.fPlot()
@@ -257,7 +316,7 @@ if __name__ == '__main__':
             ###plt.show()
 
             
-            if True:
+            if False:
                 #Plot a sightline
                 y = 0.001
                 x = 20 
@@ -393,8 +452,8 @@ if __name__ == '__main__':
             #env.fPlot()
             if False:
                 #Plot a plane
-                lineSim = sim.simulate(df.polePlane, env, N = 50, findT = False, getProf = False, printOut = True)
-                lineSim.plot('streamIndex', cmap='prism', threeD=False, sun=True)
+                lineSim = sim.simulate(df.polePlane, env, N = 400, findT = False, getProf = False, printOut = True)
+                lineSim.plot('alfU1', cmap='RdBu', threeD=False, sun=True)
                 
                 #lineSim.plot('streamIndex', sun = True) #, ion = -1, abscissa = 'T', yscale = 'log')
             #lineSim.plot('densfac')

@@ -283,6 +283,7 @@ class sightline(generator):
 class plane(generator):
     #TODO Make plane adaptive
     default_N = 1000
+    norm = 1 #THIS IS WRONG
 
     def __init__(self, normal = [1,0,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False, absolute = False, envInd = 0):
         #print("Initializing Plane, normal = {}, offset = {}".format(normal, offset))
