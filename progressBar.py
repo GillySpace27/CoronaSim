@@ -29,7 +29,9 @@ class ProgressBar():
     
     disable = False
     
-    def __init__(self, target, updateRate=0.2, color = None):
+    def __init__(self, target, updateRate=0.2, color = None, label=None):
+        if label is None: self.label = ''
+        else: self.label = label + ' - '
 
         
         if color is not None: 
@@ -144,7 +146,7 @@ class ProgressBar():
         # 'rest space' at the end of the line to keep the cursor from
         # filling the line and moving the cursor to the next line.
         availableSize = terminalSize - 4 - len(elapsedString) \
-                        - len(percentString) - len(etaString) - len(rateString) - len(iterString)
+                        - len(percentString) - len(etaString) - len(rateString) - len(iterString) - len(self.label)
         if percent > 100:
             percent = 100
         nTickMarks = int(availableSize * 2 * percent / 100)
@@ -159,8 +161,7 @@ class ProgressBar():
         
         # An \r character moves the cursor to the beginning of the line
         # so we can re-print the line.
-        print("\r", end=self.cs)
-        print(elapsedString + percentString + iterString + rateString \
+        print("\r" + self.cs + self.label + elapsedString + percentString + iterString + rateString \
               + progressString + etaString, end=self.ce)
         # Without this, Python may buffer the output but not actually show it,
         # since we haven't finished a line.
