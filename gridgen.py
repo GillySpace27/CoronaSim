@@ -20,7 +20,8 @@ class generator:
     
     rstar = 1
 
-    backflag = True
+    backflag1 = True
+    backflag2 = True
     
     def __iter__(self):
         return self
@@ -34,6 +35,12 @@ class generator:
 
     def set2minStep(self):
         self.step = self.minStep
+
+    def set2midStep(self):
+        self.step = self.midStep
+
+    def set2maxStep(self):
+        self.step = self.maxStep
         
     def setMinStep(self, step):
         self.minStep = step
@@ -46,7 +53,6 @@ class generator:
 
     def setEnvInd(self, index):
         self.envInd = index
-        
 
     def decStep(self, mult):
         if self.step > self.minStep:
@@ -54,7 +60,7 @@ class generator:
 
     def reset(self):
         self.currS = 0
-        self.step = maxStep
+        self.step = self.maxStep
     
     def sph2cart(self, sph):
         #Change coordinate systems
@@ -259,22 +265,66 @@ class sightline(generator):
     def setN(self, N):
         self.step = 1/N
 
+    def setMinN(self, N):
+        self.maxStep = 1/N
+
+    def setMaxN(self, N):
+        self.minStep = 1/N
+
+    def setMidN(self, N):
+        self.midStep = 1/N
+
     def reset(self):
         self.currS = 0
         self.step = self.maxStep
 
+    def setAutoN(self):
+        minPointsPerRadii = 5 # Distant Resolution
+        self.minCut = 5
+        midPointsPerRadii = 50 # Near Resolution
+        self.maxCut = 2
+        maxPointsPerRadii = 250 # Very close Resolution
+        lengthRadii = self.norm
+        minPoints = lengthRadii * minPointsPerRadii
+        midPoints = lengthRadii * midPointsPerRadii
+        maxPoints = lengthRadii * maxPointsPerRadii
+
+        self.setMinN(minPoints)
+        self.setMidN(midPoints)
+        self.setMaxN(maxPoints)
+        self.set2maxStep()
+
+    def determineStepSize(self):
+        ppt = self.pPoint(self.currS)
+        r = ppt[0]
+        rho = np.sqrt(self.pt[0] ** 2 + self.pt[1] ** 2)
+        if r <= self.maxCut:
+            self.set2minStep()
+        elif rho <= self.minCut:
+            self.set2midStep()
+        else:
+            self.set2maxStep()
+
+    def pointNextLine(self):
+        start = self.startPoints[self.currLine]
+        end = self.endPoints[self.currLine]
+        self.look(start, end)
+        self.currLine += 1
+
     def __next__(self):
         if self.currS > 1:
+            # If you have reached the end, do the next line
             try: 
-                start = self.startPoints[self.currLine]
-                end = self.endPoints[self.currLine]
-                self.look(start, end)
-                self.currLine += 1
+                self.pointNextLine()
             except:
                 raise StopIteration
-        pt = self.cPoint(self.currS)
-        self.currS += self.step
-        return (pt, self.step)
+
+        # Return the next point coordinates
+
+        self.pt = self.cPoint(self.currS) # Get the current point
+        if self.adapt: self.determineStepSize() # Determine how far to the next point
+        self.currS += self.step # Go to the next point
+        return self.pt, self.step # Return current point
 
 
 #TODO create cylinder

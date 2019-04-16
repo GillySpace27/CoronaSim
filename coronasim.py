@@ -379,10 +379,10 @@ class environment:
         # ax2.set_ylabel('Density', color='r')
         ax2.tick_params('y', colors='r')
 
-        lns1 = ax1.plot(self.rx_raw - 1, np.log10(self.cm2km(self.ur_raw)),ls='solid', label='$log_{10}$(Wind Speed [km/s])')
-        lns2 = ax2.plot(self.rx_raw - 1, np.log10(self.rho_raw), 'r',ls='dotted', label='$log_{10}$(Density [g/$cm^3$])')
-        lns3 = ax1.plot(self.rx_raw - 1, np.log10(self.cm2km(self.vAlf_raw)),ls='dashed', label='$log_{10}$(Alfv$\`{e}$n Speed [km/s])')
-        lns4 = ax1.plot(self.rx_raw - 1, np.log10(self.T_raw), ls='-.', label='$log_{10}$(Temperature [K])')
+        lns1 = ax1.plot(self.rx_raw - 1, np.log10(self.cm2km(self.ur_raw)),ls='solid', label='$\log_{10}$(Wind Speed [km/s])')
+        lns2 = ax2.plot(self.rx_raw - 1, np.log10(self.rho_raw), 'r',ls='dotted', label='$\log_{10}$(Density [g/cm$^3$])')
+        lns3 = ax1.plot(self.rx_raw - 1, np.log10(self.cm2km(self.vAlf_raw)),ls='dashed', label='$\log_{10}$(Alfvén Speed [km/s])')
+        lns4 = ax1.plot(self.rx_raw - 1, np.log10(self.T_raw), ls='-.', label='$\log_{10}$(Temperature [K])')
 
         ax1.set_xscale('log')
         ax2.set_xscale('log')
@@ -409,6 +409,8 @@ class environment:
         plt.show()
 
     def solarAxis(self, ax, which=1):
+        """Format the x axis to look nice"""
+        ax.set_xscale('log')
         ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: int(x) if x >= 1 else x))
         if which == 1:
             ax.set_xlabel(r"Height above Photosphere ($R_\odot$)")
@@ -2149,7 +2151,7 @@ class environment:
 
     def interp(self, X, Y, K):
         # Takes in X and Y and returns linearly interpolated Y at K
-        if K >= np.amax(X) or K < np.amin(X) or np.isnan(K): return np.nan
+        if K >= X[-1] or K < X[0] or np.isnan(K): return np.nan
         TInd = int(np.searchsorted(X, K)) - 1
         if TInd + 1 >= len(Y): return np.nan
         val1 = Y[TInd]
@@ -3573,21 +3575,23 @@ class simpoint:
     def resonantProfile(self, ion):
         """Generate the resonantly scattered line profile"""
 
-        ## Determine the Relevant Velocities #######
+        nuAxPrime, nuI0Array = self.rIncidentArray(ion)
+        profileR = self.rProfile(ion, nuAxPrime, nuI0Array)
+
+        ## Store values
+        ion['profileR'] = profileR
+        ion['totalIntR'] = np.sum(ion['profileR'])
+
+        return ion['profileR']
+
+    def rIncidentArray(self, ion):
+        """ Create the Incident Light Array """
 
         # Thermal Velocity
         Vth = np.sqrt(2 * self.env.KB * self.T / ion['mIon'])  # cm/s
-        inv_Vth = 1 / Vth
-
-        # Normed LOS and radial velocities
-        los_Vth = self.vLOS * inv_Vth
-        radialV = self.ur
-        rad_Vth = radialV * inv_Vth
-
-        ## Create the prime (incident) axes ########
 
         # Find the necessary limits for this redshift
-        lamShift = ion['lam00'] * radialV / self.env.c  # Redshift of this point
+        lamShift = ion['lam00'] * self.ur / self.env.c  # Redshift of this point
         lamCenter = ion['lam00'] - lamShift  # Center of this points spectrum
         deltaLam = ion['lam00'] * Vth / self.env.c  # Width of the line here
 
@@ -3610,9 +3614,15 @@ class simpoint:
         # Convert from lam to nu
         nuAxPrime = self.env.lamAx2nuAx(lamAxPrime)  # Hz
         nuI0Array = self.env.lam2nuI0(I0array, lamAxPrime)  # ergs/s/cm^2/sr/Hz
-        dNu = np.abs(np.mean(np.diff(nuAxPrime)))  # Hz
 
-        ## Calculate Scalar Prefactors #############
+        return nuAxPrime, nuI0Array
+
+    def rProfile(self, ion, nuAxPrime, nuI0Array):
+        """ Calculate Resonant Profile """
+
+        # Thermal Velocity
+        Vth = np.sqrt(2 * self.env.KB * self.T / ion['mIon'])  # cm/s
+
         # Geometric factors
         ro = np.sqrt(self.cPos[0] * self.cPos[0] + self.cPos[1] * self.cPos[1])
         Theta = np.arccos(ro / self.pPos[0])
@@ -3623,27 +3633,28 @@ class simpoint:
         # Other scalar calculations
         nu0 = ion['nu0']
         Nion = ion['N']
-
+        dNu = np.abs(np.mean(np.diff(nuAxPrime)))  # Hz
         deltaNu = nu0 * Vth / self.env.c  # 1/s
         scalarFactor = self.lenCm * self.env.hergs * nu0 / (4 * np.pi) * ion[
             'B12'] * Nion * dNu * self.findSunSolidAngle()  # hz*hz
 
-        # g = ion['E'] + 3*(1-ion['E'])*alpha*alpha #phase function
         g1 = (1 - ion['E1'] / 4) + 3 / 4 * ion['E1'] * alpha * alpha  # new phase function
 
         Rfactor = g1 / (np.pi * beta * deltaNu * deltaNu)  # 1/(hz*hz)
         preFactor = scalarFactor * Rfactor  # unitless
 
-        ## The main matrix kernal ##################
+        # Normed LOS and radial velocities
+        los_Vth = self.vLOS / Vth
+        rad_Vth = self.ur / Vth
+
         # Create a column and a row vector
         zeta = (ion['nuAx'] - nu0) / deltaNu - los_Vth
+        zetaTall = zeta[np.newaxis].T
         zetaPrime = (nuAxPrime - nu0) / deltaNu - rad_Vth
 
-        zetaTall = zeta[np.newaxis].T
         zetaDiffBlock = (zetaTall - alpha * zetaPrime) * inv_beta
 
-        # Use the vectors to create a matrix
-        R = np.exp(-zetaPrime * zetaPrime) * np.exp(-zetaDiffBlock * zetaDiffBlock)  # unitless
+        R = self.rKernal(zetaPrime, zetaDiffBlock)
 
         # Apply that matrix to the incident light profile
         profileRnu = preFactor * np.dot(R, nuI0Array)  # ergs/s/cm^2/sr/Hz
@@ -3651,12 +3662,18 @@ class simpoint:
         # Convert from nu back to lam
         profileR = profileRnu * ion['nuAx'] / ion['lamAx']  # ergs/s/cm^2/sr/Angstrom
 
-        ## Store values
-        ion['profileR'] = profileR
-        ion['totalIntR'] = np.sum(ion['profileR'])
+        return profileR
 
-        ## Plot Stuff # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-        # Plot the slice being used as incident light
+    def rKernal(self, zetaPrime, zetaDiffBlock):
+        # Use the vectors to create a matrix
+        # R = np.zeros_like(zetaDiffBlock)
+        # R = np.exp(-zetaPrime * zetaPrime) * np.exp(-zetaDiffBlock * zetaDiffBlock)  # unitless
+        exponent = - zetaPrime*zetaPrime - zetaDiffBlock*zetaDiffBlock
+        R = np.exp(exponent)
+        return R
+
+    def rPlot(self):
+        """ Plot the slice being used as incident light """
         stepdown = 0.2
 
         def gauss_function(x, a, x0, sigma, b):
@@ -3689,36 +3706,6 @@ class simpoint:
                 savePath = "../fig/2018/steps"
                 plt.savefig("{}/{:.3}.png".format(savePath, self.pPos[0]))
                 plt.close()
-
-        # Plot the Generated Profile
-        # if ion['eString'] == 's':
-        # plt.plot(lamAx, profileR, '.-')
-        # plt.show() #leave this blank to see them all on the same graph
-
-        # lastTime = time.time()
-        # thisTime =  time.time()
-        # elapsed = thisTime-lastTime
-        # print('time: {:.3}, e: {}, rez: {}, rat: {:.3}'.format(elapsed*1000, ion['eString'], rez, elapsed*100000 / rez))
-
-        ## Some other ways it was made before:
-
-        # I0array = ion['I0interp'](lamAxPrime) ##ergs/cm^2/sr/Angstrom
-
-        # plt.plot(lamAxPrime, I0array_old, label="old")
-        # plt.plot(lamAxPrime, I0array, ':', label="new")
-        # plt.legend()
-        # plt.show()
-
-        # lamAxPrime = self.env.cm2ang(lamAxPrime)
-
-        # Just use the whole thing
-        # lamAxPrime, I0array = ion['lamAxPrime'], ion['I0array'] ##ergs/cm^2/sr/Angstrom
-
-        # Just pull the important part of the raw spectrum at original resolution
-        # lamAxPrime, I0array = self.env.returnSolarSpecLamFast(lowLam, highLam, ion['lamAxPrime'], ion['I0array'])
-        # angstroms, ergs/s/cm^2/sr/Angstrom
-
-        return ion['profileR']
 
     def findSunSolidAngle(self):
         """Return the proportion of the sky covered by the sun"""
@@ -4027,7 +4014,7 @@ class simulate:
         # import pdb; pdb.set_trace()
         self.throwCm = self.grid.norm * self.env.r_Mm * 1e8  # in cm
         self.sims = []
-        self.repoint(gridObj)
+        self.point_grid(gridObj)
 
     def simulate_now(self):
 
@@ -4039,41 +4026,49 @@ class simulate:
             doBar = False
 
         if doBar and self.print: bar = pb.ProgressBar(self.Npoints)
-        self.oldSims = self.sims
-        self.sims = []
 
+        self.sims = []
         self.steps = []
         self.pData = []
-        # if self.print: print("\nBeginning Simulation...")
 
-        t = time.time()
+        self.grid.adapt = self.adapt
+
         stepInd = 0
-        rhoSum = 0
-        tol = 2500
-
         for cPos, step in self.grid:
 
-            if self.oldSims:
-                thisPoint = self.oldSims.pop().relocate(cPos)
-            else:
-                thisPoint = simpoint(cPos, self.grid, self.env, self.findT)
+            thisPoint = simpoint(cPos, self.grid, self.env, self.findT)
 
-            if self.adapt:
-                # Adaptive Mesh
-                thisDens = thisPoint.dPB
+            # if self.adapt:
+            #     # Adaptive Mesh
+            #     rPos = thisPoint.pPos[0]
+            #     planeDist = np.sqrt(cPos[0]**2 + cPos[1]**2)
+            #     if rPos < 1.5 and self.grid.backflag1:
+            #         self.grid.back()
+            #         self.grid.set2minStep()
+            #         self.grid.backflag1 = False
+            #         continue
+            #     elif planeDist < 5 and self.grid.backflag2:
+            #         self.grid.back()
+            #         self.grid.set2midStep()
+            #         self.grid.backflag2 = False
+            #         continue
+            #     elif rPos > 5 and not self.grid.backflag2:
+            #         self.grid.set2maxStep()
+            #         self.grid.backflag2 = True
+            #         self.grid.backflag1 = True
 
-                if (thisDens > tol) and self.grid.backflag:
-                    self.grid.back()
-                    self.grid.set2minStep()
-                    self.grid.backflag = False
-                    continue
-                if thisDens <= tol:
-                    self.grid.incStep(1.5)
-                    self.grid.backflag = True
+                # if (thisDens > tol) and self.grid.backflag:
+                #     self.grid.back()
+                #     self.grid.set2minStep()
+                #     self.grid.backflag = False
+                #     continue
+                # if thisDens <= tol:
+                #     self.grid.incStep(1.5)
+                #     self.grid.backflag = True
 
             stepInd += 1
 
-            self.sims.append(copy.copy(thisPoint))
+            self.sims.append(thisPoint)
             self.steps.append(step)
             self.pData.append(thisPoint.Vars())
 
@@ -4093,7 +4088,7 @@ class simulate:
             self.shape = self.grid.shape
         self.shape2 = [self.shape[0], self.shape[1], -1]
 
-    def repoint(self, gridObj):
+    def point_grid(self, gridObj):
         self.grid = gridObj
         try:
             self.index = gridObj.index
@@ -4104,7 +4099,6 @@ class simulate:
             self.findT = self.grid.findT
         else:
             self.findT = self.inFindT
-        # print(self.findT)
 
         if self.inIL is None:
             self.iL = self.grid.iL
@@ -4120,6 +4114,10 @@ class simulate:
             self.adapt = True
             self.grid.setMaxStep(1 / self.N[0])
             self.grid.setMinStep(1 / self.N[1])
+
+        elif self.N == 'auto':
+            self.adapt = True
+            self.grid.setAutoN()
         else:
             self.adapt = False
             self.grid.setN(self.N)
@@ -5201,9 +5199,9 @@ class multisim:
         self.initLists()
 
         if comm.size > 1:
-            self.MPI_init_masterslave()
+            self.run_multisim_MPI_MS()
         else:
-            self.init_serial()
+            self.run_multisim_serial()
 
         # self.findProfiles()
 
@@ -5219,7 +5217,7 @@ class multisim:
                          getProf=True))
             ind += 1
 
-    def MPI_init_masterslave(self):
+    def run_multisim_MPI_MS(self):
 
         if self.root and self.print:
             print('Running MultiSim: ' + time.asctime())
@@ -5245,7 +5243,7 @@ class multisim:
         # work = [[bat,env] for bat,env in zip(self.batch, self.envInd)]
         work = self.batch
 
-        self.poolMPI(work, self.mpi_sim)
+        self.poolMPI(work, self.simulate_line)
 
         try:
             self.Bar.display(force=True)
@@ -5282,20 +5280,15 @@ class multisim:
         self.temProjs.append(simulation.temProj)
         self.indices.append(simulation.index)
 
-    def mpi_sim(self, grd):
-        # grd, envInd = data
+    def simulate_line(self, grd):
 
-        # if self.useMasters:
-        #    simulation = self.workrepoint(grd, envInd)
-        # else:
         simulation = simulate(grd, self.env, self.N, findT=self.findT, timeAx=self.timeAx, printOut=self.printSim,
                               getProf=True)
-        # simulation.plot('nion', cmap = 'RdBu', center = True, abscissa = 'pPos')
 
         return simulation
 
-    def workrepoint(self, grd, envInd):
-        return self.masterLine[envInd].repoint(grd)
+    # def workrepoint(self, grd, envInd):
+    #     return self.masterLine[envInd].point_grid(grd)
 
     def __seperate(self, list, N):
         # Breaks a list up into chunks
@@ -5322,7 +5315,7 @@ class multisim:
                 chunks[NN].extend([newList.pop(0)])
         return chunks
 
-    def init_serial(self):
+    def run_multisim_serial(self):
 
         # Serial Version
         work = self.batch
@@ -5331,7 +5324,7 @@ class multisim:
         self.Bar.display()
 
         for line in work:
-            self.collectVars(self.mpi_sim(line))
+            self.collectVars(self.simulate_line(line))
             self.Bar.increment()
             self.Bar.display()
 
@@ -5505,11 +5498,11 @@ class batchjob:
         except:
             self.intTime = np.nan
 
-        self.simulate_now()
+        self.simulate_batch()
 
         self.finish()
 
-    def simulate_now(self):
+    def simulate_batch(self):
 
         comm = MPI.COMM_WORLD
 
@@ -5553,15 +5546,7 @@ class batchjob:
                 print('\n\n--{} = {}: {} Lines/Env--'.format(self.xlabel, ind, self.Nrot))
                 # print(f'Total Lines:{self.Npt}, Lines/Env:{self.Nrot}')
 
-            if self.autoN:
-                try:
-                    N = self.bRez.pop(0)
-                except:
-                    N = self.N
-                    print('Auto Rez Failed')
-
-            else:
-                N = self.N
+            N = self.N
 
             thisSim = multisim(thisBatch, self.env, N, printOut=self.printMulti, printSim=self.printSim,
                                timeAx=self.timeAx)
@@ -6186,8 +6171,9 @@ class batchjob:
         plt.show(block=True)
 
     def plotIntRatClean(self):
-        """Plot the average intensity and the CvsR proportion"""
+        """Plot the CvsR proportions"""
         useCollis = True
+        useTitle = False
 
         # unpack the data
         C, R = zip(*self.intensityStats)
@@ -6198,18 +6184,15 @@ class batchjob:
         fig, ax0 = plt.subplots(1, 1, True)
 
         # plt.figtext(0.1, 0.95, self.batchName)
-        if useCollis: ax0.set_title('Collisional Component of Spectra')
-        else: ax0.set_title('Resonant Component of Spectra')
+        if useTitle:
+            if useCollis: ax0.set_title('Collisional Component of Spectra')
+            else: ax0.set_title('Resonant Component of Spectra')
 
-        ax0.axhline(1, c='k')
+        # ax0.axhline(1, c='k')
         ax0.axhline(0.5, c='k', ls=':')
-        ax0.axhline(0, c='k')
+        # ax0.axhline(0, c='k')
 
         labs = [rr-1 for rr in self.doneLabels]
-
-        # for ion in self.ions:
-        #     if ion['c'] == 'darkviolet':
-        #         ion['c'] ='cyan'
 
         for ion, cint, rint in zip(self.ions, Cions, Rions):
             # For each ion
@@ -6220,14 +6203,17 @@ class batchjob:
             #Find the fractions of each type at each height
             cnorm = np.asarray(cint) / np.asarray(tint)
             rnorm = np.asarray(rint) / np.asarray(tint)
-            # import pdb; pdb.set_trace()
-            if useCollis: ax0.plot(labs, cnorm, c=ion['c'], label=ion['ionString'])
-            else: ax0.plot(labs, rnorm, c=ion['c'], label=ion['ionString'])
 
+            if useCollis: toplot = cnorm
+            else: toplot = rnorm
+
+            ax0.plot(labs, toplot, c=ion['c'], label=ion['ionString'], ls=ion['ls'])
 
         ax0.set_xscale('log')
-        ax0.set_xlabel(self.env.zLabel)
-        ax0.legend(ncol=2)
+        ax0.set_ylim((0,1))
+        ax0.set_xlim((0.01,1))
+        self.env.solarAxis(ax0, 2)
+        fig.set_size_inches(5,5)
         plt.tight_layout()
         plt.show()
 
@@ -6660,8 +6646,9 @@ class batchjob:
         """Plot each of the ions width vs mass"""
         plot1 = self.pMFit  # V vs Mass
         plot2 = self.pMass  # Temperature and V vs Impact
+        plot3 = self.pMass2
 
-        if plot1 or plot2: fitTemps, fitTempErrors, nonThermal, nonThermalErrors = self.moranFitting(plot1)
+        if plot1 or plot2 or plot3: fitTemps, fitTempErrors, nonThermal, nonThermalErrors = self.moranFitting(plot1)
 
         if plot2:
             # Initialize the Plot
@@ -6696,7 +6683,7 @@ class batchjob:
             expT = [self.env.interp_T(rx) / 10 ** 6 for rx in rAxisGood]
             gwExpT = [self.env.interp_f3(rx) * tt for rx, tt in zip(rAxisGood, expT)]
 
-            ax1.plot(zAxisGood, expT, 'k:', label='POS Temp', zorder=znum + 10, lw=2)
+            ax1.plot(zAxisGood, expT, 'k:', label='POS Temp', zorder=znum + 10, lw=3)
             # ax1.plot(zAxisGood, gwExpT, 'm', label='Weighted POS Temp', zorder=znum + 3, lw=2)
 
 
@@ -6710,6 +6697,70 @@ class batchjob:
                 ax1.errorbar(zAxis, modFitTemps, zorder=znum + 3, fmt='ro', yerr=fitTempErrors,
                                           label='Weighted Temperature', capsize=2, markersize=4)
 
+
+            ax1.legend(frameon=False, ncol=2)
+            ax1.set_xscale('log')
+            ax1.set_xlim((10**-2,1))
+            # ax1.set_ylim([0.95, 1.4])
+            import matplotlib.ticker as tk
+            formatter = tk.ScalarFormatter()
+            formatter.set_scientific(False)
+            # ax1.xaxis.set_major_formatter(formatter)
+            # ax1.xaxis.set_minor_formatter(formatter)
+            self.env.solarAxis(ax1, 2)
+            # ax1.set_xlabel('Observation Height Above Photosphere')
+            ax1.set_ylabel('Million Kelvin')
+            fig.set_size_inches(5.5,4.5)
+            # plt.title("Results from Moran Fitting")
+
+            plt.tight_layout()
+            plt.show()
+
+        if plot3:
+            # Initialize the Plot
+            fig, ax1 = plt.subplots()
+
+            ## Plot the Effective Temperature from Width Only for each ion
+            for znum, ion in enumerate(self.ions):
+
+                # Get the line widths
+                rAxis, temps = self.ionEffTemp(ion)
+                zAxis = [rr - 1 for rr in rAxis]
+
+                if False:  # Plot the Raw Temperatures
+                    thisLab = "Individual Ion Line Temperatures"
+                    # if not ion['ionNum'] == 13: thisLab = None
+                    wav = int(np.round(ion['lam00'], 0))
+                    if wav == 1038: wav = 1037
+                    thisLab = '{} {}: {}'.format(ion['eString'].title(), self.write_roman(ion['ionNum']), wav)
+                    ax1.plot(zAxis, temps, color=ion['c'], zorder=znum, label=thisLab, ls=ion['ls'])
+
+                if True:  # Plot the Modified Temperatures
+                    thisLab = "Line Temperature (Mod)"
+                    if not ion['cNum'] == 6: thisLab = None
+
+                    modTemps = [tt / self.env.interp_f3(zz + 1) for tt, zz in zip(temps, zAxis)]
+                    ax1.plot(zAxis, modTemps, color=ion['c'], zorder=znum, label=thisLab, ls=ion['ls'])
+
+            ## Plot the POS Temperature from the Model
+            rAxisGood = np.logspace(np.log10(np.min(rAxis)), np.log10(np.max(rAxis)), 3000)
+            zAxisGood = [rr - 1 for rr in rAxisGood]
+
+            expT = [self.env.interp_T(rx) / 10 ** 6 for rx in rAxisGood]
+            gwExpT = [self.env.interp_f3(rx) * tt for rx, tt in zip(rAxisGood, expT)]
+
+            ax1.plot(zAxisGood, expT, 'k:', label='POS Temp', zorder=znum + 10, lw=2)
+            # ax1.plot(zAxisGood, gwExpT, 'm', label='Weighted POS Temp', zorder=znum + 3, lw=2)
+
+            # #############Plot the slopes - the temperatures Moran Style
+            if True:
+                ax1.errorbar(zAxis, fitTemps, zorder=znum + 1, fmt='bo', yerr=fitTempErrors,
+                             label='Fit Temperature', capsize=2, markersize=4)
+
+                # Same thing but corrected with f3
+                modFitTemps = [fT / self.env.interp_f3(rx) for rx, fT in zip(rAxis, fitTemps)]
+                ax1.errorbar(zAxis, modFitTemps, zorder=znum + 3, fmt='ro', yerr=fitTempErrors,
+                             label='Weighted Temperature', capsize=2, markersize=4)
             # #NON THERMAL STUFF
 
             # expWind = [self.env.cm2km(self.env.interp_rx_dat_log(rx, self.env.ur_raw)) for rx in labels]
@@ -6748,23 +6799,24 @@ class batchjob:
             # ax2.set_ylabel('km/s')
             # ax2.legend()
 
-            ax1.legend(frameon=False, ncol=2)
-            ax1.set_xscale('log')
-            ax1.set_xlim((10**-2,1))
-            # ax1.set_ylim([0.95, 1.4])
-            import matplotlib.ticker as tk
-            formatter = tk.ScalarFormatter()
-            formatter.set_scientific(False)
-            # ax1.xaxis.set_major_formatter(formatter)
-            # ax1.xaxis.set_minor_formatter(formatter)
-            self.env.solarAxis(ax1, 2)
-            # ax1.set_xlabel('Observation Height Above Photosphere')
-            ax1.set_ylabel('Million Kelvin')
-            fig.set_size_inches(5.5,4.5)
-            # plt.title("Results from Moran Fitting")
+                ax1.legend(frameon=False)
+                ax1.set_xscale('log')
+                ax1.set_xlim((0.3,1))
+                ax1.set_ylim((1.2, 1.375))
+                # ax1.set_ylim([0.95, 1.4])
+                import matplotlib.ticker as tk
+                formatter = tk.ScalarFormatter()
+                formatter.set_scientific(False)
+                # ax1.xaxis.set_major_formatter(formatter)
+                ax1.xaxis.set_minor_formatter(tk.NullFormatter())
+                self.env.solarAxis(ax1, 2)
+                # ax1.set_xlabel('Observation Height Above Photosphere')
+                ax1.set_ylabel('Million Kelvin')
+                fig.set_size_inches(5.5,4.5)
+                # plt.title("Results from Moran Fitting")
 
-            plt.tight_layout()
-            plt.show()
+                plt.tight_layout()
+                plt.show()
 
     def plotMultiWidth(self):
         """Plot the widthplot for every ion"""
@@ -7139,7 +7191,7 @@ class batchjob:
 
     def calcFfiles(self):
         # Calculate the f parameters
-        print("\nCalculating f Files:", end='', flush=True)
+        # print("\nCalculating f Files:", end='', flush=True)
 
         self.f1_new = []
         self.f2_new = []
@@ -7169,7 +7221,7 @@ class batchjob:
             self.f1_new.append(urProjFrac)
             self.f2_new.append(rmsProjFrac)
             self.f3_new.append(temProjFrac)
-        print('done')
+        # print('done')
 
     def plotFfiles(self):
         '''Plot the new F functions compared to the ones in env'''
@@ -7221,7 +7273,7 @@ class batchjob:
 
 class impactsim(batchjob):
     def __init__(self, batchName, env, impacts, iter=1, N=(1500, 10000),
-                 rez=None, size=None, timeAx=[0], length=10, printSim=False, printOut=True, printMulti=True,
+                 rez=None, size=None, timeAx=[0], printSim=False, printOut=True, printMulti=True,
                  qcuts=[16, 50, 84]):
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
@@ -7260,18 +7312,16 @@ class impactsim(batchjob):
         self.impacts = impacts
         self.xlabel = 'Impact Parameter'
         self.fullBatch = []
-        self.bRez = []
 
         # Define the work to be done
         for b in self.impacts:
             # Determine length in x
-            long = max(length, 50 * b)
-            self.bRez.append(long * 15)
+            x0 = 100 * b
 
             # Create Batch
             gridPack = []
             for envInd in np.arange(self.Nenv):
-                thisSet = grid.rotLines(N=self.Nrot, b=b, rez=rez, size=size, x0=long, findT=False, envInd=envInd)
+                thisSet = grid.rotLines(N=self.Nrot, b=b, rez=rez, size=size, x0=x0, findT=False, envInd=envInd)
                 gridPack.extend(thisSet)
 
             self.fullBatch.append(gridPack)

@@ -35,7 +35,7 @@ if __name__ == '__main__':
     refineBmin = False
 
     # Batch Name
-    batchName = 'Remastered_thermal2'  # NoB'#'ionFreeze' #inst'#'int{}h'.format(integration) #'timeRand' 'randLong' #'timeLong'#'rand'#'Waves' #"All" #"Wind" #"Thermal"
+    batchName = "XXX" # 'Thermal_auto'
 
     # # # Which part of the program should run? # # # #
 
@@ -49,32 +49,33 @@ if __name__ == '__main__':
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Compute Properties
 
-    impactPoints = 40
+    impactPoints = 3
     b0 = 1.01  # 1.03
-    b1 = 1.03  # 2.5 #2
+    b1 = 2  # 2.5 #2
     spacing = 'log'
-    confirm = True
-    N_line = 20000  # (600, 3000)
-    sim.batchjob.autoN = False
+    confirm = False
+    N_line = 'auto'
 
     # How many iterations should it do at each point?
-    iterations = 1
+    iterations = 2
     sim.environment.maxEnvs = 100
-    sim.environment.maxIons = 100
+    sim.environment.maxIons = 1
 
     sim.simpoint.useB = False
     sim.simpoint.g_useWaves = False
     sim.simpoint.g_useWind = False
-    sim.simulate.makeLight = False
+    sim.simulate.makeLight = True
 
     # Run in parallel?
     parallel = False
     cores = 2
+    firstRun = True  # Overwrite any existing batch with this name
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Analyze Settings
 
-    sim.batchjob.pMass = True  # Plot with temperature and non-thermal velocity from fits
+    sim.batchjob.pMass = True  # Show temperature measurements
+    sim.batchjob.pMass2 = False  # Show Moran Measurements
     sim.batchjob.pIon = False  # Plot with just the binned widths for all ions
     sim.batchjob.pMFit = False  # Plot with straight fit lines on the ions
     sim.batchjob.pWidth = False  # 'save' # 'save'  # Plot with the velocity statistics for each of the elements on its own plot
@@ -82,7 +83,7 @@ if __name__ == '__main__':
     sim.batchjob.pPB = False  # Plot the polarization brightness
     sim.batchjob.pProportion = False  # Plot the 4 ways of looking at the model parameters
     sim.batchjob.plotIon = 1
-    sim.batchjob.pIntRat = False  # 'save'  #Plot the intensities and fraction CvR # set = to 'save' to save images
+    sim.batchjob.pIntRat = True  # 'save'  #Plot the intensities and fraction CvR # set = to 'save' to save images
     sim.batchjob.plotF = False
 
     # For statistics: Remember to turn on redostats if you change this
@@ -90,7 +91,7 @@ if __name__ == '__main__':
     sim.batchjob.collisional = True  # Use collisionally excited light
     sim.batchjob.redoStats = False
 
-    firstRun = False  # Overwrite any existing batch with this name
+
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub'  # 'Deconvolution' or 'Subtraction' or 'None'
     sim.batchjob.plotbinFits = False  # Plots the binned and the non-binned lines, and their fits, during stats only
@@ -134,7 +135,6 @@ if __name__ == '__main__':
         # Other parameters
         rez = None  # [3,3]
         size = [0.002, 0.01]
-        length = 10
 
         # 3D Stuff - ImageSim Parameters
         compute3d = False
@@ -162,7 +162,7 @@ if __name__ == '__main__':
         b = 1.5
         iter = 1
         envs = sim.envrs(envsName).loadEnvs(sim.environment.maxEnvs)
-        params = ["pbCalcs", envs, 1, iter, b, None, 600, rez, size, timeAx, length, False, False, False]
+        params = ["pbCalcs", envs, 1, iter, b, None, 600, rez, size, timeAx, False, False, False]
         useB = sim.simpoint.useB
         sim.simpoint.Bmin = sim.pbRefinement(envsName, params, MIN, MAX, tol)
         sim.simpoint.useB = useB
@@ -215,8 +215,7 @@ if __name__ == '__main__':
                     plt.show(True)
 
                 # Run the simulation
-                myBatch = sim.impactsim(batchName, env, impacts, iterations, N_line, rez, size, timeAx,
-                                        length, printSim)
+                myBatch = sim.impactsim(batchName, env, impacts, iterations, N_line, rez, size, timeAx, printSim)
             else:
                 # Resume the Simulation
                 myBatch = sim.batch(batchName).restartBatch(env)
@@ -268,7 +267,7 @@ if __name__ == '__main__':
         # env.assignColors()
         # env.save()
 
-        # env.zephyrPlot()
+        env.zephyrPlot()
 
         # env._LOS2DLoad()
         # env.save()
@@ -293,17 +292,19 @@ if __name__ == '__main__':
         # env.plot_ionization(env.ions[0])
 
         if False:
-            z = 2
-            position, target = [5, 0.001, z], [-5, 0.001, z]
-            primeLineVLong = grid.sightline(position, target, coords = 'cart')
+            z = 1.01
+            x = 100
+            position, target = [x, 0.001, z], [-x, 0.001, z]
+            primeLineVLong = grid.sightline(position, target, coords='cart')
 
-            lineSim = sim.simulate(primeLineVLong, env, N=2000, findT=False, getProf=False, printOut=False)
+            lineSim = sim.simulate(primeLineVLong, env, N='auto', findT=False, getProf=False, printOut=True)
 
-            # The cool new time evolution plots
-            sim.simulate.movName = 'windowPlot.mp4'
-            times = np.linspace(0, 150, 100)
-            # lineSim.evolveLine(times, 10)
-            lineSim.plotProfileT(90, 10)
+            lineSim.plot('uw', marker='o', abscissa='cPos', absdim=0)
+            # # The cool new time evolution plots
+            # sim.simulate.movName = 'windowPlot.mp4'
+            # times = np.linspace(0, 150, 100)
+            # # lineSim.evolveLine(times, 10)
+            # lineSim.plotProfileT(90, 10)
 
 
 
