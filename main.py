@@ -25,7 +25,7 @@ import progressBar as pb
 if __name__ == '__main__':
 
     # Environment Parameters
-    envsName = 'Remastered' #'Remastered' #''TheOne3'
+    envsName = 'Remastered'
     sim.environment.fFile = 'Remastered'
     sim.environment.fFile_lin = 'Remastered_lin'
     sim.environment.weightPower = 2
@@ -35,7 +35,8 @@ if __name__ == '__main__':
     refineBmin = False
 
     # Batch Name
-    batchName = "XXX" # 'Thermal_auto'
+    batchName = 'Wind_0.25' #'Wind_half'
+    firstRun = True  # Overwrite?
 
     # # # Which part of the program should run? # # # #
 
@@ -45,31 +46,32 @@ if __name__ == '__main__':
     # 1D Stuff - ImpactSim Parameters
     compute = False
     analyze = False
+    sim.batchjob.redoStats = False
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Compute Properties
 
-    impactPoints = 3
+    impactPoints = 3 #80
     b0 = 1.01  # 1.03
-    b1 = 2  # 2.5 #2
+    b1 = 11  # 2.5 #2
     spacing = 'log'
     confirm = False
-    N_line = 'auto'
+    N_line = 100#'auto'
 
     # How many iterations should it do at each point?
-    iterations = 2
+    iterations = 1
     sim.environment.maxEnvs = 100
-    sim.environment.maxIons = 1
+    sim.environment.maxIons = 100
 
     sim.simpoint.useB = False
     sim.simpoint.g_useWaves = False
-    sim.simpoint.g_useWind = False
+    sim.simpoint.g_useWind = True
+    sim.simpoint.windFactor = 0.5
     sim.simulate.makeLight = True
 
     # Run in parallel?
     parallel = False
     cores = 2
-    firstRun = True  # Overwrite any existing batch with this name
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Analyze Settings
@@ -83,14 +85,13 @@ if __name__ == '__main__':
     sim.batchjob.pPB = False  # Plot the polarization brightness
     sim.batchjob.pProportion = False  # Plot the 4 ways of looking at the model parameters
     sim.batchjob.plotIon = 1
-    sim.batchjob.pIntRat = True  # 'save'  #Plot the intensities and fraction CvR # set = to 'save' to save images
+    sim.batchjob.pIntRat = False  # 'save'  #Plot the intensities and fraction CvR # set = to 'save' to save images
     sim.batchjob.plotF = False
+    sim.batchjob.showInfo = True
 
     # For statistics: Remember to turn on redostats if you change this
     sim.batchjob.resonant = True  # Use resonantly scattered light
     sim.batchjob.collisional = True  # Use collisionally excited light
-    sim.batchjob.redoStats = False
-
 
     sim.batchjob.usePsf = True
     sim.batchjob.reconType = 'sub'  # 'Deconvolution' or 'Subtraction' or 'None'
@@ -105,8 +106,8 @@ if __name__ == '__main__':
 
         sim.simpoint.wavesVsR = True
         sim.environment.shrinkEnv = True  # Reduce the bitsize of the los data
-        sim.multisim.destroySims = True  # This keeps memory from building up btwn multisims
-        sim.multisim.keepAll = False
+        sim.multisim.keepAll = False # This keeps all simulation data, or only the current one
+        sim.batchjob.saveSims = False
         sim.multisim.useMasters = False
         printSim = False  # This makes it show the generating profile progress bar
 
@@ -222,10 +223,7 @@ if __name__ == '__main__':
         if root:
             if analyze:
                 # Get the Environment
-                try:
-                    env
-                except:
-                    env = sim.envrs(envsName).loadEnv()
+                env = sim.envrs(envsName).loadEnv()
                 # Analyze the simulation
                 myBatch = sim.batch(batchName).analyzeBatch(env, storeF)
 
@@ -258,6 +256,7 @@ if __name__ == '__main__':
         print('Beginning...')
         df = grid.defGrid()
         env = sim.envrs(envsName).loadEnv()
+
         # env.fLoad('Remastered2')
         # env.fLoad_lin('Remastered_lin2')
         # env.save()
@@ -267,7 +266,7 @@ if __name__ == '__main__':
         # env.assignColors()
         # env.save()
 
-        env.zephyrPlot()
+        # env.zephyrPlot()
 
         # env._LOS2DLoad()
         # env.save()
@@ -290,6 +289,227 @@ if __name__ == '__main__':
 
         # for ion in env.ions:
         # env.plot_ionization(env.ions[0])
+
+        def plotCvR(env, ax, ionNum, first=True):
+            """Plots the CvR Ratio for a given ion on a given axis"""
+            batch1 = sim.batch('Wind_1.00').loadBatch(env)
+            batch2 = sim.batch('Wind_0.75').loadBatch(env)
+            batch3 = sim.batch('Wind_0.50').loadBatch(env)
+            batch4 = sim.batch('Wind_0.25').loadBatch(env)
+            # batch5 = sim.batch('Wind_0.10').loadBatch(env)
+            batch6 = sim.batch('Wind_0.00').loadBatch(env)
+
+            batch1.plotIntRatClean(ax, ionNum, '-')
+            batch2.plotIntRatClean(ax, ionNum, (0, (8, 1)))
+            batch3.plotIntRatClean(ax, ionNum, '--')
+            batch4.plotIntRatClean(ax, ionNum, '-.')
+            # batch5.plotIntRatClean(ax, ionNum, (0, (2, 5)))
+            batch6.plotIntRatClean(ax, ionNum, ':')
+
+            ax.set_ylabel("Collisional Component")
+            ion = batch1.ions[ionNum]
+            label = ion['lineString']
+            anZ = 0.9
+            if not first: anZ -= 0.1
+            ax.annotate(label, (0.8, anZ), xycoords='axes fraction', color=ion['c'])
+
+        def saveAllCvR():
+            """Plot all the CvR proportions for each wind model"""
+            for ionNum in np.arange(12):
+                fig, ax = plt.subplots(1, 1)
+
+                plotCvR(env, ax, ionNum)
+
+                ax.legend(frameon=False)
+                path = "C:/Users/chgi7364/Dropbox/All School/CU/Steve Research/Weekly Meetings/2019/Meeting 5-14/MultiWind Proportions"
+                ion = env.ions[ionNum]
+                plt.savefig(os.path.abspath('{}/{}-{}.png'.format(path, ionNum, ion['ionString'])))
+
+        def windCvRPlot(env):
+            """Creates the tri-panel CvR plot for the  DEPRICATED"""
+            fig, (ax0,ax1,ax2) = plt.subplots(3,1, True, True)
+
+            plotCvR(env, ax0, 0)
+            plotCvR(env, ax1, 1)
+            plotCvR(env, ax2, 9)
+
+            env.solarAxis(ax2, 2)
+            ax0.legend(frameon=False)
+
+            ax0.annotate('(a)', (0.025, 0.8), xycoords='axes fraction')
+            ax1.annotate('(b)', (0.025, 0.65), xycoords='axes fraction')
+            ax2.annotate('(c)', (0.025, 0.8), xycoords='axes fraction')
+
+            fig.set_size_inches((5.2, 7.5))
+            plt.tight_layout()
+            plt.tight_layout()
+            plt.tight_layout()
+            plt.tight_layout()
+
+            plt.show()
+
+        def windCvRPlotAll(env):
+            """Creates the tri-panel CvR plot for the paper"""
+            fig, (ax0,ax1,ax2) = plt.subplots(3,1, True, True)
+
+            # Plot all the results as a group
+            batch2 = sim.batch('Wind_0.00').loadBatch(env)
+            batch2.plotIntRatClean(ax0, ls=':', lw=0.85)
+
+            batch1 = sim.batch('Wind_1.00').loadBatch(env)
+            batch1.plotIntRatClean(ax0)
+
+            ax0.set_ylabel("Collisional Component")
+
+            # Plot a couple examples in the other two panels
+            plotCvR(env, ax1, 0)
+            leg = ax1.legend()
+            leg.get_frame().set_linewidth(0.0)
+            plotCvR(env, ax1, 1, False)
+            plotCvR(env, ax2, 2)
+            plotCvR(env, ax2, 9, False)
+
+            # Format the plot
+            env.solarAxis(ax2, 2)
+            ax0.set_ylim((-0.05, 1.05))
+
+            ax0.annotate('(a)', (0.025, 0.65), xycoords='axes fraction')
+            ax1.annotate('(b)', (0.025, 0.65), xycoords='axes fraction')
+            ax2.annotate('(c)', (0.025, 0.65), xycoords='axes fraction')
+
+            fig.set_size_inches((5.2, 7.5))
+            plt.tight_layout()
+            plt.tight_layout()
+            plt.tight_layout()
+            plt.tight_layout()
+
+            plt.show()
+
+        def fadeInWindPlotVelocity(useLegend=False):
+            """Plot the velocity measurements for each wind model"""
+
+            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, True)
+
+            batch1 = sim.batch('Wind_0.00').loadBatch(env)
+            batch1.plotPos = 0
+            batch1.plotAsVelocity(ax1, label=False)
+            if useLegend: ax1.annotate('(a)', (0.05, 0.1), xycoords='axes fraction')
+            else: ax1.annotate('(a)', (0.05, 0.85), xycoords='axes fraction')
+
+            batch2 = sim.batch('Wind_0.25').loadBatch(env)
+            batch2.plotPos = 0.25
+            batch2.plotAsVelocity(ax2, label=False)
+            if useLegend: ax2.annotate('(b)', (0.05, 0.2), xycoords='axes fraction')
+            else: ax2.annotate('(b)', (0.05, 0.85), xycoords='axes fraction')
+
+            batch3 = sim.batch('Wind_1.00').loadBatch(env)
+            batch3.plotPos = 1
+            batch3.plotAsVelocity(ax3, label=False)
+            if useLegend: ax3.annotate('(c)', (0.05, 0.1), xycoords='axes fraction')
+            else: ax3.annotate('(c)', (0.05, 0.85), xycoords='axes fraction')
+
+            if useLegend: ax1.legend(ncol=3, frameon=False)
+            ax1.legend(frameon=False, loc=4)
+            ax2.legend(frameon=False, loc=4)
+            ax3.legend(frameon=False, loc=4)
+            env.solarAxis(ax3, 2)
+            fig.set_size_inches((5.2,7.5))
+
+            for ax in (ax1, ax2, ax3):
+                ax.set_axisbelow(True)
+                ax.yaxis.grid(color='lightgray', linestyle='dashed')
+
+            plt.tight_layout()
+            plt.show()
+
+        def fadeInWindPlotTemp(useLegend=False):
+            """Plot the temperature measurements for each wind model"""
+
+            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, True, True)
+
+            batch1 = sim.batch('Wind_0.10').loadBatch(env)
+            batch1.plotPos = 0.1
+            batch1.plotAsTemperature1(ax=ax1, label=False)
+            if useLegend: ax1.annotate('(a)', (0.05, 0.1), xycoords='axes fraction')
+            else: ax1.annotate('(a)', (0.05, 0.85), xycoords='axes fraction')
+            ax1.annotate('Wind at {}%'.format(int(batch1.plotPos*100)), (0.75, 0.05), xycoords='axes fraction')
+            ax1.set_yscale('log')
+
+            batch2 = sim.batch('Wind_0.25').loadBatch(env)
+            batch2.plotPos = 0.5
+            batch2.plotAsTemperature1(ax=ax2, label=False)
+            if useLegend: ax2.annotate('(b)', (0.05, 0.2), xycoords='axes fraction')
+            else: ax2.annotate('(b)', (0.05, 0.85), xycoords='axes fraction')
+            ax2.annotate('Wind at {}%'.format(int(batch2.plotPos*100)), (0.75, 0.05), xycoords='axes fraction')
+
+
+            batch3 = sim.batch('Wind_1.00').loadBatch(env)
+            batch3.plotPos = 1
+            batch3.plotAsTemperature1(ax=ax3, label=False)
+            if useLegend: ax3.annotate('(c)', (0.05, 0.1), xycoords='axes fraction')
+            else: ax3.annotate('(c)', (0.05, 0.85), xycoords='axes fraction')
+            ax3.annotate('Wind at {}%'.format(int(batch3.plotPos*100)), (0.75, 0.05), xycoords='axes fraction')
+
+
+            if useLegend: ax1.legend(ncol=3, frameon=False)
+            # ax2.legend(frameon=False, loc=4)
+            # ax3.legend(frameon=False, loc=4)
+            env.solarAxis(ax3, 2)
+            fig.set_size_inches((5.2,7.5))
+
+            for ax in (ax1, ax2, ax3):
+                ax.set_axisbelow(True)
+                ax.yaxis.grid(color='lightgray', linestyle='dashed')
+
+            plt.tight_layout()
+            plt.show()
+
+        def expectationPlot():
+
+
+            batchName = 'Wind_0.00'
+            weightFunc = env.interp_w2_thermal
+
+            batch1 = sim.batch(batchName).loadBatch(env)
+
+            path = "C:/Users/chgi7364/Dropbox/All School/CU/Steve Research/Weekly Meetings/2019/Meeting 5-21/Expectations/{}".format(batchName)
+            if not os.path.exists(path):
+                os.makedirs(path)
+
+            for ionNum, ion in enumerate(batch1.ions):
+                fig, ax = plt.subplots(1, 1)
+                batch1.plotExpectations(ax, ion, weightFunc)
+                ax.set_title(ion['fullString'])
+                plt.tight_layout()
+                plt.savefig(os.path.abspath('{}/{}-{}.png'.format(path, ionNum, ion['ionString'])))
+
+        # fadeInWindPlot()
+
+        # fadeInWindPlotTemp()
+        # saveAllCvR()
+
+        # windCvRPlotAll(env)
+
+        expectationPlot()
+
+
+
+        # path = "C:/Users/chgi7364/Dropbox/All School/CU/Steve Research/Weekly Meetings/2019/Meeting 5-14/Velocities"
+        # plt.savefig(os.path.abspath('{}/{}.png'.format(path, batchName)))
+
+        # batch1.moranPlot()
+        # batch1.reassignColors()
+        # batch1.moranFitting()
+        # batch1.moranFitPlot()
+        # sim.batch('Thermal').renameBatch('Wind_0.00')
+
+        # batch1 = sim.batch('Wind_0.00').loadBatch(env)
+        # batch1.plotAsVelocity()
+
+
+
+
+
 
         if False:
             z = 1.01
