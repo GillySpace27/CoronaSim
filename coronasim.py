@@ -141,6 +141,11 @@ class environment:
     theta0 = 28.5921
     S0 = 7.0e5
 
+    maxEnvs = 100
+    maxIons = 100
+    weightPower = 2
+    shrinkEnv = True
+
     # for plotting
     lastPos = 1e8
     plotMore = True
@@ -190,7 +195,7 @@ class environment:
     ## File IO ##########################################################################
     def loadAllBfiles(self):
         """Load each of the Bfiles"""
-        print('Loading Bmaps...', end='');
+        print('Loading Bmaps...', end='')
         sys.stdout.flush()
 
         mag_files = glob.glob(os.path.abspath(self.def_magPath + '/*.sav'))
@@ -373,14 +378,14 @@ class environment:
 
     def zephyrPlot(self):
         fig, (ax1) = plt.subplots(1, 1, True)
-        fig.set_size_inches(5,5)
+        fig.set_size_inches(6,5)
 
         ax2 = ax1.twinx()
         # ax2.set_ylabel('Density', color='r')
         ax2.tick_params('y', colors='r')
 
         lns1 = ax1.plot(self.rx_raw - 1, np.log10(self.cm2km(self.ur_raw)),ls='solid', label='$\log_{10}$(Wind Speed [km/s])')
-        lns2 = ax2.plot(self.rx_raw - 1, np.log10(self.rho_raw), 'r',ls='dotted', label='$\log_{10}$(Density [g/cm$^3$])')
+        lns2 = ax2.plot(self.rx_raw - 1, np.log10(self.rho_raw), 'r',ls='dotted', label='$\log_{10}$(Density [g/cm$^3$]) (Red Scale)')
         lns3 = ax1.plot(self.rx_raw - 1, np.log10(self.cm2km(self.vAlf_raw)),ls='dashed', label='$\log_{10}$(Alfvén Speed [km/s])')
         lns4 = ax1.plot(self.rx_raw - 1, np.log10(self.T_raw), ls='-.', label='$\log_{10}$(Temperature [K])')
 
@@ -392,12 +397,12 @@ class environment:
         # ax1.set_yscale('log')
         # ax2.set_yscale('log')
 
-        # ax1.set_title('Vertical Axis is Logarithmic')
+        ax1.set_title('ZEPHYR Model Outputs')
 
 
         lns = lns1 + lns2 + lns3 + lns4
         labs = [l.get_label() for l in lns]
-        ax1.legend(lns, labs, loc=8, frameon=False, bbox_to_anchor=(0.4,0))
+        ax1.legend(lns, labs, loc='lower center', frameon=False, bbox_to_anchor=(0.4,0))
 
         # ax1.legend()
         # ax2.legend()
@@ -1310,6 +1315,10 @@ class environment:
         """Change a lamAx (ang) to a nuAx"""
         return self.c / self.ang2cm(lamAx)
 
+    def nuAx2lamAx(self, nuAx):
+        """Change a lamAx (ang) to a nuAx"""
+        return self.c / nuAx * 10**8
+
     def lam2nuI0(self, I0, lamAx):
         """Change a ligt profile to frequency units"""
         nuAx = self.lamAx2nuAx(lamAx)
@@ -2053,6 +2062,8 @@ class environment:
 
     def find_nearest(self, array, value):
         # Returns the index of the point most similar to a given value
+        if not isinstance(array, np.ndarray):
+            array = np.asarray(array)
         array = array - value
         np.abs(array, out=array)
         return array.argmin()
@@ -2332,6 +2343,7 @@ class environment:
         ax1.annotate('(c)', (0.9, 0.85), xycoords='axes fraction')
 
         ax0.set_xlim((0.007,10))
+        ax2.set_title("NEI Ion Number Density")
 
         plt.tight_layout()
         plt.tight_layout()
@@ -2429,6 +2441,8 @@ class environment:
             plt.legend()
 
             ax3.plot(rr[:-1], dif)
+
+        ax0.set_title("Superradial Magnetic Fields")
         plt.tight_layout()
         plt.show()
 
@@ -2574,6 +2588,7 @@ class envrs:
         path = self.filePath + '.env'
         self.env = self.__loadEnv(path)
         self.env.reset_mpi()
+        self.env.assignColors()
         return self.env
 
 
@@ -3419,6 +3434,9 @@ class simpoint:
     g_Bmin = 3.8905410
     ID = 0
 
+    wavesVsR = True
+    plotIncidentArray=False
+
     # Level 0: Simulates physical properties at a given coordinate
     def __init__(self, cPos=[0.1, 0.1, 1.5], grid=None, env=None, findT=True, pbar=None, copyPoint=None):
         # Inputs
@@ -3435,6 +3453,8 @@ class simpoint:
         self.loadParams(copyPoint)
 
         self.relocate(cPos)
+
+        # self.removeEnv()
 
         if pbar is not None:
             pbar.increment()
@@ -3473,6 +3493,9 @@ class simpoint:
             self.useWaves = copyPoint.useWaves
             self.useWind = copyPoint.useWind
             self.Bmin = copyPoint.Bmin
+
+    def removeEnv(self):
+        del self.env
 
     ## Temperature ######################################################################
     def findTemp(self):
@@ -3623,6 +3646,7 @@ class simpoint:
         profileC = self.lenCm * const * self.nE * ion['N'] * self.env.findQt(ion,
                                                                        self.T) * lamPhi  # ergs /s /sr /cm^2 /ang ;  Q=[cm^3/s^2/sr]
 
+        ion['dimmingFactor'] = np.exp(-(self.ur/vTh)**2)
         ion['profileC'] = profileC  # ergs / (s cm^2 sr angstrom)
         ion['totalIntC'] = np.sum(profileC)
         ion['Cmax'] = np.max(profileC)
@@ -3638,12 +3662,68 @@ class simpoint:
         ## Store values
         ion['profileR'] = profileR
         ion['totalIntR'] = np.sum(ion['profileR'])
+        ion['Rmax'] = np.max(profileR)
 
         return ion['profileR']
 
     def rIncidentArray(self, ion):
         """ Create the Incident Light Array """
 
+        if self.doChop:
+            if ion['cNum'] == 2 and self.keepPump:
+                lamAxPrime, I0array = self.makePumpArray(ion)
+            else:
+                lamAxPrime, I0array = self.makeChopArray(ion)
+        else:
+            lamAxPrime, I0array = self.makeFullArray(ion)
+
+        if ion['cNum'] == 2 and self.plotIncidentArray:
+            self.doPlotIncidentArray(ion)
+
+        # Convert from lam to nu
+        nuAxPrime = self.env.lamAx2nuAx(lamAxPrime)  # Hz
+        nuI0Array = self.env.lam2nuI0(I0array, lamAxPrime)  # ergs/s/cm^2/sr/Hz
+
+        return nuAxPrime, nuI0Array
+
+    def makePumpArray(self, ion):
+        """Make the incident light for the O6 line, keeping pumping lines"""
+        lamAxPrime, I0array = self.makeFullArray(ion)
+        I0array = self.chop1037(I0array)
+        return lamAxPrime, I0array
+
+    def makeFullArray(self, ion):
+        """Create a full incident array"""
+        sigma = 6
+        rezPerAng = 150
+        minRez = 60
+        lamCenter, deltaLam = self.findArrayLimits(ion)
+        lowLamNorm = lamCenter - sigma * deltaLam  # New limits for this point
+        highLamNorm = ion['lam00'] + sigma * deltaLam  # New limits for this point
+        throwNorm = highLamNorm - lowLamNorm  # total width in angstroms
+        longRez = int(throwNorm * rezPerAng)
+        rez = np.max((longRez, minRez))
+        lamAxPrimeNorm = np.linspace(lowLamNorm, highLamNorm, rez)
+        I0arrayNorm = [self.env.interp(ion['lamAxPrime'], ion['I0array'], ll) for ll in lamAxPrimeNorm]
+        return lamAxPrimeNorm, I0arrayNorm
+
+    def makeChopArray(self, ion):
+        """Create a chopped incident array"""
+        sigma = 3
+        rezPerAng = 150
+        minRez = 60
+        lamCenter, deltaLam = self.findArrayLimits(ion)
+        lowLamChop = ion['lam00'] - sigma * deltaLam  # New limits for this point
+        highLamChop = ion['lam00'] + sigma * deltaLam  # New limits for this point
+        throwChop = highLamChop - lowLamChop  # total width in angstroms
+        longRez = int(throwChop * rezPerAng)
+        rez = np.max((longRez, minRez))
+        lamAxPrimeChop = np.linspace(lowLamChop, highLamChop, rez)
+        I0arrayChop = [self.env.interp(ion['lamAxPrime'], ion['I0array'], ll) for ll in lamAxPrimeChop]
+        return lamAxPrimeChop, I0arrayChop
+
+    def findArrayLimits(self, ion):
+        """Determine the limits for the incident array"""
         # Thermal Velocity
         Vth = np.sqrt(2 * self.env.KB * self.T / ion['mIon'])  # cm/s
 
@@ -3651,28 +3731,27 @@ class simpoint:
         lamShift = ion['lam00'] * self.ur / self.env.c  # Redshift of this point
         lamCenter = ion['lam00'] - lamShift  # Center of this points spectrum
         deltaLam = ion['lam00'] * Vth / self.env.c  # Width of the line here
+        return lamCenter, deltaLam
 
-        sigma = 4
-        lowLam = lamCenter - sigma * deltaLam  # New limits for this point
-        highLam = lamCenter + sigma * deltaLam  # New limits for this point
-        throw = highLam - lowLam  # total width in angstroms
+    def chop1037(self, I0array):
+        """Cut the continuum out of the 1037 line"""
+        cutoff = 10
+        I0array = np.asarray(I0array)
+        I0array[I0array < cutoff] = 0
+        return I0array.tolist()
 
-        ## Create the Incident array ##############
-
-        # Interpolate it
-        rezPerAng = 150
-        minRez = 60
-        longRez = int(throw * rezPerAng)
-        rez = np.max((longRez, minRez))
-
-        lamAxPrime = np.linspace(lowLam, highLam, rez)
-        I0array = [self.env.interp(ion['lamAxPrime'], ion['I0array'], ll) for ll in lamAxPrime]
-
-        # Convert from lam to nu
-        nuAxPrime = self.env.lamAx2nuAx(lamAxPrime)  # Hz
-        nuI0Array = self.env.lam2nuI0(I0array, lamAxPrime)  # ergs/s/cm^2/sr/Hz
-
-        return nuAxPrime, nuI0Array
+    def doPlotIncidentArray(self, ion):
+        """Plot the various types of incident array"""
+        fig, ax = plt.subplots()
+        ax.plot(*self.makeFullArray(ion), 'b-', label='Full Range', lw=2)
+        ax.plot(*self.makePumpArray(ion), 'r-', label='Pumping Lines', lw=2.5)
+        ax.plot(*self.makeChopArray(ion), 'c-', label='Line Core', lw=3)
+        ax.legend()
+        ax.set_ylabel("Intensity")
+        ax.set_xlabel(r"Wavelength ($\AA$)")
+        ax.set_title("Incident Spectrum from Photosphere (SUMER)")
+        plt.tight_layout()
+        plt.show(True)
 
     def rProfile(self, ion, nuAxPrime, nuI0Array):
         """ Calculate Resonant Profile """
@@ -3681,7 +3760,7 @@ class simpoint:
         Vth = np.sqrt(2 * self.env.KB * self.T / ion['mIon'])  # cm/s
 
         # Geometric factors
-        ro = np.sqrt(self.cPos[0] * self.cPos[0] + self.cPos[1] * self.cPos[1])
+        ro = np.sqrt(self.cPos[0] * self.cPos[0] + self.cPos[1] * self.cPos[1]) * np.sign(self.vLOS)
         Theta = np.arccos(ro / self.pPos[0])
         alpha = np.cos(Theta)
         beta = np.sin(Theta)
@@ -3723,8 +3802,6 @@ class simpoint:
 
     def rKernal(self, zetaPrime, zetaDiffBlock):
         # Use the vectors to create a matrix
-        # R = np.zeros_like(zetaDiffBlock)
-        # R = np.exp(-zetaPrime * zetaPrime) * np.exp(-zetaDiffBlock * zetaDiffBlock)  # unitless
         exponent = - zetaPrime*zetaPrime - zetaDiffBlock*zetaDiffBlock
         R = np.exp(exponent)
         return R
@@ -4048,6 +4125,9 @@ class simpoint:
 
 
 class simulate:
+    plotSimProfs = False
+    randTime = True
+    makeLight = True
     # Level 1: Initializes many Simpoints into a Simulation
     def __init__(self, gridObj, envObj, N=None, iL=None, findT=None, printOut=False, timeAx=[0], getProf=False):
         comm = MPI.COMM_WORLD
@@ -4060,6 +4140,7 @@ class simulate:
         self.inN = N
 
         self.grid = gridObj
+        self.grid.reset()
         self.print = printOut
         self.findT = findT
         self.env = envObj
@@ -4068,7 +4149,7 @@ class simulate:
         self.randomizeTime()
 
         self.ions = self.env.getIons(self.env.maxIons)
-        # import pdb; pdb.set_trace()
+
         self.throwCm = self.grid.norm * self.env.r_Mm * 1e8  # in cm
         self.sims = []
         self.point_grid(gridObj)
@@ -4196,10 +4277,10 @@ class simulate:
         if ion is None:
             propp = np.array([x[myProperty] for x in self.pData])
         else:
-            try:
-                propp = np.array([x['ions'][ion][myProperty] for x in self.pData])
-            except:
-                propp = np.array([x[myProperty] for x in self.pData])
+            # try:
+            propp = np.array([x['ions'][ion][myProperty] for x in self.pData])
+            # except:
+            #     propp = np.array([x[myProperty] for x in self.pData])
         prop = propp.reshape(self.shape2)
         if not dim is None: prop = prop[:, :, dim]
         prop = prop.reshape(self.shape)
@@ -4741,6 +4822,11 @@ class simulate:
         if self.print and self.root: bar.display(True)
         return self.profilesC, self.profilesR
 
+    def removeEnv(self):
+        del self.env
+        for sim in self.sims:
+            del sim.env
+
     ## Time Dependence ######################################################
     def setTime(self, tt=0):
         for point in self.sims:
@@ -5218,10 +5304,13 @@ class simulate:
 
 ## Level 2: Initializes many simulations (MPI Enabled) for statistics
 class multisim:
+    keepAll = False
+    useMasters = False
     # Level 2: Initializes many simulations
-    def __init__(self, batch, env, N=1000, findT=None, printOut=False, printSim=False, timeAx=[0]):
+    def __init__(self, batch, env, N=1000, findT=None, printOut=False, printSim=False, timeAx=[0], printQuiet=False):
         self.print = printOut
         self.printSim = printSim
+        self.printQuiet = printQuiet
         self.timeAx = timeAx
         # self.gridLabels = batch[1]
         self.oneBatch = batch
@@ -5235,6 +5324,7 @@ class multisim:
         self.size = comm.Get_size()
 
         self.env = env
+
         self.batch = self.oneBatch
         assert len(self.batch) > 0
 
@@ -5255,7 +5345,7 @@ class multisim:
 
         self.initLists()
 
-        if comm.size > 1:
+        if comm.size > 1 and not self.printQuiet:
             self.run_multisim_MPI_MS()
         else:
             self.run_multisim_serial()
@@ -5373,20 +5463,22 @@ class multisim:
         return chunks
 
     def run_multisim_serial(self):
-
         # Serial Version
         work = self.batch
         self.sims = []
-        self.Bar = pb.ProgressBar(len(work))
-        self.Bar.display()
+        if self.print:
+            self.Bar = pb.ProgressBar(len(work))
+            self.Bar.display()
 
         for line in work:
             self.collectVars(self.simulate_line(line))
-            self.Bar.increment()
-            self.Bar.display()
+            if self.print:
+                self.Bar.increment()
+                self.Bar.display()
 
         nFinish = len(self.indices)
-        print('\nConfirmed: {} Lines Simulated'.format(nFinish))
+        if self.print:
+            print('\nConfirmed: {} Lines Simulated'.format(nFinish))
 
     def plotLines(self):
         axes = self.oneBatch[0].quadAxOnly()
@@ -5463,7 +5555,7 @@ class multisim:
             data = comm.recv(None, source=0, tag=MPI.ANY_TAG, status=status)
             if status.Get_tag(): break
             result = do_work(data)
-            # del result.comm
+            result.removeEnv()
             comm.send(result, dest=0)
 
     def poolMPI(self, work_list, do_work):
@@ -5517,8 +5609,10 @@ class batch:
     def loadBatch(self, env=None):
         """Return a batchjob from file and make it useable"""
         env = self.getEnv(env)
+        env.assignColors()
         myBatch = self.__loadBatchFile()
         myBatch.reloadEnv(env)
+        myBatch.reassignColors()
         myBatch.findRank()
         return myBatch
 
@@ -5546,12 +5640,30 @@ class batch:
 
 class batchjob:
     qcuts = [16, 50, 84]
+    doLinePlot = False
+
+    resonant = True
+    collisional = True
+
+    usePsf = False
+    reconType = 'sub'  # 'Deconvolution' or 'Subtraction' or 'None'
+    plotbinFits = False  # Plots the binned and the non-binned lines, and their fits, during stats only
+    plotheight = 1
+    histMax = 50
+
+    saveSims = False
+
+    plotFits = False  # Plots the Different fits to the line w/ the raw line
+    maxFitPlot = 10
+
+    hahnPlot = False  # Plot the green Hahn Data on the primary plot
+    plotRatio = False  # Plot the ratio of the reconstruction/raw fits
 
     ## Run the Simulation ######################################################
     def __init__(self):
 
         self.ions = self.env.getIons(self.env.maxIons)
-        self.makeStrings()
+        self.reassignColors()
         self.firstRunEver = True
         self.statsDone = False
         self.complete = False
@@ -5559,7 +5671,6 @@ class batchjob:
         comm = MPI.COMM_WORLD
         self.root = comm.rank == 0
         self.intTime = len(self.timeAx)
-
         self.simulate_batch()
         self.finish()
         
@@ -5581,20 +5692,26 @@ class batchjob:
             self.count = 0
             self.batch = self.fullBatch
             self.initLists()
-            if self.root and self.print:
-                self.bar = pb.ProgressBar(len(self.impacts), label="Batch")
+            if (self.root and self.print) or self.printQuiet:
+                self.bar = pb.ProgressBar(len(self.impacts), label=self.batchName)
 
             self.doLabels = self.impacts.tolist()
-            self.doneLabels = []
+            self.rAxisMain = []
+            self.zAxisMain = []
+        elif self.root: print('Resuming Batch: {},  {} Remain'.format(self.batchName, len(self.doLabels)))
 
         if self.root and self.print and self.printMulti:
             print('\nBatch Progress: ' + str(self.batchName))
             self.bar.display(True)
             sys.stdout.flush()
+        elif self.printQuiet:
+            self.bar.display(True)
+            sys.stdout.flush()
 
         while len(self.doLabels) > 0:
-            ind = self.doLabels.pop(0)
-            self.doneLabels.append(ind)
+            rr = self.doLabels.pop(0)
+            self.rAxisMain.append(rr)
+            self.zAxisMain.append(rr-1)
             thisBatch = self.batch.pop(0)
             try:
                 self.count += 1
@@ -5605,18 +5722,18 @@ class batchjob:
                 # print('\n\n\n--' + self.xlabel +' = ' + str(ind) + ': [' + str(self.count) + '/' + str(self.Nb) + ']--')
                 # print('\n\n\n--{} = {}: [{}/{}]--'.format(self.xlabel, ind, self.count, self.Nb))
 
-                print('\n\n--{} = {}: {} Lines/Env--'.format(self.xlabel, ind, self.Nrot))
+                print('\n\n--{} = {}: {} Lines/Env--'.format(self.xlabel, rr, self.Nrot))
 
             N = self.N
 
             thisSim = multisim(thisBatch, self.env, N, printOut=self.printMulti, printSim=self.printSim,
-                               timeAx=self.timeAx)
+                               timeAx=self.timeAx, printQuiet=self.printQuiet)
 
             comm.barrier()
 
-            if self.root:
-                self.collectVars(thisSim)
+            self.collectVars(thisSim)
 
+            if self.root or self.allSave:
                 if self.print:
                     if self.printMulti: print('\n\nBatch Progress: ' + str(self.batchName))
                     self.bar.increment()
@@ -5624,23 +5741,28 @@ class batchjob:
                 if self.firstRunEver:
                     self.setFirstPoint()
                     self.firstRunEver = False
+
+            if self.printQuiet:
+                self.bar.increment()
+                self.bar.display(True)
+            comm.barrier()
+            if self.root or self.allSave:
                 self.save(printout=self.print)
                 sys.stdout.flush()
 
-            comm.barrier()
-
     def finish(self):
-        if self.root:
+        if self.root or self.allSave:
             self.doStats()
 
             if self.complete is False:
                 self.completeTime = time.asctime()
                 self.complete = True
 
-            if self.print:
+            if self.print or self.allSave:
                 print('\nBatch Complete: {}'.format(self.batchName))
                 self.showData()
                 print('Finished on {}'.format(self.completeTime))
+
             self.save()
 
 
@@ -5669,12 +5791,18 @@ class batchjob:
         self.rmsProjss = []
         self.temProjss = []
 
+        self.makeStrings()
+
     def deleteEnvs(self, thisSim):
-        del thisSim.env
+
+        if hasattr(thisSim, 'env'):
+            del thisSim.env
         for sim in thisSim.sims:
-            del sim.env
+            if hasattr(sim, 'env'):
+                del sim.env
             for sm in sim.sims:
-                del sm.env
+                if hasattr(sm, 'env'):
+                    del sm.env
         return thisSim
 
     def collectVars(self, thisSim):
@@ -5703,16 +5831,16 @@ class batchjob:
 
     ##  Statistics  ##############################################################
 
-    def doStats(self):
+    def doStats(self, force=False, save=True):
         """Do the statistics for the whole batch and plot."""
-        if self.root:
-            if not self.statsDone or self.redoStats:
+        if self.root or self.allSave:
+            if not self.statsDone or self.redoStats or force:
                 self.makePSF()
                 self.__findBatchStats()
                 self.moranFitting()
                 self.calcFfiles()
                 self.doPrediction()
-                self.save(printout=True)
+            if save: self.save(printout=True)
 
     def doPrediction(self):
         for ion in self.ions:
@@ -5724,8 +5852,8 @@ class batchjob:
         def gauss_function(x, a, x0, sigma, b):
             return a * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2)) + b
 
-        # Convolve with PSF and the deconvolve again
-        profileCon, profileDecon = self.conDeconProfile(profile, ion)
+        # Convolve with PSF and then deconvolve again
+        if self.usePsf: profileCon, profileDecon = self.conDeconProfile(profile, ion)
 
         # Use the moment method to get good initial guesses
         p0 = self.findMomentStats(profile, ion)
@@ -5734,8 +5862,6 @@ class batchjob:
             # Fit gaussians to the lines
 
             poptRaw, pcovRaw = curve_fit(gauss_function, ion['lamAx'], profile, p0=p0)
-            poptCon, pcovCon = curve_fit(gauss_function, ion['lamAx'], profileCon, p0=p0)
-            poptDecon, pcovDecon = curve_fit(gauss_function, ion['lamAx'], profileDecon, p0=p0)
 
             ampRaw = np.abs(poptRaw[0])
             muRaw = np.abs(poptRaw[1])
@@ -5743,84 +5869,104 @@ class batchjob:
             bRaw = np.abs(poptRaw[3])
             perrRaw = np.sqrt(np.diag(pcovRaw))  # one standard deviation errors
 
-            ampCon = np.abs(poptCon[0])
-            muCon = np.abs(poptCon[1])
-            sigmaCon = np.abs(poptCon[2])
-            bCon = np.abs(poptCon[3])
-            perrCon = np.sqrt(np.diag(pcovCon))
+            if self.usePsf:
+                poptCon, pcovCon = curve_fit(gauss_function, ion['lamAx'], profileCon, p0=p0)
+                poptDecon, pcovDecon = curve_fit(gauss_function, ion['lamAx'], profileDecon, p0=p0)
+                ampCon = np.abs(poptCon[0])
+                muCon = np.abs(poptCon[1])
+                sigmaCon = np.abs(poptCon[2])
+                bCon = np.abs(poptCon[3])
+                perrCon = np.sqrt(np.diag(pcovCon))
 
-            ampDecon = np.abs(poptDecon[0])
-            muDecon = np.abs(poptDecon[1])
-            sigmaDecon = np.abs(poptDecon[2])
-            bDecon = np.abs(poptDecon[3])
-            perrDecon = np.sqrt(np.diag(pcovDecon))
+                ampDecon = np.abs(poptDecon[0])
+                muDecon = np.abs(poptDecon[1])
+                sigmaDecon = np.abs(poptDecon[2])
+                bDecon = np.abs(poptDecon[3])
+                perrDecon = np.sqrt(np.diag(pcovDecon))
 
         except (RuntimeError, ValueError):
             return [np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]
 
         # Subtract the Point Spread Width in quadrature
-        sigmaSubtract = np.sqrt(np.abs(sigmaCon ** 2 - ion['psfSig_e'] ** 2))  # Subtract off the PSF width
+        if self.usePsf: sigmaSubtract = np.sqrt(np.abs(sigmaCon ** 2 - ion['psfSig_e'] ** 2))  # Subtract off the PSF width
 
-        ionStr = '{}_{} : {} -> {}, $\lambda_0$: {}, #{}'.format(ion['ionString'], ion['ionNum'], ion['upper'],
-                                                                 ion['lower'], ion['lam00'], ion['II'])
         # Plot the fits
-        if self.plotFits and self.binCheck:  # ion['II'] < self.maxFitPlot:
-            plotax = ion['lamAx'] - ion['lam00']
-            fig, ax = plt.subplots()
-            ax1 = ax
-            ax2 = ax1
+        # if self.plotFits and self.binCheck:  # ion['II'] < self.maxFitPlot:
+        #
+        #     plotax = ion['lamAx'] - ion['lam00']
+        #     fig, ax = plt.subplots()
+        #     ax1 = ax
+        #     ax2 = ax1
+        #
+        #     fullint = sum(profile)
+        #
+        #     ion['II'] += 1
+        #
+        #     fig.suptitle(ion['lineString'])
+        #     fig.canvas.set_window_title('{} second'.format(len(self.timeAx)))
+        #
+        #     ax1.plot(plotax, profile / fullint, "g-", label="Raw")
+        #     ax2.plot(plotax, gauss_function(plotax, ampRaw / fullint, muRaw - ion['lam00'], sigmaRaw, bRaw), 'g.:',
+        #              label=
+        #              "Raw Fit: {:.4} km/s".format(self.std2V(sigmaRaw, ion)))
+        #
+        #     # plt.plot(self.lamAx, profileCon, "b", label = "Convolved")
+        #     # plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaCon, bCon), 'b.:', label =
+        #     #         "Conv Fit: {:.4} km/s".format(self.std2V(sigmaCon)))
+        #
+        #     # plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaSubtract, bCon), 'c.:', label =
+        #     #         "Subtraction: {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract))))
+        #     ax2.plot(plotax, gauss_function(plotax, ampRaw / fullint, muCon - ion['lam00'], sigmaSubtract, bRaw), 'm.:',
+        #              label=
+        #              "Subtraction {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract), ion)))
+        #
+        #     # plt.plot(self.lamAx, profileDecon, "r--", label = "Deconvolved")
+        #     # plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.:', label =
+        #     #         "Deconvolved Fit: {:.4} km/s".format(self.std2V(sigmaDecon)))
+        #     ax2.set_xlim([-2, 2])
+        #     ax2.set_ylim([0, 0.03])
+        #     # grid.maximizePlot()
+        #     # plt.yscale('log')
+        #     ax2.set_title("A Line at b = {}".format(self.impact))
+        #     ax2.set_xlabel('Wavelength (A)')
+        #     ax2.set_ylabel('Intensity (Arb. Units)')
+        #     ax2.legend()
+        #
+        #     plt.show(True)
+        #
+        # if self.plotbinFitsNow and False:
+        #     fig = ion['binfig']
+        #     axarray = ion['binax']
+        #     status = ion['binstatus']
+        #     ax1 = axarray[status]
+        #     ax2 = axarray[status + 2]
+        #
+        #     fig.suptitle(ion['lineString'])
+        #     ax1.plot(ion['lamAx'], profile / np.sum(profile), "g", label="Raw")
+        #
+        #     fitprofile = gauss_function(ion['lamAx'], ampRaw, muCon, sigmaSubtract, bRaw)
+        #     normprofile = fitprofile / np.sum(fitprofile)
+        #     ax2.plot(ion['lamAx'], normprofile, 'm', label=
+        #     "Subtraction {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract), ion)))
 
-            fullint = sum(profile)
 
-            ion['II'] += 1
+        if self.doLinePlot and self.impact > self.plotheight:
+            fig, ax = plt.subplots(1,1)
 
-            fig.suptitle(ionStr)
-            fig.canvas.set_window_title('{}sec'.format(len(self.timeAx)))
+            ax.plot(ion['lamAx'], profile, label='Raw')
+            # ax.plot(ion['lamAx'], profileCon, label='Convolved')
+            # ax.plot(ion['lamAx'], gauss_function(ion['lamAx'], ampRaw, muRaw, sigmaRaw, bRaw), label='Raw Fit')
+            ax.plot(ion['lamAx'], gauss_function(ion['lamAx'], ampRaw, muRaw, sigmaSubtract, bCon), label='Degraded Fit')
+            ax.set_title("{} at b = {}".format(ion['lineString'], self.impact))
+            ax.legend()
+            savePath = '{}/{}_{}/'.format(self.linePath, ion['ionString'], ion['lam0'])
+            if not os.path.exists(savePath):
+                os.makedirs(savePath)
+            filePath = '{}/{:0.4}.png'.format(savePath, self.impact)
+            plt.savefig(filePath)
+            plt.close(fig)
 
-            ax1.plot(plotax, profile / fullint, "g-", label="Raw")
-            ax2.plot(plotax, gauss_function(plotax, ampRaw / fullint, muRaw - ion['lam00'], sigmaRaw, bRaw), 'g.:',
-                     label=
-                     "Raw Fit: {:.4} km/s".format(self.std2V(sigmaRaw, ion)))
 
-            # plt.plot(self.lamAx, profileCon, "b", label = "Convolved")
-            # plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaCon, bCon), 'b.:', label =
-            #         "Conv Fit: {:.4} km/s".format(self.std2V(sigmaCon)))
-
-            # plt.plot(self.lamAx, gauss_function(self.lamAx, ampCon, muCon, sigmaSubtract, bCon), 'c.:', label =
-            #         "Subtraction: {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract))))
-            ax2.plot(plotax, gauss_function(plotax, ampRaw / fullint, muCon - ion['lam00'], sigmaSubtract, bRaw), 'm.:',
-                     label=
-                     "Subtraction {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract), ion)))
-
-            # plt.plot(self.lamAx, profileDecon, "r--", label = "Deconvolved")
-            # plt.plot(self.lamAx, gauss_function(self.lamAx, ampDecon, muDecon, sigmaDecon, bDecon), 'r.:', label =
-            #         "Deconvolved Fit: {:.4} km/s".format(self.std2V(sigmaDecon)))
-            ax2.set_xlim([-2, 2])
-            ax2.set_ylim([0, 0.03])
-            # grid.maximizePlot()
-            # plt.yscale('log')
-            ax2.set_title("A Line at b = {}".format(self.impact))
-            ax2.set_xlabel('Wavelength (A)')
-            ax2.set_ylabel('Intensity (Arb. Units)')
-            ax2.legend()
-            plt.show()
-        try:
-            if self.plotbinFitsNow:
-                fig = ion['binfig']
-                axarray = ion['binax']
-                status = ion['binstatus']
-                ax1 = axarray[status]
-                ax2 = axarray[status + 2]
-
-                fig.suptitle(ionStr)
-                ax1.plot(ion['lamAx'], profile / np.sum(profile), "g", label="Raw")
-
-                fitprofile = gauss_function(ion['lamAx'], ampRaw, muCon, sigmaSubtract, bRaw)
-                normprofile = fitprofile / np.sum(fitprofile)
-                ax2.plot(ion['lamAx'], normprofile, 'm', label=
-                "Subtraction {:.4} km/s".format(self.std2V(np.abs(sigmaSubtract), ion)))
-        except:
-            pass
         # Select which of the methods gets output
         if self.usePsf:
             if self.reconType.casefold() in 'Deconvolution'.casefold():
@@ -6041,26 +6187,29 @@ class batchjob:
         bar = pb.ProgressBar(len(self.profilessC))
         bar.display()
 
-        if self.plotbinFits:
-            for ion in self.ions:
-                ion['binfig'], binax = plt.subplots(2, 2, sharex=True)
-                ion['binax'] = binax.flatten()
-                ii = 0
-                titles = ['Binned Line', 'All Lines', 'Binned Fit', 'All Fits']
-                for ax in binax.flatten():
-                    ax.set_title(titles[ii])
-                    ii += 1
+        # for ion in self.ions:
+        #     plt.close(ion['binfig'])
+
+
+        # if self.plotbinFits and False:
+        #     #Create a 2x2 figure for each ion
+        #     for ion in self.ions:
+        #         ion['binfig'], binax = plt.subplots(2, 2, sharex=True)
+        #         ion['binax'] = binax.flatten()
+        #         titles = ['Binned Line', 'All Lines', 'Binned Fit', 'All Fits']
+        #         for ind, ax in enumerate(binax.flatten()):
+        #             ax.set_title(titles[ind])
 
         self.plotbinFitsNow = False
 
-        for impProfilesC, impProfilesR, impact in zip(self.profilessC, self.profilessR, self.doneLabels):
+        for impProfilesC, impProfilesR, impact in zip(self.profilessC, self.profilessR, self.rAxisMain):
             # For each impact parameter
             self.impact = impact
 
-            # Plot stuff
-            for ion in self.ions:
-                ion['II'] = 0 if impact > self.plotheight else 1
-            self.plotbinFitsNow = True if impact > self.plotheight and self.plotbinFits else False
+            # # Plot stuff
+            # for ion in self.ions:
+            #     ion['II'] = 0 if impact > self.plotheight else 1
+            # self.plotbinFitsNow = True if impact > self.plotheight and self.plotbinFits else False
 
             # Find Statistics
             impProfilesS = self.mergeImpProfs(impProfilesC,
@@ -6070,26 +6219,19 @@ class batchjob:
             self.intensityStats.append(
                 self.__findIntensityStats(impProfilesC, impProfilesR))  # Find statistics for binned lines
 
-            ##Plot the line componants and sum
-            # plt.plot(impProfilesC[0][0], label = "C")
-            # plt.plot(impProfilesR[0][0], label = "R")
-            # plt.plot(impProfilesS[0][0], label = "S")
-            # plt.legend()
-            # plt.show()
-
-            # Plot Stuff
-            if impact > self.plotheight and self.plotbinFits:
-                for ion in self.ions:
-                    ion['binfig'].show()
-
+            # # Plot Stuff
+            # if impact > self.plotheight and self.plotbinFits:
+            #     for ion in self.ions:
+            #         ion['binfig'].show()
             bar.increment()
             bar.display()
         bar.display(force=True)
         self.__findSampleStats()
+        self.assignIntensities()
         self.statsDone = True
 
-        if self.plotbinFits:
-            pass
+        # if self.plotbinFits:
+        #     pass
             # for ion in self.ions:
             #    plt.close(ion['binfig'])
 
@@ -6125,6 +6267,7 @@ class batchjob:
         ionStats = []
         for ion, ionLine in zip(self.ions, profileBundle):
             ionStats.append(self.findProfileStats(ionLine, ion))
+        if self.doLinePlot: plt.show()
         return ionStats
 
     def __findIntensityStats(self, impProfilesC, impProfilesR):
@@ -6173,7 +6316,7 @@ class batchjob:
 
     def plotProfiles(self, max):
         if max is not None:
-            for profiles, impact in zip(self.profiless, self.doneLabels):
+            for profiles, impact in zip(self.profiless, self.rAxisMain):
                 plt.figure()
                 plt.title('Impact: ' + str(impact))
                 plt.xlabel('Wavelength')
@@ -6190,7 +6333,7 @@ class batchjob:
         plt.xlabel('Wavelength')
         plt.ylabel('Intensity')
 
-        for profiles, impact in zip(self.profiless, self.doneLabels):
+        for profiles, impact in zip(self.profiless, self.rAxisMain):
             profsum = np.zeros_like(profiles[0])
             count = 0
             for profile in profiles:
@@ -6251,7 +6394,7 @@ class batchjob:
 
     def getLabels(self):
         try:
-            labels = np.asarray(self.doneLabels)
+            labels = np.asarray(self.rAxisMain)
         except:
             labels = np.arange(len(self.profiles))
             doRms = False
@@ -6285,11 +6428,17 @@ class batchjob:
     def save(self, batchName=None, printout=False):
         """Handles saving the batch"""
 
-        # Get correct Save Name
         if batchName is None:
             batchName = self.batchName
 
-        # Gather Large Data
+        stuff = self.removeEnv()
+        self.saveFile(batchName)
+        self.returnEnv(*stuff)
+
+        if printout: print('\nFile Saved')
+
+    def removeEnv(self):
+        """Delete the environment from the object"""
         try:
             sims = self.sims
             env = self.env
@@ -6302,14 +6451,12 @@ class batchjob:
             self.sims = []
         self.env = []
 
-        # Save to File
-        self.saveFile(batchName)
+        return sims, env
 
-        # Restore large data
+    def returnEnv(self, sims, env):
+        """ Restore data to batch """
         self.sims = sims
         self.env = env
-
-        if printout: print('\nFile Saved')
 
     def reloadEnv(self, env):
         self.env = env
@@ -6373,7 +6520,7 @@ class batchjob:
         self.fr_new = []
 
         for urProjs, rmsProjs, temProjs, b in zip(self.urProjss, self.rmsProjss, self.temProjss,
-                                                  self.doneLabels):
+                                                  self.rAxisMain):
             # Get the Average (of all los at this impact) Projected Values
             urProj = np.average(urProjs)
             rmsProj = np.average(rmsProjs)
@@ -6441,14 +6588,32 @@ class batchjob:
                         f3out.write('{}   {}\n'.format(b, self.f3_new[ii]))
                         f3out.flush()
 
-    def reassignColors(self):
-        self.env.assignColors(self.ions)
+    def updateBatch(self):
+        self.reassignColors()
+        self.makeStrings()
+        self.assignIntensities()
+        try:
+            self.rAxisMain = self.doneLabels
+            self.zAxisMain = [rr - 1 for rr in self.rAxisMain]
+        except: pass
         self.save()
 
+    def reassignColors(self):
+        self.env.assignColors(self.ions)
+
     def makeStrings(self):
-        for ion in self.ions:
+        for ii, ion in enumerate(self.ions):
             ion['lineString'] = self.ionLineLabel(ion)
-        self.save()
+            # ion['ionNum'] = ii
+
+    def getAx(self, ax):
+        if not ax:
+            fig, ax = plt.subplots(1, 1, True)
+            show = True
+        else:
+            fig = ax.get_figure()
+            show = False
+        return fig, ax, show
 
     ## Main Plots ########################################################################
     def plot(self):
@@ -6464,8 +6629,71 @@ class batchjob:
         plt.show(block=True)
 
     def showData(self):
-        print("Simulated {} ions, at {} impacts between {} and {}".format(len(self.ions), self.count, min(self.doneLabels), max(self.doneLabels)))
+        print("Simulated {} ions, at {} impacts between {} and {}".format(len(self.ions), self.count, min(self.rAxisMain), max(self.rAxisMain)))
 
+    def plotLineIntensity(self, ax0=None, ionNums=False, ls='-'):
+        """Plot the total intensity as a function of height for given ions"""
+        fig, ax, show = self.getAx(ax0)
+
+        if ionNums == False:
+            ionNums = [1,2]
+
+        ionList = [self.ions[ii] for ii in ionNums]
+        ionList = self.ions
+        for ion in ionList:
+            ax.plot(self.zAxisMain, ion['rInt'], label=ion['fullString'], c=ion['c'], ls=ls)
+
+        self.env.solarAxis(ax)
+        ax.set_yscale('log')
+
+        if show: plt.show()
+
+
+    def plotLineRatio(self, ax0=None, ionNums=False, **kwargs):
+        fig, ax, show = self.getAx(ax0)
+        self.assignIntensities()
+
+        if ionNums == False:
+            ionNums = [1,2]
+
+        ion0 = self.ions[ionNums[0]]
+        ion1 = self.ions[ionNums[1]]
+
+        ratioLabel = "Line Intensity Ratio: {} / {}".format(ion0['lineString'], ion1['lineString'])
+        ax.set_title(ratioLabel)
+
+        intensityRatio = ion0['tInt'] / ion1['tInt']
+
+        ax.plot(self.zAxisMain, intensityRatio, **kwargs)
+        ax.set_ylabel('Line Ratio')
+
+        if show:
+            self.env.solarAxis(ax, 2)
+            plt.show()
+
+    def assignIntensities(self):
+        # Unpack the integrated intensities into the ion objects.
+        C, R = zip(*self.intensityStats)
+
+        Cions = list(zip(*C))
+        Rions = list(zip(*R))
+
+        for ion, cint, rint in zip(self.ions, Cions, Rions):
+            # For each ion
+
+            #Find total intensity at each height
+            tint = [c + r for c, r in zip(cint, rint)]
+
+            #Find the fractions of each type at each height
+            cnorm = np.asarray(cint) / np.asarray(tint)
+            rnorm = np.asarray(rint) / np.asarray(tint)
+
+            #Store
+            ion['cInt'] = np.asarray(cint)
+            ion['rInt'] = np.asarray(rint)
+            ion['tInt'] = np.asarray(tint)
+            ion['cFrac'] = np.asarray(cnorm)
+            ion['rFrac'] = np.asarray(rnorm)
 
     def plotIntRatClean(self, ax0=None, ionNum=False, ls='-', **kwargs):
         """Plot the CvsR proportions"""
@@ -6475,48 +6703,26 @@ class batchjob:
             plotOne = True
         else: plotOne = False
 
-        if not ax0:
-            fig, ax0 = plt.subplots(1, 1, True)
-            show = True
-        else:
-            fig = ax0.get_figure()
-            show = False
-
-        # Unpack the data
-        C, R = zip(*self.intensityStats)
-
-        Cions = list(zip(*C))
-        Rions = list(zip(*R))
+        fig, ax0, show = self.getAx(ax0)
+        # self.updateBatch()
 
         if useTitle:
             if useCollis: ax0.set_title('Collisional Component of Spectra')
             else: ax0.set_title('Resonant Component of Spectra')
 
-
         ax0.axhline(0.5, c='lightgray', ls=(0,(5,3)), zorder=0, lw=0.5)
 
-        labs = [rr-1 for rr in self.doneLabels]
-
-        ii = 0
-        for ion, cint, rint in zip(self.ions, Cions, Rions):
+        for ii, ion in enumerate(self.ions):
             # For each ion
             if plotOne:
                 if ii < ionNum:
-                    ii += 1
                     continue
 
-
-            #Find total intensity at each height
-            tint = [c + r for c, r in zip(cint, rint)]
-
-            #Find the fractions of each type at each height
-            cnorm = np.asarray(cint) / np.asarray(tint)
-            rnorm = np.asarray(rint) / np.asarray(tint)
-
-            if useCollis: toplot = cnorm
-            else: toplot = rnorm
-
-            ax0.plot(labs, toplot, c=ion['c'], label=self.batchName, ls=ls, **kwargs)
+            if useCollis: toplot = ion['cFrac']
+            else: toplot = ion['rFrac']
+            thisLabel = self.batchName
+            if "FullChop" in thisLabel: thisLabel = "Chop 100"
+            ax0.plot(self.zAxisMain, toplot, c=ion['c'], label=thisLabel, ls=ls, **kwargs)
             # ax0.set_title(self.ionLineLabel(ion))
             if plotOne: break
 
@@ -6524,63 +6730,13 @@ class batchjob:
         ax0.set_ylim((0,1))
         ax0.set_xlim((0.01,10))
 
-        # fig.set_size_inches((5,7))
-        plt.tight_layout()
-        if show: plt.show()
 
-    def plotIntRat(self):
-        """Plot the average intensity and the CvsR proportion"""
-        labs = self.doneLabels
+        if show:
+            fig.set_size_inches((5, 5))
+            self.env.solarAxis(ax0)
+            plt.tight_layout()
+            plt.show()
 
-        # unpack the data
-        C, R = zip(*self.intensityStats)
-
-        Cions = list(zip(*C))
-        Rions = list(zip(*R))
-
-        for ion, cint, rint in zip(self.ions, Cions, Rions):
-            # For each ion
-            tint = [c + r for c, r in zip(cint, rint)]
-
-            cnorm = np.asarray(cint) / np.asarray(tint)
-            rnorm = np.asarray(rint) / np.asarray(tint)
-
-            fig, (ax0, ax1) = plt.subplots(2, 1, True)
-            plt.figtext(0.1, 0.95, self.batchName)
-            ax0.set_title('Normalized Contribution')
-            ax0.plot(labs, cnorm, 'b', label='Collisional')
-            ax0.plot(labs, rnorm, 'r', label='Resonant')
-
-            ax0.axhline(1, c='k')
-            ax0.axhline(0.5, c='k', ls=':')
-            ax0.axhline(0, c='k')
-
-            ax0.legend()
-            fig.suptitle('{}_{}'.format(ion['eString'], ion['ionNum']))
-
-            ax1.plot(labs, cint, 'b', label='Collisional')
-            ax1.plot(labs, rint, 'r', label='Resonant')
-            ax1.plot(labs, tint, 'k', label='Total')
-            ax1.set_title('Absolute Total Intensity')
-            ax1.set_yscale('log')
-            ax1.set_ylabel(r'$ergs/(s\ cm^2\ sr)$')
-            ax1.legend()
-
-            ax1.set_xlabel(r'Impact Parameter $b/R_\odot$')
-            if self.pIntRat == 'save':
-                plt.savefig('../fig/2018/ratios/{}_{}_{}.png'.format(ion['eString'], ion['ionNum'], ion['lam00']))
-            else:
-                plt.show()
-            plt.close(fig)
-
-        # import pdb; pdb.set_trace()
-
-        # cint, rint = zip(*stat)
-
-        # tint = [c+r for c,r in zip(cint,rint)]
-        # frac = [c/t for c,t in zip(cint,tint)]
-
-        pass
 
     def plotPB(self):
         def pbFit(r): return 1e-9 * (1570 * r ** -11.1 + 6.75 * r ** -3.42)
@@ -6593,15 +6749,15 @@ class batchjob:
         pbAvg = []
         pbStd = []
         fits = []
-        for impact, pbs in zip(self.doneLabels, self.pBss):
+        for impact, pbs in zip(self.rAxisMain, self.pBss):
             pbAvg.append(np.mean(pbs))
             pbStd.append(np.std(pbs))
 
             fits.append(pbFit(impact))
 
-        ax.errorbar(self.doneLabels, pbAvg, yerr=pbStd, capsize=3, label='Simulated Values')
+        ax.errorbar(self.rAxisMain, pbAvg, yerr=pbStd, capsize=3, label='Simulated Values')
 
-        plt.plot(self.doneLabels, [f for f in fits], label='Fit Function')
+        plt.plot(self.rAxisMain, [f for f in fits], label='Fit Function')
 
         ax.set_yscale('log')
         ax.set_ylabel('r / $R_\odot$')
@@ -6681,7 +6837,7 @@ class batchjob:
 
     def getLabels(self):
         try:
-            labels = np.asarray(self.doneLabels)
+            labels = np.asarray(self.rAxisMain)
         except:
             labels = np.arange(len(self.profiles))
             doRms = False
@@ -6701,7 +6857,7 @@ class batchjob:
         ion['V_nt_raw'] = []
         self.hahnV = []
 
-        for impact in self.doneLabels:
+        for impact in self.rAxisMain:
             ##Get model values for wind, rms, and temperature in plane of sky at this impact
             pTem = self.env.interp_rx_dat(impact, self.env.T_raw)
             pUr = self.env.interp_rx_dat(impact, self.env.ur_raw) if self.copyPoint.windWasOn else 0
@@ -6755,6 +6911,58 @@ class batchjob:
         plt.tight_layout()
         # plt.show()
 
+    def plotExpectationsScatter(self, rHeight=4, norm=False):
+        """Plot the measured vs expected values at a height, scattered"""
+        fig, (ax0) = plt.subplots(1, 1)
+        first = True
+        for ion in self.ions:
+            self.makeVrms(ion)
+            rAxis, measurements, error = self.ionEffVelocity(ion)
+            zAxis = self.env.r2zAxis(rAxis)
+            index = self.env.find_nearest(rAxis, rHeight)
+            rrHeight = rAxis[index]
+
+            rawMeasurement = measurements[index]
+            rawExpectation = ion['expectedRms_raw'][index]
+            weightExpectation = ion['expectedRms'][index]
+
+            if first:
+                normMeas = rawMeasurement
+                normRaw = rawExpectation
+                normWeight = weightExpectation
+
+            if norm:
+                rawMeasurement /= normMeas
+                rawExpectation /= normRaw
+                weightExpectation /= normWeight
+
+            ax0.plot(rawMeasurement, rawExpectation, 'o', c=ion['c'], label='Raw')
+            ax0.plot(rawMeasurement, weightExpectation, 'x', c=ion['c'], label='Weighted')
+            if first:
+                ax0.legend()
+                first = False
+
+        ylims = ax0.get_ylim()
+        xlims = ax0.get_xlim()
+        yy = np.linspace(*ylims)
+        xx = yy
+
+        ax0.plot(xx,yy, 'k')
+
+        ax0.set_ylabel('Expectation')
+        ax0.set_xlabel('Raw Measurement')
+        ax0.set_title('Looking at r = {}'.format(rHeight))
+
+        plt.show()
+
+
+
+
+            # modified = [mm / weightFunc(rr) for mm, rr in zip(measurements, rAxis)]
+
+    # def plotFits(self):
+
+
 
     def plotStack(self, ion):
         self.makeVrms(ion)
@@ -6762,7 +6970,7 @@ class batchjob:
         fig.suptitle(
             '{} {}: {:.2F}$\AA$'.format(ion['eString'].capitalize(), self.write_roman(ion['ionNum']), ion['lam00']))
 
-        xx = self.doneLabels
+        xx = self.rAxisMain
 
         y1 = [x / y for x, y in zip(ion['V_wind'], ion['expectedRms'])]
         y2 = [x / y for x, y in zip(ion['V_waves'], ion['expectedRms'])]
@@ -6860,7 +7068,7 @@ class batchjob:
             kbg = kb * 1000  # g(m/s)^2/T
             kbgk = kbg / 1e6  # g(km/s)^2/T
 
-            for impact in np.arange(len(self.doneLabels)):
+            for impact in np.arange(len(self.rAxisMain)):
                 #Do this for every impact
                 widthList = []
                 widthErrorList = []
@@ -6908,7 +7116,7 @@ class batchjob:
             self.nonThermal = intercepts
             self.nonThermalErrors = interceptErrors
 
-        except np.linalg.LinAlgError:
+        except (np.linalg.LinAlgError, ValueError):
             print('Not enough ions simulated for Moran method')
             self.fitTemps = np.NaN
             self.fitTempErrors = np.NaN
@@ -6942,7 +7150,7 @@ class batchjob:
             color = colorList[impInd] #next(ax._get_lines.prop_cycler)['color']
             # Plot raw velocities
             ax.errorbar(invMassList, [w ** pwr for w in widthList], fmt='o', yerr=widthErrorList,
-                        label='{:0.3f}'.format(self.doneLabels[impInd]), color=color, capsize=3)
+                        label='{:0.3f}'.format(self.rAxisMain[impInd]), color=color, capsize=3)
 
             # Plot the fit line
             fitLine = np.polyval((slope, intercept), invMassList) ** (pwr / 2)
@@ -6977,7 +7185,7 @@ class batchjob:
         # Set up Plot
         fig, (ax0, ax1) = plt.subplots(2,1, True)
 
-        rAxis = self.doneLabels
+        rAxis = self.rAxisMain
         zAxis = [r-1 for r in rAxis]
 
         # Plot the Moran Temperatures
@@ -7016,7 +7224,7 @@ class batchjob:
 
     def ionEffVelocity(self, ion):
         '''Returns the Effective velocities of an input ion'''
-        return self.doneLabels, self.binStdV[ion['idx']], self.binStdVsig[ion['idx']]  # km/s
+        return self.rAxisMain, self.binStdV[ion['idx']], self.binStdVsig[ion['idx']]  # km/s
 
     def ionEffTemp(self, ion):
         '''Returns the Effective line temperatures of an input ion'''
@@ -7036,28 +7244,27 @@ class batchjob:
         thisLab = '{} {}: {}'.format(ion['eString'].title(), self.write_roman(ion['ionNum']), wav)
         return thisLab
 
-    def plotAsTemperature1(self, case=1, ax=None, label=True):
+    def plotAsTemperature1(self, case=1, ax=None, label=True, ls='-', useIons=False, oneLegend=False, **kwargs):
         """Plot the temperature measurements vs height"""
         # Initialize the Plot
-        if ax is None:
-            fig, ax1 = plt.subplots()
-        else:
-            ax1 = ax
-            fig = ax.get_figure()
+        fig, ax1, show = self.getAx(ax)
 
+        firstLine = True
         ## Plot the Effective Temperature from Width Only for each ion
         for znum, ion in enumerate(self.ions):
-
+            if useIons:
+                if not znum in useIons: continue
             # Get the line widths
             rAxis, temps, tError = self.ionEffTemp(ion)
             zAxis = [rr - 1 for rr in rAxis]
-            # import pdb; pdb.set_trace()
 
             if True:  # Plot the Raw Temperatures
-                if label:
+                if label is True:
                     thisLab = ion['lineString'] #self.ionLineLabel(ion)
+                elif not label is False: thisLab = label
                 else: thisLab = None
-                ax1.plot(zAxis, temps, color=ion['c'], zorder=znum, label=thisLab, ls=ion['ls'])
+                if not firstLine and oneLegend: thisLab = None
+                ax1.plot(zAxis, temps, color=ion['c'], zorder=znum, label=thisLab, ls=ls, **kwargs)
 
             if False:  # Plot the Modified Temperatures
                 thisLab = "Line Temperature (Mod)"
@@ -7066,11 +7273,12 @@ class batchjob:
                 modTemps = [tt / self.env.interp_w2_thermal(zz + 1) for tt, zz in zip(temps, zAxis)]
                 ax1.plot(zAxis, modTemps, color=ion['c'], zorder=znum, label=thisLab, ls=':')
 
-            if False:  # Plot the floorHeights
+            if True:  # Plot the floorHeights
                 zVal = ion['floorHeightZ']
                 idx = self.env.find_nearest(zAxis, zVal)
                 value = temps[idx]
                 ax1.plot(zVal, value, '^', c=ion['c'], markeredgecolor='k', zorder=1000, markersize=8)
+            firstLine=False
 
         ## Plot the POS Temperature from the Model
         rAxisGood = np.logspace(np.log10(np.min(rAxis)), np.log10(np.max(rAxis)), 3000)
@@ -7079,7 +7287,7 @@ class batchjob:
         expT = [self.env.interp_T(rx) / 10 ** 6 for rx in rAxisGood]
         gwExpT = [self.env.interp_w2_thermal(rx) * tt for rx, tt in zip(rAxisGood, expT)]
 
-        ax1.plot(zAxisGood, expT, 'k:', label='POS Temp' if label else None, zorder=znum + 10, lw=3)
+        ax1.plot(zAxisGood, expT, 'k:', label='POS Temp' if label and not oneLegend else None, zorder=znum + 10, lw=3)
         # ax1.plot(zAxisGood, gwExpT, 'm', label='Weighted POS Temp', zorder=znum + 3, lw=2)
 
         # #############Plot the slopes - the temperatures Moran Style
@@ -7099,7 +7307,7 @@ class batchjob:
             ax1.set_ylim((0.1, 1000))
             ax1.set_yscale('log')
 
-        if label: ax1.legend(frameon=False, ncol=2)
+        if label and show: ax1.legend(frameon=False, ncol=2)
         ax1.set_xscale('log')
         ax1.set_ylabel('T (MK)')
 
@@ -7110,7 +7318,8 @@ class batchjob:
         # ax1.xaxis.set_major_formatter(formatter)
         # ax1.xaxis.set_minor_formatter(formatter)
 
-        if ax is None:
+        if show:
+            ax1.set_title("Inferred Ion Temperatures")
             self.env.solarAxis(ax1, 2)
             fig.set_size_inches(5.5, 4.5)
             plt.tight_layout()
@@ -7183,12 +7392,12 @@ class batchjob:
         ##Plot the intercepts - the VRMS
         # for ion in self.ions:
         #    self.makeVrms(ion)
-        #    #lns4 = ax2.plot(self.doneLabels, ion['expectedRms'], 'm:', label = oneLab1)
-        #    #lns4 = ax2.plot(self.doneLabels, ion['V_thermal'], 'c:', label = oneLab2)
-        #    #_    = ax1.plot(self.doneLabels, ion['V_thermal'], 'b:', label = oneLab6)
-        #    #lns4 = ax2.plot(self.doneLabels, ion['V_wind'], 'g:', label = oneLab3)
-        #    #lns4 = ax2.plot(self.doneLabels, ion['V_waves'], 'y:', label = oneLab4)
-        #    lns4 = ax2.plot(self.doneLabels, ion['V_nt'], 'k:', label = oneLab5)
+        #    #lns4 = ax2.plot(self.rAxisMain, ion['expectedRms'], 'm:', label = oneLab1)
+        #    #lns4 = ax2.plot(self.rAxisMain, ion['V_thermal'], 'c:', label = oneLab2)
+        #    #_    = ax1.plot(self.rAxisMain, ion['V_thermal'], 'b:', label = oneLab6)
+        #    #lns4 = ax2.plot(self.rAxisMain, ion['V_wind'], 'g:', label = oneLab3)
+        #    #lns4 = ax2.plot(self.rAxisMain, ion['V_waves'], 'y:', label = oneLab4)
+        #    lns4 = ax2.plot(self.rAxisMain, ion['V_nt'], 'k:', label = oneLab5)
         #    oneLab1 = None
         #    oneLab2 = None
         #    oneLab3 = None
@@ -7221,49 +7430,45 @@ class batchjob:
             plt.tight_layout()
             plt.show()
 
-    def plotAsVelocity(self, ax=None, ionNum=None, label=True):
+    def plotAsVelocity(self, ax=None, useIons=None, label=True, plotPos=1, **kwargs):
         """Plot the measurements as velocities"""
-
+        self.reassignColors()
         # Create the plot and label it
-        if not ax:
-            fig, ax = plt.subplots(1, 1, True)
-            show = True
-        else:
-            fig = ax.get_figure()
-            show = False
+        fig,ax,show=self.getAx(ax)
 
-        if ionNum is None:
-            ionList = self.ions
-        else:
-            ionList = self.ions[ionNum]
+        if not plotPos is False:
+            thisLab = "POS Wind at {}%".format(int(plotPos*100))
+            posWind = [plotPos * self.env.interp_ur(rx) / 10 ** 5 for rx in self.rAxisMain]
+            ax.plot(self.zAxisMain, posWind, 'k:', label=thisLab, lw=3, zorder=10)
+            plotPos = False
 
-        for ion in ionList:
-
+        for ion in self.ions:
+            if useIons:
+                if not ion['cNum'] in useIons: continue
             rAxis, velocities, vError = self.ionEffVelocity(ion)
             zAxis = self.env.r2zAxis(rAxis)
 
             # ax.errorbar(zAxis, velocities, yerr=vError, label=self.ionLineLabel(ion), c=ion['c'])
             if label:
-                thisLabel = ion['lineString'] #self.ionLineLabel(ion)
+                thisLabel = label #ion['lineString'] #self.ionLineLabel(ion)
             else: thisLabel = None
-            ax.plot(zAxis, velocities, label=thisLabel, c=ion['c'])
+            # if ion['cNum'] == 1:
+            #     ls='--'
+            #     thisLabel = None
+            # else: ls ='-'
 
-
-        if not self.plotPos is False:
-            thisLab = "POS Wind at {}%".format(int(self.plotPos*100))
-            ax.plot(zAxis, [self.plotPos * self.env.interp_ur(rx) / 10 ** 5 for rx in rAxis], 'k:', label=thisLab, lw=3, zorder=10)
-            self.plotPos = False
-
-
+            ax.plot(zAxis, velocities, label=thisLabel, c=ion['c'], **kwargs)
 
         ax.set_yscale('log')
         ax.set_ylabel('Velocity (km/s)')
         ax.set_ylim((1,1000))
         ax.set_xlim((0.01,10))
 
-        plt.tight_layout()
 
-        if show: plt.show()
+        if show:
+            plt.tight_layout()
+            self.env.solarAxis(ax, 2)
+            plt.show()
 
         if False:
             # Plot the histograms in the background
@@ -7283,11 +7488,11 @@ class batchjob:
                 # Plot the Hahn Measurements
                 ax.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr=self.env.hahnError, fmt='gs',
                             label='Hahn Observations', capsize=4)
-                ax.plot(self.doneLabels, self.hahnV, label="HahnV", color='g')
+                ax.plot(self.rAxisMain, self.hahnV, label="HahnV", color='g')
 
             # Plot the expected values
 
-            # ax.plot(self.doneLabels, ion['expectedRms'], label='Expected', color='b')
+            # ax.plot(self.rAxisMain, ion['expectedRms'], label='Expected', color='b')
 
             # Plot the results of the binned Test
 
@@ -7300,10 +7505,10 @@ class batchjob:
             minrez = self.std2V(diff, ion)
             psfrez = self.std2V(ion['psfSig_e'], ion)
 
-            # flr = np.ones_like(self.doneLabels)*minrez
+            # flr = np.ones_like(self.rAxisMain)*minrez
             ax.axhline(minrez, color='k', linewidth=2, label='Lam Rez')
             ax.axhline(psfrez, color='k', linewidth=2, linestyle=':', label='PSF Rez')
-            # plt.plot(self.doneLabels, flr, label = "Rez Limit", color = 'k', linewidth = 2)
+            # plt.plot(self.rAxisMain, flr, label = "Rez Limit", color = 'k', linewidth = 2)
 
             ##Put numbers on plot of widths
             # for xy in zip(histLabels, self.statV[2][0]):
@@ -7320,7 +7525,7 @@ class batchjob:
             ax.set_ylabel('Km/s')
             ax.set_xlabel('Impact Parameter')
             spread = 0.2
-            ax.set_xlim([self.doneLabels[0] - spread, self.doneLabels[-1] + spread])  # Get away from the edges
+            ax.set_xlim([self.rAxisMain[0] - spread, self.rAxisMain[-1] + spread])  # Get away from the edges
             ax.set_ylim([0, self.histMax])
 
             # if self.plotRatio: self.ratioPlot()
@@ -7385,7 +7590,7 @@ class batchjob:
         throw = np.arange(0, self.histMax, 5)
         spread = 2
         vmax = 0
-        for stdlist, label in zip(self.allStd[ion['idx']], self.doneLabels):
+        for stdlist, label in zip(self.allStd[ion['idx']], self.rAxisMain):
             hist, edge = np.histogram(stdlist, throw)  # , range = [small-spread,big+spread])
             hist = hist / np.sum(hist)
             vmax = max(vmax, np.amax(hist))
@@ -7459,11 +7664,11 @@ class batchjob:
             # Plot the Hahn Measurements
             ax.errorbar(self.env.hahnAbs, self.env.hahnPoints, yerr=self.env.hahnError, fmt='gs',
                         label='Hahn Observations', capsize=4)
-            ax.plot(self.doneLabels, self.hahnV, label="HahnV", color='g')
+            ax.plot(self.rAxisMain, self.hahnV, label="HahnV", color='g')
 
             # Plot the expected values
 
-        ax.plot(self.doneLabels, ion['expectedRms'], label='Expected', color='b')
+        ax.plot(self.rAxisMain, ion['expectedRms'], label='Expected', color='b')
 
         # Plot the results of the binned Test
 
@@ -7476,10 +7681,10 @@ class batchjob:
         minrez = self.std2V(diff, ion)
         psfrez = self.std2V(ion['psfSig_e'], ion)
 
-        # flr = np.ones_like(self.doneLabels)*minrez
+        # flr = np.ones_like(self.rAxisMain)*minrez
         ax.axhline(minrez, color='k', linewidth=2, label='Lam Rez')
         ax.axhline(psfrez, color='k', linewidth=2, linestyle=':', label='PSF Rez')
-        # plt.plot(self.doneLabels, flr, label = "Rez Limit", color = 'k', linewidth = 2)
+        # plt.plot(self.rAxisMain, flr, label = "Rez Limit", color = 'k', linewidth = 2)
 
         ##Put numbers on plot of widths
         # for xy in zip(histLabels, self.statV[2][0]):
@@ -7496,7 +7701,7 @@ class batchjob:
         ax.set_ylabel('Km/s')
         ax.set_xlabel('Impact Parameter')
         spread = 0.2
-        ax.set_xlim([self.doneLabels[0] - spread, self.doneLabels[-1] + spread])  # Get away from the edges
+        ax.set_xlim([self.rAxisMain[0] - spread, self.rAxisMain[-1] + spread])  # Get away from the edges
         ax.set_ylim([0, self.histMax])
 
         # if self.plotRatio: self.ratioPlot()
@@ -7537,7 +7742,7 @@ class batchjob:
             big = int(max(big, newBig))
         throw = int(np.abs(np.ceil(big - small)))
 
-        for ratioList, label in zip(self.allRatio, self.doneLabels):
+        for ratioList, label in zip(self.allRatio, self.rAxisMain):
             hist, edge = np.histogram(ratioList, 200, range=[small, big])
             # hist = hist / np.amax(hist)
             histlabels.append(label)
@@ -7597,29 +7802,52 @@ class batchjob:
 
 
 class impactsim(batchjob):
-    def __init__(self, batchName, env, impacts, iter=1, N=(1500, 10000),
-                 rez=None, size=None, timeAx=[0], printSim=False, printOut=True, printMulti=True,
-                 qcuts=[16, 50, 84]):
+    def __init__(self, batchName, env, impacts, iter=1, N='auto',
+                 rez=None, size=None, timeAx=[0], printSim=False, printOut=True, printMulti=True, printQuiet=False,
+                 qcuts=[16, 50, 84], allSave=False):
         comm = MPI.COMM_WORLD
         self.size = comm.Get_size()
         self.rank = comm.Get_rank()
         self.root = self.rank == 0
+        self.allSave = allSave
         self.count = 0
         self.Nb = len(impacts)
         self.batchName = batchName
         self.timeAx = timeAx
         self.qcuts = qcuts
         self.env = env
-
+        self.N = N
+        self.rez = rez
+        self.viewSize = size
+        self.iter = iter
+        self.impacts = impacts
         self.print = printOut
         self.printMulti = printMulti
         self.printSim = printSim
+        self.printQuiet = printQuiet
+        self.xlabel = 'Impact Parameter'
 
-        self.N = N  # Default Resolution
+        if printQuiet:
+            self.print = False
+            self.printMulti = False
+            self.printSim = False
 
+        self.defineLines()
+
+        super().__init__()
+
+        return
+
+    def hahnFit(self, r, r0=1.05, vth=25.8, vnt=32.2, H=0.0657):
+        veff = np.sqrt(vth ** 2 + vnt ** 2 * np.exp(-(r - r0) / (r * r0 * H)) ** (-1 / 2))
+        return veff
+
+    def defineLines(self):
+        """Define which lines will be simulated"""
         # Lines per environment
+        print(self.size)
         self.Nslaves = max(self.size - 1, 1)
-        maxLines = self.Nslaves * iter
+        maxLines = self.Nslaves * self.iter
         self.Nenv = min(self.env.nBmap, self.env.maxEnvs, maxLines)
         self.env.Nenv = self.Nenv
         lines_env = np.floor(maxLines / self.Nenv)
@@ -7632,13 +7860,10 @@ class impactsim(batchjob):
         # Total Lines
         self.Ntot = self.Npt * self.Nb
 
-        comm.barrier()
+        MPI.COMM_WORLD.barrier()
 
-        self.impacts = impacts
-        self.xlabel = 'Impact Parameter'
         self.fullBatch = []
 
-        # Define the work to be done
         for b in self.impacts:
             # Determine length in x
             x0 = 100 * b
@@ -7646,7 +7871,7 @@ class impactsim(batchjob):
             # Create Batch
             gridPack = []
             for envInd in np.arange(self.Nenv):
-                thisSet = grid.rotLines(N=self.Nrot, b=b, rez=rez, size=size, x0=x0, findT=False, envInd=envInd)
+                thisSet = grid.rotLines(N=self.Nrot, b=b, rez=self.rez, size=self.viewSize, x0=x0, findT=False, envInd=envInd)
                 gridPack.extend(thisSet)
 
             self.fullBatch.append(gridPack)
@@ -7656,15 +7881,6 @@ class impactsim(batchjob):
         # print(f"Points/Impact: {pointsEach}")
         # print(f"Points/Impact: {self.Npt}")
         # print(f"Points/Env: {self.Nrot}")
-
-        super().__init__()
-
-        return
-
-    def hahnFit(self, r, r0=1.05, vth=25.8, vnt=32.2, H=0.0657):
-        veff = np.sqrt(vth ** 2 + vnt ** 2 * np.exp(-(r - r0) / (r * r0 * H)) ** (-1 / 2))
-        return veff
-
 
 class timesim(batchjob):
     def __init__(self, batchName, envs, Nb=10, iter=1, b0=1.05, b1=1.50, N=(1500, 10000),

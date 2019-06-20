@@ -1,15 +1,13 @@
 
 import numpy as np
-# # import progressBar as pb
+import os
 import matplotlib
-matplotlib.use('qt5agg', force=True)
+if os.name == 'nt': matplotlib.use('qt5agg', force=True)
 import matplotlib.pyplot as plt
 plt.ioff()
 
-# from mpl_toolkits.mplot3d import Axes3D
 import gridgen as grid
 import coronasim as sim
-import os
 from mpi4py import MPI
 import sys
 import time
@@ -35,48 +33,48 @@ if __name__ == '__main__':
     refineBmin = False
 
     # Batch Name
-    batchName = 'Wind_0.25' #'Wind_half'
+    batchName = 'XXX'
     firstRun = True  # Overwrite?
+
+    sim.simpoint.useB = True
+    sim.simpoint.g_useWaves = False
+    sim.simpoint.g_useWind = True
+    sim.simpoint.windFactor = 0
+    sim.simpoint.doChop = False # Cut out the continuum of the incident light
+    sim.simulate.makeLight = True
 
     # # # Which part of the program should run? # # # #
 
     # Single Sim Playground
-    simOne = True
+    simOne = False
 
     # 1D Stuff - ImpactSim Parameters
-    compute = False
+    compute = True
     analyze = False
     sim.batchjob.redoStats = False
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Compute Properties
 
-    impactPoints = 3 #80
+    impactPoints = 10
     b0 = 1.01  # 1.03
     b1 = 11  # 2.5 #2
     spacing = 'log'
     confirm = False
-    N_line = 100#'auto'
+    N_line = 100 #'auto'
 
     # How many iterations should it do at each point?
-    iterations = 1
-    sim.environment.maxEnvs = 100
+    iterations = 3
     sim.environment.maxIons = 100
 
-    sim.simpoint.useB = False
-    sim.simpoint.g_useWaves = False
-    sim.simpoint.g_useWind = True
-    sim.simpoint.windFactor = 0.5
-    sim.simulate.makeLight = True
-
     # Run in parallel?
-    parallel = False
-    cores = 2
+    parallel = True
+    cores = 4
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Analyze Settings
 
-    sim.batchjob.pMass = True  # Show temperature measurements
+    sim.batchjob.pMass = False  # Show temperature measurements
     sim.batchjob.pMass2 = False  # Show Moran Measurements
     sim.batchjob.pIon = False  # Plot with just the binned widths for all ions
     sim.batchjob.pMFit = False  # Plot with straight fit lines on the ions
@@ -93,7 +91,7 @@ if __name__ == '__main__':
     sim.batchjob.resonant = True  # Use resonantly scattered light
     sim.batchjob.collisional = True  # Use collisionally excited light
 
-    sim.batchjob.usePsf = True
+    sim.batchjob.usePsf = False
     sim.batchjob.reconType = 'sub'  # 'Deconvolution' or 'Subtraction' or 'None'
     sim.batchjob.plotbinFits = False  # Plots the binned and the non-binned lines, and their fits, during stats only
     sim.batchjob.plotheight = 1
@@ -266,7 +264,7 @@ if __name__ == '__main__':
         # env.assignColors()
         # env.save()
 
-        # env.zephyrPlot()
+
 
         # env._LOS2DLoad()
         # env.save()
@@ -275,11 +273,11 @@ if __name__ == '__main__':
         # yy = xx**3
         # plt.plot(xx, yy)
         # plt.show()
+        # env.zephyrPlot()
 
         # for dd in np.arange(10):
         #     env.elements['n'].plotGridRaw(dd)
         # plt.show()
-        # env.zephyrPlot()
         # env.findFreezeAll()
         # env.plotElements()  # This plots all the charge states of each element
         # env.plotChargeStates() # This plots the density of ions of interest
@@ -287,20 +285,34 @@ if __name__ == '__main__':
         # env.plotSuperRadial()  #This shows the super radial plot
         # env.makeTable()
 
+
+
+
+
+
         # for ion in env.ions:
         # env.plot_ionization(env.ions[0])
 
         def plotCvR(env, ax, ionNum, first=True):
             """Plots the CvR Ratio for a given ion on a given axis"""
-            batch1 = sim.batch('Wind_1.00').loadBatch(env)
-            batch2 = sim.batch('Wind_0.75').loadBatch(env)
-            batch3 = sim.batch('Wind_0.50').loadBatch(env)
-            batch4 = sim.batch('Wind_0.25').loadBatch(env)
-            # batch5 = sim.batch('Wind_0.10').loadBatch(env)
-            batch6 = sim.batch('Wind_0.00').loadBatch(env)
+            # batch1 = sim.batch('Wind_1.00').loadBatch(env)
+            # batch2 = sim.batch('Wind_0.75').loadBatch(env)
+            # batch3 = sim.batch('Wind_0.50').loadBatch(env)
+            # batch4 = sim.batch('Wind_0.25').loadBatch(env)
+            # # batch5 = sim.batch('Wind_0.10').loadBatch(env)
+            # batch6 = sim.batch('Wind_0.00').loadBatch(env)
 
-            batch1.plotIntRatClean(ax, ionNum, '-')
-            batch2.plotIntRatClean(ax, ionNum, (0, (8, 1)))
+            batch0 = sim.batch('Wind 100 FullChop').loadBatch(env)
+            batch1 = sim.batch('Wind 100').loadBatch(env)
+            batch2 = sim.batch('Wind 75').loadBatch(env)
+            batch3 = sim.batch('Wind 50').loadBatch(env)
+            batch4 = sim.batch('Wind 25').loadBatch(env)
+            # batch5 = sim.batch('Wind_0.10').loadBatch(env)
+            batch6 = sim.batch('Wind 0').loadBatch(env)
+
+            batch0.plotIntRatClean(ax, ionNum, '-')
+            batch1.plotIntRatClean(ax, ionNum, (0, (10, 1)))
+            batch2.plotIntRatClean(ax, ionNum, (0, (7, 2)))
             batch3.plotIntRatClean(ax, ionNum, '--')
             batch4.plotIntRatClean(ax, ionNum, '-.')
             # batch5.plotIntRatClean(ax, ionNum, (0, (2, 5)))
@@ -309,7 +321,7 @@ if __name__ == '__main__':
             ax.set_ylabel("Collisional Component")
             ion = batch1.ions[ionNum]
             label = ion['lineString']
-            anZ = 0.9
+            anZ = 0.87
             if not first: anZ -= 0.1
             ax.annotate(label, (0.8, anZ), xycoords='axes fraction', color=ion['c'])
 
@@ -353,20 +365,25 @@ if __name__ == '__main__':
             fig, (ax0,ax1,ax2) = plt.subplots(3,1, True, True)
 
             # Plot all the results as a group
-            batch2 = sim.batch('Wind_0.00').loadBatch(env)
+            # batch2 = sim.batch('Wind_0.00').loadBatch(env)
+            batch2 = sim.batch('Wind 0').loadBatch(env)
+
             batch2.plotIntRatClean(ax0, ls=':', lw=0.85)
 
-            batch1 = sim.batch('Wind_1.00').loadBatch(env)
+            # batch1 = sim.batch('Wind_1.00').loadBatch(env)
+            batch1 = sim.batch('Wind 100').loadBatch(env)
+
             batch1.plotIntRatClean(ax0)
 
             ax0.set_ylabel("Collisional Component")
 
             # Plot a couple examples in the other two panels
             plotCvR(env, ax1, 0)
-            leg = ax1.legend()
-            leg.get_frame().set_linewidth(0.0)
+            leg = ax1.legend(frameon=False)
+            # leg.get_frame().set_linewidth(0.0)
             plotCvR(env, ax1, 1, False)
             plotCvR(env, ax2, 2)
+
             plotCvR(env, ax2, 9, False)
 
             # Format the plot
@@ -385,26 +402,50 @@ if __name__ == '__main__':
 
             plt.show()
 
+        def windCvRPlotTwo(env):
+            """Creates the tri-panel CvR plot for the paper"""
+            fig, (ax1,ax2) = plt.subplots(2,1, True, True)
+
+            # Plot a couple examples in the other two panels
+            plotCvR(env, ax1, 0)
+            leg = ax1.legend(frameon=False)
+            # leg.get_frame().set_linewidth(0.0)
+            plotCvR(env, ax1, 1, False)
+            plotCvR(env, ax2, 2)
+
+            plotCvR(env, ax2, 9, False)
+
+            # Format the plot
+            env.solarAxis(ax2, 2)
+            # ax1.annotate('(a)', (0.025, 0.65), xycoords='axes fraction')
+            # ax2.annotate('(b)', (0.025, 0.65), xycoords='axes fraction')
+
+            ax1.set_title("Collisional Emission Fraction")
+            fig.set_size_inches((5.2, 5.7))
+            plt.tight_layout()
+            plt.tight_layout()
+            plt.tight_layout()
+            plt.tight_layout()
+
+            plt.show()
+
         def fadeInWindPlotVelocity(useLegend=False):
             """Plot the velocity measurements for each wind model"""
 
             fig, (ax1, ax2, ax3) = plt.subplots(3, 1, True)
 
-            batch1 = sim.batch('Wind_0.00').loadBatch(env)
-            batch1.plotPos = 0
-            batch1.plotAsVelocity(ax1, label=False)
+            batch1 = sim.batch('Wind 0').loadBatch(env)
+            batch1.plotAsVelocity(ax1, label=False, plotPos=0)
             if useLegend: ax1.annotate('(a)', (0.05, 0.1), xycoords='axes fraction')
             else: ax1.annotate('(a)', (0.05, 0.85), xycoords='axes fraction')
 
-            batch2 = sim.batch('Wind_0.25').loadBatch(env)
-            batch2.plotPos = 0.25
-            batch2.plotAsVelocity(ax2, label=False)
+            batch2 = sim.batch('Wind 25').loadBatch(env)
+            batch2.plotAsVelocity(ax2, label=False, plotPos=0.25)
             if useLegend: ax2.annotate('(b)', (0.05, 0.2), xycoords='axes fraction')
             else: ax2.annotate('(b)', (0.05, 0.85), xycoords='axes fraction')
 
-            batch3 = sim.batch('Wind_1.00').loadBatch(env)
-            batch3.plotPos = 1
-            batch3.plotAsVelocity(ax3, label=False)
+            batch3 = sim.batch('Wind 100').loadBatch(env)
+            batch3.plotAsVelocity(ax3, label=False, plotPos=1)
             if useLegend: ax3.annotate('(c)', (0.05, 0.1), xycoords='axes fraction')
             else: ax3.annotate('(c)', (0.05, 0.85), xycoords='axes fraction')
 
@@ -419,7 +460,37 @@ if __name__ == '__main__':
                 ax.set_axisbelow(True)
                 ax.yaxis.grid(color='lightgray', linestyle='dashed')
 
+            ax1.set_title("Line Width Measurements")
+            env.solarAxis(ax3, 2)
             plt.tight_layout()
+            plt.show()
+
+        def magneticWind():
+            """Plot the velocity measurements for each wind model"""
+
+            fig0, ax0 = plt.subplots(1, 1)
+            fig1, ax1 = plt.subplots(1, 1)
+
+
+            batch1 = sim.batch('Wind 100 Magnetic').loadBatch(env)
+            batch1.plotAsVelocity(ax0, label=False, plotPos=1)
+
+            batch2 = sim.batch('Wind 100').loadBatch(env)
+            batch2.plotAsVelocity(ax1, label=False, plotPos=1)
+
+            ax0.legend(frameon=False, loc=4)
+            ax1.legend(frameon=False, loc=4)
+            env.solarAxis(ax0, 2)
+            env.solarAxis(ax1, 2)
+
+            for ax in (ax0, ax1):
+                ax.set_axisbelow(True)
+                ax.yaxis.grid(color='lightgray', linestyle='dashed')
+
+            ax0.set_title("Magnetic")
+            ax1.set_title("Non-Magnetic")
+            fig0.tight_layout()
+            fig1.tight_layout()
             plt.show()
 
         def fadeInWindPlotTemp(useLegend=False):
@@ -465,10 +536,9 @@ if __name__ == '__main__':
             plt.show()
 
         def expectationPlot():
-
-
-            batchName = 'Wind_0.00'
-            weightFunc = env.interp_w2_thermal
+            """Plot the expected vs measured values for each ion on its own plot"""
+            batchName = 'Wind_1.00'
+            weightFunc = env.interp_w1_wind
 
             batch1 = sim.batch(batchName).loadBatch(env)
 
@@ -483,16 +553,398 @@ if __name__ == '__main__':
                 plt.tight_layout()
                 plt.savefig(os.path.abspath('{}/{}-{}.png'.format(path, ionNum, ion['ionString'])))
 
-        # fadeInWindPlot()
+        def expectationPlotScatter():
 
-        # fadeInWindPlotTemp()
-        # saveAllCvR()
+            batchName = 'Wind_1.00'
+            batch1 = sim.batch(batchName).loadBatch(env)
+            batch1.plotExpectationsScatter(5)
 
-        # windCvRPlotAll(env)
+        def plotContributionVsHeight():
+            for bb in np.logspace(np.log10(1.01), np.log10(11), 20):
+                z = bb
+                for val, ls in zip([True, False], ['-', ':']):
+                    rez = 100
+                    sim.simpoint.g_useWind = val
+                    sim.environment.maxIons = 3
 
-        expectationPlot()
+                    xmax = 10
+                    useIon = 2
+                    line = sim.simulate(grid.sightline([-xmax, 0, z], [xmax, 0, z], coords='Cart'), env, rez, timeAx=[0], getProf=True)
+
+                    dimm = line.get('dimmingFactor', ion=useIon)
+                    cInt = line.get('totalIntC', ion=useIon)
+                    rInt = line.get('totalIntR', ion=useIon)
+                    absiss = line.get('cPos', 0)
+
+                    # plt.plot(absiss, vLOS)
+                    windLabel = "Wind" if val else 'No Wind'
+                    plt.plot(absiss, cInt/np.max(cInt), label='C - {}'.format(windLabel), ls=ls, c='b')
+                    plt.plot(absiss, rInt/np.max(cInt), label='R - {}'.format(windLabel), ls=ls, c='r')
+                    # plt.plot(absiss, dimm/np.max(dimm), label='Dim - {}'.format(windLabel), ls=ls, c='k')
+
+                    plt.xlim((-xmax,xmax))
+                    plt.ylim((10**-4, 10))
+                    plt.yscale('log')
+                plt.plot(0,1, 'ko')
+                plt.title('b = {:0.3}'.format(z))
+                plt.legend()
+                plt.savefig("C:/Users/chgi7364/Dropbox/All School/CU/Steve Research/Weekly Meetings/2019/Meeting 5-28/Proportions/{:0.3}.png".format(bb))
+                plt.close()
+
+        def plotContribution(bz, ax, rez):
+            """Plot the contribution along the line of sight with various settings"""
+            print("Doing Contribution Plot {}".format(bz))
+            half = False
+            b = float(bz+1)
+            sim.environment.maxIons = 3
+            sim.simpoint.useB = False
+
+            xmax = 30.
+            useIon = 2
+
+            if half:
+                left = 0
+                rez /=2
+            else:
+                left = -xmax
+            mainLine = grid.sightline([left, 0., b], [xmax, 0., b], coords='Cart')
+
+            sim.simpoint.windFactor = 1
+            sim.simpoint.doChop = False
+            sim.simpoint.g_useWind = True
+            line1 = sim.simulate(mainLine, env, rez, getProf=True)
+            cInt = line1.get('totalIntC', ion=useIon)
+            rInt1 = line1.get('totalIntR', ion=useIon)
+            absiss = line1.get('cPos', 0)
+            ax.plot(absiss, cInt/np.max(cInt), label='Collisional', ls='-', c='grey', lw=1)
+            ax.plot(absiss, rInt1 / np.max(cInt), label='R - Full Range', ls='--', c='b', zorder=100)
+
+            sim.simpoint.windFactor = 1
+            sim.simpoint.doChop = True
+            sim.simpoint.keepPump = True
+            sim.simpoint.g_useWind = True
+            line1 = sim.simulate(mainLine, env, rez, getProf=True)
+            rInt = line1.get('totalIntR', ion=useIon)
+            # cInt = line1.get('totalIntC', ion=useIon)
+            absiss = line1.get('cPos', 0)
+            ax.plot(absiss, rInt/np.max(cInt), label='R - Pumping Lines', ls='--', c='r')
+
+            sim.simpoint.windFactor = 1
+            sim.simpoint.doChop = True
+            sim.simpoint.keepPump = False
+            sim.simpoint.g_useWind = True
+            line1 = sim.simulate(mainLine, env, rez, getProf=True)
+            rInt = line1.get('totalIntR', ion=useIon)
+            # cInt = line1.get('totalIntC', ion=useIon)
+            absiss = line1.get('cPos', 0)
+            ax.plot(absiss, rInt/np.max(cInt), label='R - Line Core', ls='--', c='c')
+
+            sim.simpoint.windFactor = 1
+            sim.simpoint.doChop = True
+            sim.simpoint.keepPump = True
+            sim.simpoint.g_useWind = False
+            line1 = sim.simulate(mainLine, env, rez, getProf=True)
+            rInt = line1.get('totalIntR', ion=useIon)
+            # cInt = line1.get('totalIntC', ion=useIon)
+            absiss = line1.get('cPos', 0)
+            ax.plot(absiss, rInt/np.max(cInt), label='R - No Wind', ls=':', c='b')
+
+            if b > 3:
+
+                ax.set_xlim((left,xmax))
+                ax.set_ylim((10**-5, 10**2))
+
+            else:
+
+                ax.set_xlim((left/2,15))
+                ax.set_ylim((10**-10, 20))
+
+            ax.set_yscale('log')
+            ax.plot(0,1, 'ko')
+            ax.annotate('Obs. Height = {:0.3}'.format(bz), (0.03, 0.925), xycoords='axes fraction')
+            ax.set_ylabel('Relative Integrated Intensity')
+
+        def plotContribution2(bz, ax, rez):
+            """Plot the contribution along the line of sight with various settings"""
+            print("Doing Contribution Plot {}".format(bz))
+            half = False
+            b = float(bz+1)
+            sim.environment.maxIons = 3
+            sim.simpoint.useB=False
+
+            xmax = 30.
+            useIon = 2
+
+            if half:
+                left = 0
+                rez /=2
+            else:
+                left = -xmax
+            mainLine = grid.sightline([left, 0., b], [xmax, 0., b], coords='Cart')
+
+            sim.simpoint.windFactor = 1
+            sim.simpoint.doChop = False
+            sim.simpoint.g_useWind = True
+            line1 = sim.simulate(mainLine, env, rez, getProf=True)
+            vLOS1 = np.abs(line1.get('vLOS'))
+            vLOS1 /= np.max(vLOS1)
+            cInt = line1.get('totalIntC', ion=useIon)
+            rInt1 = line1.get('totalIntR', ion=useIon)
+            absiss = line1.get('cPos', 0)
+            ax.plot(absiss, vLOS1*cInt/np.max(cInt), label='Collisional', ls='-', c='grey', lw=1)
+            ax.plot(absiss, vLOS1*rInt1 / np.max(cInt), label='R - Full Range', ls='--', c='b', zorder=100)
+
+            sim.simpoint.windFactor = 1
+            sim.simpoint.doChop = True
+            sim.simpoint.keepPump = True
+            sim.simpoint.g_useWind = True
+            line1 = sim.simulate(mainLine, env, rez, getProf=True)
+            rInt = line1.get('totalIntR', ion=useIon)
+            # cInt = line1.get('totalIntC', ion=useIon)
+            absiss = line1.get('cPos', 0)
+            ax.plot(absiss, vLOS1*rInt/np.max(cInt), label='R - Pumping Lines', ls='--', c='r')
+
+            sim.simpoint.windFactor = 1
+            sim.simpoint.doChop = True
+            sim.simpoint.keepPump = False
+            sim.simpoint.g_useWind = True
+            line1 = sim.simulate(mainLine, env, rez, getProf=True)
+            rInt = line1.get('totalIntR', ion=useIon)
+            # cInt = line1.get('totalIntC', ion=useIon)
+            absiss = line1.get('cPos', 0)
+            ax.plot(absiss, vLOS1*rInt/np.max(cInt), label='R - Line Core', ls='--', c='c')
+
+            sim.simpoint.windFactor = 1
+            sim.simpoint.doChop = True
+            sim.simpoint.keepPump = True
+            sim.simpoint.g_useWind = False
+            line1 = sim.simulate(mainLine, env, rez, getProf=True)
+            rInt = line1.get('totalIntR', ion=useIon)
+            # cInt = line1.get('totalIntC', ion=useIon)
+            absiss = line1.get('cPos', 0)
+            ax.plot(absiss, vLOS1*rInt/np.max(cInt), label='R - No Wind', ls=':', c='b')
+
+            if b > 3:
+
+                ax.set_xlim((left,xmax))
+                ax.set_ylim((10**-5, 10**2))
+
+            else:
+
+                ax.set_xlim((left/2,15))
+                ax.set_ylim((10**-10, 20))
+
+            ax.set_yscale('log')
+            ax.plot(0,1, 'ko')
+            ax.annotate('Obs. Height = {:0.3}'.format(bz), (0.03, 0.925), xycoords='axes fraction')
+            ax.set_ylabel('Relative Integrated Intensity')
+
+        def lineRatioPlot(ax=None):
+            batchName0 = 'Wind 0'
+            batch0 = sim.batch(batchName0).loadBatch(env)
+
+            batchName1 = 'Wind 100 FullChop'
+            batch1 = sim.batch(batchName1).loadBatch(env)
+
+            batchName2 = 'Wind 100 Chop'
+            batch2 = sim.batch(batchName2).loadBatch(env)
+
+            batchName3 = 'Wind 100'
+            batch3 = sim.batch(batchName3).loadBatch(env)
+
+            fig, ax, show = batch1.getAx(ax)
+            # fig, ax = plt.subplots(1,1)
+
+            batch3.plotLineRatio(ax, c='b', ls="--", label='Full Range')
+            batch2.plotLineRatio(ax, c='r', ls='--', label='Pumping Lines')
+            batch1.plotLineRatio(ax, c='c', ls="--", label='Line Core')
+            batch0.plotLineRatio(ax, c='b', ls=":", label='No Wind')
+
+            ax.legend(frameon=False)
+            if show: plt.show()
+
+        def checkLightTypes():
+            batchName = 'Wind 0'
+            batch1 = sim.batch(batchName).loadBatch(env)
+            batch2 = sim.batch(batchName).loadBatch(env)
+            batch3 = sim.batch(batchName).loadBatch(env)
+            print("Doing {}".format(batchName))
+
+            batch1.usePsf = False
+            batch1.resonant = True
+            batch1.collisional = True
+            batch1.redoStats = True
+            batch1.doStats(save=False)
+
+            batch2.usePsf = False
+            batch2.resonant = True
+            batch2.collisional = False
+            batch2.redoStats = True
+            batch2.doStats(save=False)
+
+            batch3.usePsf = False
+            batch3.resonant = False
+            batch3.collisional = True
+            batch3.redoStats = True
+            batch3.doStats(save=False)
+
+            fig, ax = plt.subplots(1,1)
+            fig.canvas.set_window_title(batchName)
+            # ax.set_title('Resonant = {}, Collisional = {}, Batch = {}'.format(batchName))
+
+            useIons = [0,2,4,6,8,10]
+
+            batch1.plotAsTemperature1(ax=ax, useIons=useIons, ls='-', label='Both')
+            batch2.plotAsTemperature1(ax=ax, useIons=useIons, ls='--', label='Resonant')
+            batch3.plotAsTemperature1(ax=ax, useIons=useIons, ls='-.', label='Collisional')
+
+            ax.legend(ncol=2)
+
+            plt.show(True)
+
+        def chopAffectTemperature():
+            batchBase = 'Wind 0{}'
+
+            batch1 = sim.batch(batchBase.format('')).loadBatch(env)
+            batch2 = sim.batch(batchBase.format(' Chop')).loadBatch(env)
+            batch3 = sim.batch(batchBase.format(' FullChop')).loadBatch(env)
+
+            fig, ax = plt.subplots(1, 1)
+            # fig.canvas.set_window_title(batchName)
+            # ax.set_title('Resonant = {}, Collisional = {}, Batch = {}'.format(batchName))
+
+            useIons = False #[0, 2, 4, 6, 8, 10]
+
+            batch1.plotAsTemperature1(ax=ax, useIons=useIons, ls='-', label=batchBase.format(''), oneLegend=True)
+            batch2.plotAsTemperature1(ax=ax, useIons=useIons, ls='--', label=batchBase.format(' Chop'), oneLegend=True)
+            batch3.plotAsTemperature1(ax=ax, useIons=useIons, ls=':', marker='o', markersize=3, label=batchBase.format(' FullChop'), oneLegend=True)
+
+            ax.legend()
+            env.solarAxis(ax, 2)
+            plt.tight_layout()
+            plt.show(True)
 
 
+        def chopAffectVelocity(ax=None):
+            batchBase = 'Wind 100{}'
+
+            batch0 = sim.batch(batchBase.format('')).loadBatch(env)  # Both
+            batch1 = sim.batch(batchBase.format('')).loadBatch(env)  # Collisional
+            batch2 = sim.batch(batchBase.format('')).loadBatch(env)  # Resonant
+            batch3 = sim.batch(batchBase.format(' Chop')).loadBatch(env)  # Resonant Chop
+            batch4 = sim.batch(batchBase.format(' FullChop')).loadBatch(env)  # Resonant FullChop
+            batch5 = sim.batch('Wind 0').loadBatch(env)  # No Wind
+
+            batch0.usePsf = False
+            batch0.resonant = True
+            batch0.collisional = True
+            batch0.doStats(force=True, save=False)
+
+            batch1.usePsf = False
+            batch1.resonant = False
+            batch1.collisional = True
+            batch1.doStats(force=True, save=False)
+
+            batch2.usePsf = False
+            batch2.resonant = True
+            batch2.collisional = False
+            batch2.doStats(force=True, save=False)
+
+            batch3.usePsf = False
+            batch3.resonant = True
+            batch3.collisional = False
+            batch3.doStats(force=True, save=False)
+
+            batch4.usePsf = False
+            batch4.resonant = True
+            batch4.collisional = False
+            batch4.doStats(force=True, save=False)
+
+            batch5.usePsf = False
+            batch5.resonant = True
+            batch5.collisional = False
+            batch5.doStats(force=True, save=False)
+
+
+            fig, ax, show = batch1.getAx(ax)
+
+            # fig, ax = plt.subplots(1, 1)
+            useIons = [2]  # [0, 2, 4, 6, 8, 10]
+
+            batch0.plotAsVelocity(ax=ax, useIons=useIons,  c='k', label="Both", plotPos=1, ls='-')
+            batch1.plotAsVelocity(ax=ax, useIons=useIons,  c='grey', label="Collisional", plotPos=False, ls='-')
+            batch2.plotAsVelocity(ax=ax, useIons=useIons,  c='b', label=None, plotPos=False, ls=(0,(6,1)))
+            batch3.plotAsVelocity(ax=ax, useIons=useIons,  c='r', label=None, plotPos=False, ls='--')
+            batch4.plotAsVelocity(ax=ax, useIons=useIons, c='c', label=None, plotPos=False, ls='--')
+            batch5.plotAsVelocity(ax=ax, useIons=useIons, c='b', label=None, plotPos=False, ls=':')
+
+            ax.legend(frameon=False)
+            ax.set_title("Line Width Measurements")
+            env.solarAxis(ax, 2)
+            plt.tight_layout()
+            if show: plt.show(True)
+
+
+        def contributionAtHeights():
+            """Plot tri-panel plot showing contribution to O VI 1037"""
+            fig, (ax0,ax1,ax2) = plt.subplots(3,1)
+
+            plotContribution(4.,   ax0, 100)
+            plotContribution(1.25,ax1, 200)
+            plotContribution(0.3, ax2, 200)
+
+            ax2.legend(frameon=False, loc='upper right')
+            ax2.set_xlabel(r"Distance from Plane of Sky ($R_\odot$)")
+            fig.set_size_inches((6,10))
+            ax0.set_title("Line of Sight Emissivity for O VI 1037")
+
+            plt.tight_layout()
+            plt.show()
+
+        def chopPlots():
+
+            fig, (ax0, ax1) = plt.subplots(2, sharex=True)
+
+            lineRatioPlot(ax0)
+            chopAffectVelocity(ax1)
+            ax1.set_ylim((10,1000))
+            fig.set_size_inches((5,7))
+            plt.tight_layout()
+            plt.show()
+
+        def thermalTempPlot(batchName='Wind 0'):
+            batch1 = sim.batch(batchName).loadBatch(env)
+
+            batch1.usePsf = False
+            batch1.resonant = True
+            batch1.collisional = True
+            batch1.doStats(force=True)
+
+            # fig, ax = plt.subplots(1,1)
+            # fig.canvas.set_window_title(batchName)
+            batch1.plotAsTemperature1()
+
+        ### POSTER PLOTS
+        # env.zephyrPlot()
+        # env.plotSuperRadial()  #This shows the super radial plot
+        # env.plotChargeStates() # This plots the density of ions of interest
+        # thermalTempPlot()
+        # fadeInWindPlotVelocity()
+        # windCvRPlotTwo(env)
+        # sim.simpoint.plotIncidentArray=False
+        # contributionAtHeights()
+
+        magneticWind()
+
+
+        # chopPlots()
+        # chopAffectVelocity()
+        # contributionAtHeights()
+        # fig,ax=plt.subplots()
+        # plotContribution(2.25, ax, 50)
+        # lineRatioPlot()
+        # checkLightTypes()
+        # chopAffectTemperature()
 
         # path = "C:/Users/chgi7364/Dropbox/All School/CU/Steve Research/Weekly Meetings/2019/Meeting 5-14/Velocities"
         # plt.savefig(os.path.abspath('{}/{}.png'.format(path, batchName)))
@@ -503,11 +955,37 @@ if __name__ == '__main__':
         # batch1.moranFitPlot()
         # sim.batch('Thermal').renameBatch('Wind_0.00')
 
-        # batch1 = sim.batch('Wind_0.00').loadBatch(env)
-        # batch1.plotAsVelocity()
 
 
 
+        # fadeInWindPlotTemp()
+        # saveAllCvR()
+
+        # windCvRPlotAll(env)
+
+        # expectationPlot()
+        # expectationPlotScatter()
+        # sim.simpoint.doChop= False
+        # plotContribution()
+
+
+        if False:
+            batchName = 'Wind_1.00'
+            batch1 = sim.batch(batchName).loadBatch(env)
+            batch1.redoStats = True
+            batch1.plotbinFits = False
+            batch1.plotFits = False
+            batch1.doLinePlot = True
+            batch1.linePath = "C:/Users/chgi7364/Dropbox/All School/CU/Steve Research/Weekly Meetings/2019/Meeting 5-28/Lines/{}".format(
+                batchName)
+            batch1.plotheight = 0
+            batch1.doStats()
+
+
+
+
+
+        ##### PAPER FIGURES #####
 
 
 
@@ -517,7 +995,7 @@ if __name__ == '__main__':
             position, target = [x, 0.001, z], [-x, 0.001, z]
             primeLineVLong = grid.sightline(position, target, coords='cart')
 
-            lineSim = sim.simulate(primeLineVLong, env, N='auto', findT=False, getProf=False, printOut=True)
+            lineSim = sim.simulate(primeLineVLong, env, N='auto', findT=False, getProf=True, printOut=True)
 
             lineSim.plot('uw', marker='o', abscissa='cPos', absdim=0)
             # # The cool new time evolution plots
@@ -529,21 +1007,7 @@ if __name__ == '__main__':
 
 
 
-        # import colorama
-        # colorama.init()
 
-        # sys.stdout = sys.__stdout__
-        # long = 1000
-        # bar = pb.ProgressBar(long, color = "Red")
-        #
-        # print('\033[95m  This is Text   \033[00m')
-
-        # for nn in np.linspace(0,long,long):
-        #     bar.increment()
-        #     bar.display()
-        #     time.sleep(0.1)
-
-        # noinspection PyUnreachableCode
 
         if False:
             # Plot the RMS wave amplitudes as fn of height
@@ -907,4 +1371,6 @@ if __name__ == '__main__':
     #    print('')
     #    print('Batch Name =')
     #    print(batchName)
+
+    if root: print("End of Program")
 
