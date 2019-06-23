@@ -180,7 +180,6 @@ class generator:
             
 #A line of points between two given points
 class sightline(generator):
-
     default_N = 1000
 
     def __init__(self, position = None, target = None, 
@@ -277,6 +276,15 @@ class sightline(generator):
     def reset(self):
         self.currS = 0
         self.step = self.maxStep
+
+    def setAdapt(self, adapt):
+        self.adapt = adapt
+
+    def setAdapt_True(self):
+        self.adapt = True
+
+    def setAdapt_False(self):
+        self.adapt = False
 
     def setAutoN(self):
         minPointsPerRadii = 5 # Distant Resolution

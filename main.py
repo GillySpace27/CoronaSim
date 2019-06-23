@@ -18,9 +18,14 @@ root = rank == 0
 size = comm.Get_size()
 import progressBar as pb
 
-# sys.stdout = sys.__stdout__
+class runParameters():
+    def __init__(self):
+        pass
+
 
 if __name__ == '__main__':
+    if size > 1 and root: print('{} Workers Opened'.format(size-1))
+    params = runParameters()
 
     # Environment Parameters
     envsName = 'Remastered'
@@ -33,15 +38,15 @@ if __name__ == '__main__':
     refineBmin = False
 
     # Batch Name
-    batchName = 'XXX'
-    firstRun = True  # Overwrite?
+    params.batchName = 'XXX'
+    params.firstRun = True  # Overwrite?
 
-    sim.simpoint.useB = True
-    sim.simpoint.g_useWaves = False
-    sim.simpoint.g_useWind = True
-    sim.simpoint.windFactor = 0
-    sim.simpoint.doChop = False # Cut out the continuum of the incident light
-    sim.simulate.makeLight = True
+    params.useB = False
+    params.g_useWaves = False
+    params.g_useWind = False
+    params.windFactor = 0
+    params.doChop = False # Cut out the continuum of the incident light
+    params.makeLight = True
 
     # # # Which part of the program should run? # # # #
 
@@ -51,30 +56,31 @@ if __name__ == '__main__':
     # 1D Stuff - ImpactSim Parameters
     compute = True
     analyze = False
-    sim.batchjob.redoStats = False
+    sim.batchjob.redoStats = True
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Compute Properties
 
-    impactPoints = 10
+    impactPoints = 3
     b0 = 1.01  # 1.03
     b1 = 11  # 2.5 #2
     spacing = 'log'
     confirm = False
-    N_line = 100 #'auto'
+    N_line = 200#'auto'
 
-    # How many iterations should it do at each point?
-    iterations = 3
-    sim.environment.maxIons = 100
+    # How many lines should it do at each point?
+    lines = 4
+    sim.environment.maxIons = 5
 
     # Run in parallel?
-    parallel = True
+    sim.batchjob.usePool = False
+    useMPI = False
     cores = 4
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Analyze Settings
 
-    sim.batchjob.pMass = False  # Show temperature measurements
+    sim.batchjob.pMass = True  # Show temperature measurements
     sim.batchjob.pMass2 = False  # Show Moran Measurements
     sim.batchjob.pIon = False  # Plot with just the binned widths for all ions
     sim.batchjob.pMFit = False  # Plot with straight fit lines on the ions
@@ -100,68 +106,65 @@ if __name__ == '__main__':
     # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     # Misc Flags
-    try:
 
-        sim.simpoint.wavesVsR = True
-        sim.environment.shrinkEnv = True  # Reduce the bitsize of the los data
-        sim.multisim.keepAll = False # This keeps all simulation data, or only the current one
-        sim.batchjob.saveSims = False
-        sim.multisim.useMasters = False
-        printSim = False  # This makes it show the generating profile progress bar
+    sim.simpoint.wavesVsR = True
+    sim.environment.shrinkEnv = True  # Reduce the bitsize of the los data
+    sim.batchjob.keepAll = False # This keeps all simulation data, or only the current one
+    sim.batchjob.saveSims = False
+    printSim = False  # This makes it show the generating profile progress bar
 
-        ##Plotting Flags
-        sim.simulate.plotSimProfs = False  # Shows all the little gaussians added up
+    ##Plotting Flags
+    sim.simulate.plotSimProfs = False  # Shows all the little gaussians added up
 
-        sim.batchjob.plotFits = False  # Plots the Different fits to the line w/ the raw line
-        sim.batchjob.maxFitPlot = 10
+    sim.batchjob.plotFits = False  # Plots the Different fits to the line w/ the raw line
+    sim.batchjob.maxFitPlot = 10
 
-        sim.batchjob.hahnPlot = False  # Plot the green Hahn Data on the primary plot
-        sim.batchjob.plotRatio = False  # Plot the ratio of the reconstruction/raw fits
+    sim.batchjob.hahnPlot = False  # Plot the green Hahn Data on the primary plot
+    sim.batchjob.plotRatio = False  # Plot the ratio of the reconstruction/raw fits
 
-        # Examine Batch Line Profiles
-        showProfiles = False  # Plot some number of line profiles at each impact parameter
-        maxPlotLines = 30
-        average = False
-        norm = True
-        log = False
+    # Examine Batch Line Profiles
+    showProfiles = False  # Plot some number of line profiles at each impact parameter
+    maxPlotLines = 30
+    average = False
+    norm = True
+    log = False
 
-        ################# Misc Flags ###############
+    ################# Misc Flags ###############
 
-        # Time Stuff
-        timeAx = [0]  # np.arange(0, 30, 3)
-        sim.simulate.randTime = True  # adds a random offset to the timeax of each simulate
+    # Time Stuff
+    timeAx = [0]  # np.arange(0, 30, 3)
+    sim.simulate.randTime = True  # adds a random offset to the timeax of each simulate
 
-        # Other parameters
-        rez = None  # [3,3]
-        size = [0.002, 0.01]
+    # Other parameters
+    rez = None  # [3,3]
+    size = [0.002, 0.01]
 
-        # 3D Stuff - ImageSim Parameters
-        compute3d = False
-        analyze3d = False
+    # 3D Stuff - ImageSim Parameters
+    compute3d = False
+    analyze3d = False
 
-        NN3D = [100, 100]
-        sim.imagesim.N = 600
-        sim.imagesim.timeAx3D = [0]  # np.arange(0, 120, 2)
-        rez3D = [1, 1]
-        target3D = [0, 1.5]
-        len3D = 10
-        envInd = 0
-        sim.imagesim.corRez = 1000
-        sim.imagesim.filt = 1
-        sim.imagesim.smooth = True
-    except:
-        pass
+    NN3D = [100, 100]
+    sim.imagesim.N = 600
+    sim.imagesim.timeAx3D = [0]  # np.arange(0, 120, 2)
+    rez3D = [1, 1]
+    target3D = [0, 1.5]
+    len3D = 10
+    envInd = 0
+    sim.imagesim.corRez = 1000
+    sim.imagesim.filt = 1
+    sim.imagesim.smooth = True
+
 
     ### Process Envs ###
     ####################
-    if refineBmin:
+    if False:
         tol = 0.01
         MIN = 3
         MAX = 5
         b = 1.5
         iter = 1
         envs = sim.envrs(envsName).loadEnvs(sim.environment.maxEnvs)
-        params = ["pbCalcs", envs, 1, iter, b, None, 600, rez, size, timeAx, False, False, False]
+        params = ["pbCalcs", envs, 1, lines, b, None, 600, rez, size, timeAx, False, False, False]
         useB = sim.simpoint.useB
         sim.simpoint.Bmin = sim.pbRefinement(envsName, params, MIN, MAX, tol)
         sim.simpoint.useB = useB
@@ -176,8 +179,8 @@ if __name__ == '__main__':
         go = int(sys.argv[1])
     except:
         go = 1
-    if parallel and go == 1 and (compute or refineBmin or compute3d or processEnvironments):
-        print("Starting MPI...")
+    if useMPI and go == 1 and (compute or refineBmin or compute3d or processEnvironments):
+        print("\nStarting MPI...", end='', flush=True)
         os.system("mpiexec -n {} python main.py 0".format(cores))
         print("Parallel Job Complete")
     else:
@@ -195,7 +198,8 @@ if __name__ == '__main__':
         if compute:
             #Load the environment
             env = sim.envrs(envsName).loadEnv()
-            if firstRun:
+            env.loadParams(params)
+            if params.firstRun:
                 # Create the impact array
                 if b1 is not None:
                     if spacing.casefold() in 'log'.casefold():
@@ -214,16 +218,16 @@ if __name__ == '__main__':
                     plt.show(True)
 
                 # Run the simulation
-                myBatch = sim.impactsim(batchName, env, impacts, iterations, N_line, rez, size, timeAx, printSim)
+                myBatch = sim.impactsim(params, env, impacts, lines, N_line, rez, size, timeAx, printSim)
             else:
                 # Resume the Simulation
-                myBatch = sim.batch(batchName).restartBatch(env)
+                myBatch = sim.batch(params).restartBatch(env)
         if root:
             if analyze:
                 # Get the Environment
                 env = sim.envrs(envsName).loadEnv()
                 # Analyze the simulation
-                myBatch = sim.batch(batchName).analyzeBatch(env, storeF)
+                myBatch = sim.batch(params).analyzeBatch(env, storeF)
 
             if showProfiles:
                 try:
@@ -622,27 +626,27 @@ if __name__ == '__main__':
             sim.simpoint.windFactor = 1
             sim.simpoint.doChop = True
             sim.simpoint.keepPump = True
-            sim.simpoint.g_useWind = True
+            env.params.g_useWind = True
             line1 = sim.simulate(mainLine, env, rez, getProf=True)
             rInt = line1.get('totalIntR', ion=useIon)
             # cInt = line1.get('totalIntC', ion=useIon)
             absiss = line1.get('cPos', 0)
             ax.plot(absiss, rInt/np.max(cInt), label='R - Pumping Lines', ls='--', c='r')
 
-            sim.simpoint.windFactor = 1
-            sim.simpoint.doChop = True
-            sim.simpoint.keepPump = False
-            sim.simpoint.g_useWind = True
+            env.params.windFactor = 1
+            env.params.doChop = True
+            env.params.keepPump = False
+            env.params.g_useWind = True
             line1 = sim.simulate(mainLine, env, rez, getProf=True)
             rInt = line1.get('totalIntR', ion=useIon)
             # cInt = line1.get('totalIntC', ion=useIon)
             absiss = line1.get('cPos', 0)
             ax.plot(absiss, rInt/np.max(cInt), label='R - Line Core', ls='--', c='c')
 
-            sim.simpoint.windFactor = 1
-            sim.simpoint.doChop = True
-            sim.simpoint.keepPump = True
-            sim.simpoint.g_useWind = False
+            env.params.windFactor = 1
+            env.params.doChop = True
+            env.params.keepPump = True
+            env.params.g_useWind = False
             line1 = sim.simulate(mainLine, env, rez, getProf=True)
             rInt = line1.get('totalIntR', ion=useIon)
             # cInt = line1.get('totalIntC', ion=useIon)
@@ -670,7 +674,7 @@ if __name__ == '__main__':
             half = False
             b = float(bz+1)
             sim.environment.maxIons = 3
-            sim.simpoint.useB=False
+            env.params.useB=False
 
             xmax = 30.
             useIon = 2
@@ -682,9 +686,9 @@ if __name__ == '__main__':
                 left = -xmax
             mainLine = grid.sightline([left, 0., b], [xmax, 0., b], coords='Cart')
 
-            sim.simpoint.windFactor = 1
-            sim.simpoint.doChop = False
-            sim.simpoint.g_useWind = True
+            env.params.windFactor = 1
+            env.params.doChop = False
+            env.params.g_useWind = True
             line1 = sim.simulate(mainLine, env, rez, getProf=True)
             vLOS1 = np.abs(line1.get('vLOS'))
             vLOS1 /= np.max(vLOS1)
@@ -694,30 +698,30 @@ if __name__ == '__main__':
             ax.plot(absiss, vLOS1*cInt/np.max(cInt), label='Collisional', ls='-', c='grey', lw=1)
             ax.plot(absiss, vLOS1*rInt1 / np.max(cInt), label='R - Full Range', ls='--', c='b', zorder=100)
 
-            sim.simpoint.windFactor = 1
-            sim.simpoint.doChop = True
-            sim.simpoint.keepPump = True
-            sim.simpoint.g_useWind = True
+            env.params.windFactor = 1
+            env.params.doChop = True
+            env.params.keepPump = True
+            env.params.g_useWind = True
             line1 = sim.simulate(mainLine, env, rez, getProf=True)
             rInt = line1.get('totalIntR', ion=useIon)
             # cInt = line1.get('totalIntC', ion=useIon)
             absiss = line1.get('cPos', 0)
             ax.plot(absiss, vLOS1*rInt/np.max(cInt), label='R - Pumping Lines', ls='--', c='r')
 
-            sim.simpoint.windFactor = 1
-            sim.simpoint.doChop = True
-            sim.simpoint.keepPump = False
-            sim.simpoint.g_useWind = True
+            env.params.windFactor = 1
+            env.params.doChop = True
+            env.params.keepPump = False
+            env.params.g_useWind = True
             line1 = sim.simulate(mainLine, env, rez, getProf=True)
             rInt = line1.get('totalIntR', ion=useIon)
             # cInt = line1.get('totalIntC', ion=useIon)
             absiss = line1.get('cPos', 0)
             ax.plot(absiss, vLOS1*rInt/np.max(cInt), label='R - Line Core', ls='--', c='c')
 
-            sim.simpoint.windFactor = 1
-            sim.simpoint.doChop = True
-            sim.simpoint.keepPump = True
-            sim.simpoint.g_useWind = False
+            env.params.windFactor = 1
+            env.params.doChop = True
+            env.params.keepPump = True
+            env.params.g_useWind = False
             line1 = sim.simulate(mainLine, env, rez, getProf=True)
             rInt = line1.get('totalIntR', ion=useIon)
             # cInt = line1.get('totalIntC', ion=useIon)
@@ -931,7 +935,7 @@ if __name__ == '__main__':
         # thermalTempPlot()
         # fadeInWindPlotVelocity()
         # windCvRPlotTwo(env)
-        # sim.simpoint.plotIncidentArray=False
+        # env.params.plotIncidentArray=False
         # contributionAtHeights()
 
         magneticWind()
@@ -965,7 +969,7 @@ if __name__ == '__main__':
 
         # expectationPlot()
         # expectationPlotScatter()
-        # sim.simpoint.doChop= False
+        # env.params.doChop= False
         # plotContribution()
 
 
@@ -1372,5 +1376,5 @@ if __name__ == '__main__':
     #    print('Batch Name =')
     #    print(batchName)
 
-    if root: print("End of Program")
+    if root: print("\nEnd of Program")
 
