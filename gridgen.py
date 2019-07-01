@@ -182,14 +182,12 @@ class generator:
 class sightline(generator):
     default_N = 1000
 
-    def __init__(self, position = None, target = None, 
-            iL = 1, coords = 'Cart', findT = True, rez = None, size = None, envInd = 0):
+    def __init__(self, position, target,
+            coords = 'Cart', rez = 'auto', envInd = 0):
         #print('Initializing Sightline, Observer at {pos}, looking at {targ}'.format(pos = position, targ = target))
         if position is None:
             position, target = [2, 1*np.pi/4, 1e-8], [2, -np.pi/4, 1e-8]
-            coords = 'sphere'  
-        self.iL = iL
-        self.findT = findT
+            coords = 'sphere'
         self.maxStep = 1/1500
         self.minStep = 1/10000
         self.coords = coords
@@ -197,8 +195,8 @@ class sightline(generator):
         self.look(position, target, coords)
         self.stepChange = 4
         self.envInd = envInd
-        if rez is not None:
-            self.makeLineList(rez, size)
+        self.returnC()
+
  
     def look(self, position, target, coords = 'Cart'):
 #        Initialize the sight line between two points
@@ -236,17 +234,17 @@ class sightline(generator):
         #Return the polar coordinates of a point along the line
         return self.cart2sph(self.cPoint(s))
 
-    def cGrid(self, N = None, smin=0, iL = 1):
+    def cGrid(self, N = None, smin=0, smax=1):
         #Return the coordinates of the sightline
         if N is None: N = self.default_N
         line = []
         try:
             for start, end in zip(self.startPoints, self.endPoints):
                 self.look(start, end)
-                for ss in np.linspace(smin, iL, N):
+                for ss in np.linspace(smin, smax, N):
                     line.append(self.cPoint(ss)) 
         except:
-            for ss in np.linspace(smin, iL, N):
+            for ss in np.linspace(smin, smax, N):
                 line.append(self.cPoint(ss)) 
             
         self.shape = [len(line), 1]  
@@ -286,7 +284,40 @@ class sightline(generator):
     def setAdapt_False(self):
         self.adapt = False
 
+    def get_line(self):
+        points = []
+        steps = []
+        for point, step in self:
+            points.append(point)
+            steps.append(step)
+        self.reset()
+        return points, steps
+
+    def get_points(self, N='auto'):
+        self.setAutoN()
+        self.returnP()
+        points, steps = self.get_line()
+        r, theta, phi = np.asarray(points).T
+
+        self.returnC()
+        points, steps = self.get_line()
+        x, y, z = np.asarray(points).T
+
+        #TODO THIS IS WHERE I AM WORKING
+
+
+
+
+        import pdb; pdb.set_trace()
+
+    def returnC(self):
+        self.give=self.cPoint
+
+    def returnP(self):
+        self.give=self.pPoint
+
     def setAutoN(self):
+        self.setAdapt_True()
         minPointsPerRadii = 5 # Distant Resolution
         self.minCut = 5
         midPointsPerRadii = 50 # Near Resolution
@@ -320,19 +351,31 @@ class sightline(generator):
         self.currLine += 1
 
     def __next__(self):
+        # Return the next point coordinates
+        return self.returnNextPoint()
+
+    def returnNextPoint(self, yld=True):
         if self.currS > 1:
             # If you have reached the end, do the next line
-            try: 
+            try:
                 self.pointNextLine()
             except:
-                raise StopIteration
+                if yld:
+                    raise StopIteration
+                else:
+                    return False
 
-        # Return the next point coordinates
-
-        self.pt = self.cPoint(self.currS) # Get the current point
+        self.pt = self.give(self.currS) # Get the current point
         if self.adapt: self.determineStepSize() # Determine how far to the next point
         self.currS += self.step # Go to the next point
         return self.pt, self.step # Return current point
+
+    def all_cpos(self):
+        cPos, steps = zip(*list(self))
+        return np.asarray(cPos).T, np.asarray(steps)
+
+    def loadParams(self, params):
+        self.params = params
 
 
 #TODO create cylinder
@@ -490,7 +533,7 @@ class defGrid:
         self.poleLine = sightline([1,0,0],[10.0,0,0], coords = 'Sphere')
 
         b = 1.03
-        self.impLine = sightline([5,1e-8,b],[-5,1e-8,b], findT = True)
+        self.impLine = sightline([5,1e-8,b],[-5,1e-8,b])
 
 
 def impactLines(N=5, b0 = 1.05, b1= 1.5, len = 50):
@@ -501,7 +544,7 @@ def impactLines(N=5, b0 = 1.05, b1= 1.5, len = 50):
     #bax = np.logspace(np.log10(b0),np.log10(b1),N)
     bax = np.linspace(b0,b1,N)
     for zz in bax:
-        lines.append(sightline([x,y,zz], [-x,y,zz], findT = True))
+        lines.append(sightline([x,y,zz], [-x,y,zz]))
     #List of grids, list of labels
     return [lines, bax] 
 
@@ -514,7 +557,7 @@ def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, rez = None, size = None, find
         theta += offset
         x = x0 * np.sin(theta) + y0 * np.cos(theta)
         y = x0 * np.cos(theta) - y0 * np.sin(theta)
-        thisLine = sightline([x,y,b], [-x,-y,b], findT = findT, rez = rez, size = size, envInd = envInd)
+        thisLine = sightline([x,y,b], [-x,-y,b], rez = rez, size = size, envInd = envInd)
         
         work.append(thisLine)
 
