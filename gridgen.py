@@ -58,10 +58,6 @@ class generator:
         if self.step > self.minStep:
             self.step = max(self.step / mult, self.minStep)
 
-    def reset(self):
-        self.currS = 0
-        self.step = self.maxStep
-    
     def sph2cart(self, sph):
         #Change coordinate systems
         rho, theta, phi = sph[:]
@@ -182,26 +178,19 @@ class generator:
 class sightline(generator):
     default_N = 1000
 
-    def __init__(self, position, target,
-            coords = 'Cart', rez = 'auto', envInd = 0):
-        #print('Initializing Sightline, Observer at {pos}, looking at {targ}'.format(pos = position, targ = target))
-        if position is None:
-            position, target = [2, 1*np.pi/4, 1e-8], [2, -np.pi/4, 1e-8]
-            coords = 'sphere'
-        self.maxStep = 1/1500
-        self.minStep = 1/10000
+    def __init__(self, position, target, coords='Cart', N='auto', envInd=0, params=None, env=None):
         self.coords = coords
-        self.currLine = 0
+        self.N = N
         self.look(position, target, coords)
-        self.stepChange = 4
         self.envInd = envInd
         self.returnC()
+        if params is not None:
+            self.loadParams(params)
+        elif env is not None:
+            self.loadParams_env(env)
 
- 
-    def look(self, position, target, coords = 'Cart'):
-#        Initialize the sight line between two points
-        self.currS = 0
-        self.step = self.maxStep
+    def look(self, position, target, coords='Cart'):
+        """Initialize the sight line between two points"""
         if coords.lower() == 'cart':
             self.cPos = position
             self.cTarg = target
@@ -218,167 +207,165 @@ class sightline(generator):
         self.gradArr = np.asarray(self.gradient).astype(float)
         self.norm = np.linalg.norm(self.gradArr)  
         self.ngrad = self.gradArr / self.norm
-
-    def makeLineList(self, rez, size):
-        self.NLines = rez[0] * rez[1]
-        rotAxis = [0,0,1]
-        self.currS = 1e8
-        self.startPoints = plane(self.ngrad, self.cPos, 0.5, rotAxis, absolute = True).cGrid(rez[0], size[0], rez[1], size[1])
-        self.endPoints = plane(self.ngrad, self.cTarg, 0.5, rotAxis, absolute = True).cGrid(rez[0], size[0], rez[1], size[1])
-
-    def cPoint(self, s):
-        #Return the coordinates of a point along the line
-        return (np.array(self.cPos) + self.gradArr*s).tolist()
-        
-    def pPoint(self, s):
-        #Return the polar coordinates of a point along the line
-        return self.cart2sph(self.cPoint(s))
-
-    def cGrid(self, N = None, smin=0, smax=1):
-        #Return the coordinates of the sightline
-        if N is None: N = self.default_N
-        line = []
-        try:
-            for start, end in zip(self.startPoints, self.endPoints):
-                self.look(start, end)
-                for ss in np.linspace(smin, smax, N):
-                    line.append(self.cPoint(ss)) 
-        except:
-            for ss in np.linspace(smin, smax, N):
-                line.append(self.cPoint(ss)) 
-            
-        self.shape = [len(line), 1]  
-        return line
-    
-    def pGrid(self, N = None, smin=0, iL = 1):  
-        #Return the polar coordinates of the sightline
-        if N is None: N = self.default_N
-        line = []
-        for ss in np.linspace(smin, iL, N):
-            line.append(self.pPoint(ss))  
-        self.shape = [len(line), 1]         
-        return line
-        
-    def setN(self, N):
-        self.step = 1/N
-
-    def setMinN(self, N):
-        self.maxStep = 1/N
-
-    def setMaxN(self, N):
-        self.minStep = 1/N
-
-    def setMidN(self, N):
-        self.midStep = 1/N
-
-    def reset(self):
-        self.currS = 0
-        self.step = self.maxStep
-
-    def setAdapt(self, adapt):
-        self.adapt = adapt
-
-    def setAdapt_True(self):
-        self.adapt = True
-
-    def setAdapt_False(self):
-        self.adapt = False
-
-    def get_line(self):
-        points = []
-        steps = []
-        for point, step in self:
-            points.append(point)
-            steps.append(step)
-        self.reset()
-        return points, steps
-
-    def get_points(self, N='auto'):
-        self.setAutoN()
-        self.returnP()
-        points, steps = self.get_line()
-        r, theta, phi = np.asarray(points).T
-
-        self.returnC()
-        points, steps = self.get_line()
-        x, y, z = np.asarray(points).T
-
-        #TODO THIS IS WHERE I AM WORKING
-
-
-
-
-        import pdb; pdb.set_trace()
-
-    def returnC(self):
-        self.give=self.cPoint
-
-    def returnP(self):
-        self.give=self.pPoint
-
-    def setAutoN(self):
-        self.setAdapt_True()
-        minPointsPerRadii = 5 # Distant Resolution
-        self.minCut = 5
-        midPointsPerRadii = 50 # Near Resolution
-        self.maxCut = 2
-        maxPointsPerRadii = 250 # Very close Resolution
-        lengthRadii = self.norm
-        minPoints = lengthRadii * minPointsPerRadii
-        midPoints = lengthRadii * midPointsPerRadii
-        maxPoints = lengthRadii * maxPointsPerRadii
-
-        self.setMinN(minPoints)
-        self.setMidN(midPoints)
-        self.setMaxN(maxPoints)
-        self.set2maxStep()
-
-    def determineStepSize(self):
-        ppt = self.pPoint(self.currS)
-        r = ppt[0]
-        rho = np.sqrt(self.pt[0] ** 2 + self.pt[1] ** 2)
-        if r <= self.maxCut:
-            self.set2minStep()
-        elif rho <= self.minCut:
-            self.set2midStep()
-        else:
-            self.set2maxStep()
-
-    def pointNextLine(self):
-        start = self.startPoints[self.currLine]
-        end = self.endPoints[self.currLine]
-        self.look(start, end)
-        self.currLine += 1
-
-    def __next__(self):
-        # Return the next point coordinates
-        return self.returnNextPoint()
-
-    def returnNextPoint(self, yld=True):
-        if self.currS > 1:
-            # If you have reached the end, do the next line
-            try:
-                self.pointNextLine()
-            except:
-                if yld:
-                    raise StopIteration
-                else:
-                    return False
-
-        self.pt = self.give(self.currS) # Get the current point
-        if self.adapt: self.determineStepSize() # Determine how far to the next point
-        self.currS += self.step # Go to the next point
-        return self.pt, self.step # Return current point
-
-    def all_cpos(self):
-        cPos, steps = zip(*list(self))
-        return np.asarray(cPos).T, np.asarray(steps)
+        self.normCm = self.norm * 695.5 * 1e8  # in cm
 
     def loadParams(self, params):
         self.params = params
+        self.setN()
+
+    def loadParams_env(self, env):
+        self.params = env.params
+        self.setN()
+
+    def setN(self, N=None):
+        if N is None:
+            self.N = self.params._N_line
+        else:
+            self.N = N
+
+    def returnC(self):
+        self.give = self.cPoint
+
+    def returnP(self):
+        self.give = self.pPoint
+
+    def cPoint(self, s):
+        """Return the coordinates of a point along the line"""
+        return (np.array(self.cPos) + self.gradArr*s).tolist()
+        
+    def pPoint(self, s):
+        """Return the polar coordinates of a point along the line"""
+        return self.cart2sph(self.cPoint(s))
+
+    def get_points(self, N=None, adapt=True):
+        """Return the points and steps"""
+
+        N, adapt = self.params.resolution(N, adapt)
+
+        if not adapt:
+            # Get a straight line
+            if type(N) in (int, float):
+                self.setN(N)
+            else:
+                self.setN(1000)
+            return self.get_linspace()
+
+        # Find the boundaries
+        self.rhoCut = 15
+        self.rCut = 2
+
+        self.r1 = 5
+        self.R21 = 5
+        self.R32 = 5
+
+        self.setN(N)
+
+        # Create the points and output
+        return self.sArray_points(self.get_sArray())
+
+    def get_sArray(self):
+        sBounds = self.find_sBounds()
+        nRegions = int(len(sBounds)/2)
+
+        # Create the sArray
+        if nRegions == 2:
+            return self.twoRegion(sBounds)
+        elif nRegions == 3:
+            return self.threeRegion(sBounds)
+
+    def find_sBounds(self):
+        points, steps = self.get_linspace(10000)
+        x, y, z = points
+        rho = np.sqrt(x ** 2 + y ** 2)
+        r = np.sqrt(x ** 2 + y ** 2 + z**2)
+
+        check = np.zeros_like(r)
+        check[r <= self.rCut] += 1
+        check[rho <= self.rhoCut] += 1
+        df = np.nonzero(np.diff(check))
+
+        cumSum = np.cumsum(steps)
+        sBounds = cumSum[df]
+        sBounds = np.insert(sBounds, 0, 0)
+        sBounds = np.append(sBounds, 1)
+        return sBounds
+
+    def get_linspace(self, N=None, smin=0, smax=1):
+        #Return the coordinates of the sightline
+        if N is None:
+            N = self.N
+        self.shape = N
+        sArray = np.linspace(smin, smax, N)
+        return self.sArray_points(sArray)
+
+    def sArray_points(self, sArray):
+        points = np.asarray([self.give(ss) for ss in sArray]).T
+        stepArray = np.diff(sArray)
+        stepArray = np.append(stepArray, stepArray[-1])
+        return points, stepArray
+
+    def threeRegion(self, sBounds):
+        R21 = self.R21
+        R32 = self.R32
+
+        L1 = np.abs(sBounds[0] - sBounds[1]) * self.norm
+        L2 = np.abs(sBounds[1] - sBounds[2]) * self.norm
+        L3 = np.abs(sBounds[2] - sBounds[3]) * self.norm
+        L4 = np.abs(sBounds[3] - sBounds[4]) * self.norm
+        L5 = np.abs(sBounds[4] - sBounds[5]) * self.norm
+
+        if self.N == 'auto':
+            r1 = self.r1
+        else:
+            r1 = self.N / (L1 + R21*L2 + R32*R21*L3 + R21*L4 + L5)
+
+        N1 = int(np.round(r1 * L1))
+        N2 = int(np.round(r1 * R21 * L2))
+        N3 = int(np.round(r1 * R21 * R32 * L3))
+        N4 = int(np.round(r1 * R21 * L4))
+        N5 = int(np.round(r1 * L5)) + 1
+
+        R1 = N1/L1
+        R2 = N2/L2
+        R3 = N3/L3
+        R4 = N4/L4
+        R5 = N5/L5
+
+        sArray1 = np.linspace(sBounds[0], sBounds[1], N1, endpoint=False)
+        sArray2 = np.linspace(sBounds[1], sBounds[2], N2, endpoint=False)
+        sArray3 = np.linspace(sBounds[2], sBounds[3], N3, endpoint=False)
+        sArray4 = np.linspace(sBounds[3], sBounds[4], N4, endpoint=False)
+        sArray5 = np.linspace(sBounds[4], sBounds[5], N5, endpoint=True)
+
+        return np.concatenate((sArray1, sArray2, sArray3, sArray4, sArray5))
+
+    def twoRegion(self, sBounds):
+        R21 = self.R21
+
+        L1 = np.abs(sBounds[0] - sBounds[1]) * self.norm
+        L2 = np.abs(sBounds[1] - sBounds[2]) * self.norm
+        L3 = np.abs(sBounds[2] - sBounds[3]) * self.norm
+
+        if self.N == 'auto':
+            r1 = self.r1
+        else:
+            r1 = self.N / (L1 + R21 * L2 + L3)
+
+        N1 = int(np.round(r1 * L1))
+        N2 = int(np.round(r1 * R21 * L2))
+        N3 = int(np.round(r1 * L3)) + 1
+
+        R1 = N1 / L1
+        R2 = N2 / L2
+        R3 = N3 / L3
+
+        sArray1 = np.linspace(sBounds[0], sBounds[1], int(N1), endpoint=False)
+        sArray2 = np.linspace(sBounds[1], sBounds[2], int(N2), endpoint=False)
+        sArray3 = np.linspace(sBounds[2], sBounds[3], int(N3), endpoint=True)
+
+        return np.concatenate((sArray1, sArray2, sArray3))
 
 
-#TODO create cylinder
 
 #A plane normal to a given vector
 class plane(generator):
@@ -548,7 +535,7 @@ def impactLines(N=5, b0 = 1.05, b1= 1.5, len = 50):
     #List of grids, list of labels
     return [lines, bax] 
 
-def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, rez = None, size = None, findT = True, envInd = 0):
+def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, envInd = 0):
     #Generate lines with a fixed impact parameter but varying angle
     work = []
     y0 = 1e-8
@@ -557,7 +544,7 @@ def rotLines(N = 20, b = 1.05, offset = 0, x0 = 5, rez = None, size = None, find
         theta += offset
         x = x0 * np.sin(theta) + y0 * np.cos(theta)
         y = x0 * np.cos(theta) - y0 * np.sin(theta)
-        thisLine = sightline([x,y,b], [-x,-y,b], rez = rez, size = size, envInd = envInd)
+        thisLine = sightline([x,y,b], [-x,-y,b], envInd = envInd)
         
         work.append(thisLine)
 

@@ -41,36 +41,38 @@ if __name__ == '__main__':
     params.useWind(True)
     params.windFactor(1)
     params.doChop(False) # Cut out the continuum of the incident light
-    params.makeLight(True)
+    params.makeLight(False)
 
     # # # Which part of the program should run? # # # #
 
     # Single Sim Playground
-    simOne = True
+    simOne = False
 
     # 1D Stuff - ImpactSim Parameters
-    compute = False
+    compute = True
     analyze = False
     sim.batchjob.redoStats = True
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Compute Properties
 
-    impactPoints = 5
+    impactPoints = 50
     b0 = 1.01  # 1.03
     b1 = 11  # 2.5 #2
     spacing = 'log'
     confirm = False
-    # params.resolution(100)
+    # params.resolution(500)
 
     # How many lines should it do at each point?
     lines = 1
     params.maxIons(100)
+    # params.lamPrimeRez(500)
+    # params.lamRez(200)
 
     # Run in parallel?
     sim.batchjob.usePool = False
     useMPI = False
-    cores = 6
+    cores = 8
 
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -130,24 +132,7 @@ if __name__ == '__main__':
     timeAx = [0]  # np.arange(0, 30, 3)
     sim.simulate.randTime = True  # adds a random offset to the timeax of each simulate
 
-    # Other parameters
-    rez = None  # [3,3]
-    size = [0.002, 0.01]
 
-    # 3D Stuff - ImageSim Parameters
-    compute3d = False
-    analyze3d = False
-
-    NN3D = [100, 100]
-    sim.imagesim.N = 600
-    sim.imagesim.timeAx3D = [0]  # np.arange(0, 120, 2)
-    rez3D = [1, 1]
-    target3D = [0, 1.5]
-    len3D = 10
-    envInd = 0
-    sim.imagesim.corRez = 1000
-    sim.imagesim.filt = 1
-    sim.imagesim.smooth = True
 
 
     ##################################################################################
@@ -159,7 +144,7 @@ if __name__ == '__main__':
         go = int(sys.argv[1])
     except:
         go = 1
-    if useMPI and go == 1 and (compute or refineBmin or compute3d or processEnvironments):
+    if useMPI and go == 1 and (compute or refineBmin or processEnvironments):
         print("\nStarting MPI...", end='', flush=True)
         os.system("mpiexec -n {} python main.py 0".format(cores))
         print("Parallel Job Complete")
@@ -199,7 +184,7 @@ if __name__ == '__main__':
                     plt.show(True)
 
                 # Run the simulation
-                myBatch = sim.impactsim(params, env, impacts, lines, rez, size, timeAx, printSim)
+                myBatch = sim.impactsim(env, impacts, lines, printSim)
             else:
                 # Resume the Simulation
                 myBatch = sim.batch(params).restartBatch(env)
@@ -209,28 +194,6 @@ if __name__ == '__main__':
                 env = sim.envrs(envsName).loadEnv()
                 # Analyze the simulation
                 myBatch = sim.batch(params).analyzeBatch(env, storeF)
-
-            if showProfiles:
-                try:
-                    env
-                except:
-                    env = sim.envrs(envsName).loadEnv()
-                try:
-                    myBatch
-                except:
-                    myBatch = sim.batch(batchName).loadBatch(env)
-                myBatch.plotProfiles(maxPlotLines)
-                # myBatch.plotProfTogether(average, norm, log)
-
-        if compute3d:
-            env = sim.envrs(envsName).loadEnvs(maxEnvs)[envInd]
-            myBatch = sim.imagesim(batchName, env, NN3D, rez3D, target3D, len3D)
-        if analyze3d and root:
-            try:
-                myBatch
-            except:
-                myBatch = sim.batch(batchName).loadBatch()
-            myBatch.plot()
 
 
     #### Single Sim Playground ##############
@@ -246,6 +209,8 @@ if __name__ == '__main__':
         # env.save()
         # env.fPlot()
         # env.loadAllBfiles()
+        # env.create_vec_interps()
+        #
         # env.save()
         # env.assignColors()
         # env.save()
@@ -284,7 +249,7 @@ if __name__ == '__main__':
         # an.fadeInWindPlotVelocity()
         # an.windCvRPlotAll()
         # an.contributionAtHeights()
-        an.incidentTest()
+        # an.incidentTest()
         # magneticWind()
 
 
@@ -341,25 +306,27 @@ if __name__ == '__main__':
 
 
         if False:
-            z = 1.01
+            z = 1.6
             x = 50
-            N = 200
+            N = 200 # 'auto'
             position, target = [x, 0.001, z], [-x, 0.001, z]
             primeLineVLong = grid.sightline(position, target, coords='cart')
 
             params = sim.runParameters()
             # params.maxIons(3)
-            params.noEffects()
-            params.useWind(True)
+            params.smooth()
+            params.resolution(N)
+            # params.flatSpectrum(True)
             env = sim.envrs(envsName).loadEnv(params)
 
-            sim.simulate.vectorize = True
-            lineSim1 = sim.simulate(primeLineVLong, env, N=N, getProf=True)
+            lineSim1 = sim.simulate(primeLineVLong, env, getProf=False)
 
+            # lineSim1.plot('N', ion=0, abscissa='cPos', absdim=0, yscale='log')
+            lineSim1.simLine.plotProjections()
             # sim.simulate.vectorize = False
             # lineSim2 = sim.simulate(primeLineVLong, env, N=N, getProf=True)
             # fig, ax = plt.subplots()
-            lineSim1.plotProfiles()
+            # lineSim1.plotProfiles()
             # lineSim2.plotProfiles(ax, ls='--')
 
             # toPlot = 'intR'
@@ -376,9 +343,9 @@ if __name__ == '__main__':
             # plt.plot(abss1, los1, 'b', label='Vector')
             # plt.plot(abss2, los2, 'r--', label='Serial')
             # plt.title(toPlot)
-            plt.yscale('log')
+            # plt.yscale('log')
             # plt.legend()
-            plt.show()
+            # plt.show()
 
             # # The cool new time evolution plots
             # sim.simulate.movName = 'windowPlot.mp4'
