@@ -177,6 +177,7 @@ class generator:
 #A line of points between two given points
 class sightline(generator):
     default_N = 1000
+    exact = None
 
     def __init__(self, position, target, coords='Cart', N='auto', envInd=0, params=None, env=None):
         self.coords = coords
@@ -237,8 +238,18 @@ class sightline(generator):
         """Return the polar coordinates of a point along the line"""
         return self.cart2sph(self.cPoint(s))
 
+    def set_exact(self, points):
+        outPoints = np.asarray(points).T
+        nPts = len(points)
+        sArray = np.ones(nPts)*1/nPts
+        self.exact = [outPoints, sArray]
+
+
     def get_points(self, N=None, adapt=True):
         """Return the points and steps"""
+
+        if not self.exact is None:
+            return self.exact
 
         N, adapt = self.params.resolution(N, adapt)
 
@@ -268,7 +279,9 @@ class sightline(generator):
         nRegions = int(len(sBounds)/2)
 
         # Create the sArray
-        if nRegions == 2:
+        if nRegions == 1:
+            return self.oneRegion(sBounds)
+        elif nRegions == 2:
             return self.twoRegion(sBounds)
         elif nRegions == 3:
             return self.threeRegion(sBounds)
@@ -288,6 +301,8 @@ class sightline(generator):
         sBounds = cumSum[df]
         sBounds = np.insert(sBounds, 0, 0)
         sBounds = np.append(sBounds, 1)
+        # import pdb;pdb.set_trace()
+
         return sBounds
 
     def get_linspace(self, N=None, smin=0, smax=1):
@@ -365,7 +380,8 @@ class sightline(generator):
 
         return np.concatenate((sArray1, sArray2, sArray3))
 
-
+    def oneRegion(self, sBounds):
+        return np.linspace(sBounds[0], sBounds[1], self.N, endpoint=True)
 
 #A plane normal to a given vector
 class plane(generator):
@@ -522,6 +538,17 @@ class defGrid:
         b = 1.03
         self.impLine = sightline([5,1e-8,b],[-5,1e-8,b])
 
+
+def impactArray(b0, b1, iPoints, spacing='log'):
+    # Create the impact array
+    if b1 is not None:
+        if spacing.casefold() in 'log'.casefold():
+            logsteps = np.logspace(np.log10(b0 - 1), np.log10(b1 - 1), iPoints)
+            return np.round(logsteps + 1, 5)
+        else:
+            return np.round(np.linspace(b0, b1, iPoints), 4)
+    else:
+        return np.round([b0], 4)
 
 def impactLines(N=5, b0 = 1.05, b1= 1.5, len = 50):
     #Generate lines with a fixed angle but varying impact parameter

@@ -24,8 +24,8 @@ if __name__ == '__main__':
 
     # Environment Parameters
     envsName = 'Remastered'
-    sim.environment.fFile = 'Remastered'
-    sim.environment.fFile_lin = 'Remastered_lin'
+    sim.environment.fFile = 'Remastered2'
+    sim.environment.fFile_lin = 'Remastered_lin2'
     sim.environment.weightPower = 2
 
     processEnvironments = False
@@ -33,7 +33,8 @@ if __name__ == '__main__':
     refineBmin = False
 
     # Batch Name
-    params = sim.runParameters('XXX')
+    batchName = 'Projection2'
+    params = sim.runParameters(batchName)
     params.firstRun(True)  # Overwrite?
 
     params.useB(False)
@@ -41,38 +42,35 @@ if __name__ == '__main__':
     params.useWind(True)
     params.windFactor(1)
     params.doChop(False) # Cut out the continuum of the incident light
-    params.makeLight(False)
+    params.makeLight(True)
 
     # # # Which part of the program should run? # # # #
 
     # Single Sim Playground
-    simOne = False
+    simOne = True
 
     # 1D Stuff - ImpactSim Parameters
-    compute = True
+    compute = False
     analyze = False
     sim.batchjob.redoStats = True
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
     # Compute Properties
 
-    impactPoints = 50
-    b0 = 1.01  # 1.03
-    b1 = 11  # 2.5 #2
-    spacing = 'log'
     confirm = False
     # params.resolution(500)
+    params.impacts(1.01,11,100)
 
     # How many lines should it do at each point?
     lines = 1
-    params.maxIons(100)
+    # params.maxIons(100)
     # params.lamPrimeRez(500)
     # params.lamRez(200)
 
     # Run in parallel?
     sim.batchjob.usePool = False
     useMPI = False
-    cores = 8
+    cores = 3
 
 
     # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -166,25 +164,15 @@ if __name__ == '__main__':
             env = sim.envrs(envsName).loadEnv()
             env.loadParams(params)
             if params._firstRun:
-                # Create the impact array
-                if b1 is not None:
-                    if spacing.casefold() in 'log'.casefold():
-                        logsteps = np.logspace(np.log10(b0 - 1), np.log10(b1 - 1), impactPoints)
-                        impacts = np.round(logsteps + 1, 5)
-                    else:
-                        impacts = np.round(np.linspace(b0, b1, impactPoints), 4)
-                else:
-                    impacts = np.round([b0], 4)
-
                 if confirm:
-                    plt.semilogy(np.ones_like(impacts), impacts - 1, 'o')
+                    plt.semilogy(np.ones_like(params.impacts()), params.impacts() - 1, 'o')
                     plt.axhline(1)
                     plt.title("Close Window to Confirm Your Height Selections")
                     plt.ylabel('Solar Radii')
                     plt.show(True)
 
                 # Run the simulation
-                myBatch = sim.impactsim(env, impacts, lines, printSim)
+                myBatch = sim.impactsim(params)
             else:
                 # Resume the Simulation
                 myBatch = sim.batch(params).restartBatch(env)
@@ -215,7 +203,31 @@ if __name__ == '__main__':
         # env.assignColors()
         # env.save()
 
+        ### PAPER PLOTS ###
+        # env.zephyrPlot(True)
+        # env.plotElements(True)  # This plots all the charge states of each element
+        # env.plotChargeStates(True) # This plots the density of ions of interest
+        # env.plotSuperRadial(True)  #This shows the super radial plot
+        # an.thermalTempPlot('Wind 0', True)
+        # an.losBehavior(0.02, save=True)
+        # an.fadeInWindPlotVelocity(save=True)
+        # an.windCvRPlotAll(True)
+        an.incidentChoices(False)
+        # an.reDistContour(False)
+        # an.boostLook(save=True)
+        # env.makeTable()
+        # an.projectionPlot(batchName, True)
 
+
+
+
+        # an.contributionAtHeights()
+
+        # an.losBehavior(0.1)
+        # an.losBehavior(1.0)
+        # an.losBehavior(5.0)
+
+        # magneticWind()
 
         # env._LOS2DLoad()
         # env.save()
@@ -234,24 +246,10 @@ if __name__ == '__main__':
         # env.plotChargeStates() # This plots the density of ions of interest
         # env.plotTotals(True) # This plots all the element total densities
         # env.plotSuperRadial()  #This shows the super radial plot
-        # env.makeTable()
+
 
         # for ion in env.ions:
         # env.plot_ionization(env.ions[0])
-
-
-
-        ### POSTER PLOTS
-        # env.zephyrPlot()
-        # env.plotSuperRadial()  #This shows the super radial plot
-        # env.plotChargeStates() # This plots the density of ions of interest
-        # an.thermalTempPlot('Wind 0 Magnetic')
-        # an.fadeInWindPlotVelocity()
-        # an.windCvRPlotAll()
-        # an.contributionAtHeights()
-        # an.incidentTest()
-        # magneticWind()
-
 
         # chopPlots()
         # chopAffectVelocity()
@@ -309,20 +307,24 @@ if __name__ == '__main__':
             z = 1.6
             x = 50
             N = 200 # 'auto'
-            position, target = [x, 0.001, z], [-x, 0.001, z]
+            position, target = [0, 0, 1], [0, 0, 10]
             primeLineVLong = grid.sightline(position, target, coords='cart')
 
             params = sim.runParameters()
             # params.maxIons(3)
             params.smooth()
-            params.resolution(N)
+            params.resolution(N, False)
             # params.flatSpectrum(True)
             env = sim.envrs(envsName).loadEnv(params)
-
-            lineSim1 = sim.simulate(primeLineVLong, env, getProf=False)
+            t = time.time()
+            lineSim1 = sim.simulate(primeLineVLong, env, getProf=True)
+            print("Finished in {:0.3}".format(time.time()-t))
+            lineSim1.plot('uw', abscissa='z')
+            lineSim1.plot('Te', abscissa='z')
+            lineSim1.plot('rho', abscissa='z')
 
             # lineSim1.plot('N', ion=0, abscissa='cPos', absdim=0, yscale='log')
-            lineSim1.simLine.plotProjections()
+            # lineSim1.simLine.plotProjections()
             # sim.simulate.vectorize = False
             # lineSim2 = sim.simulate(primeLineVLong, env, N=N, getProf=True)
             # fig, ax = plt.subplots()
