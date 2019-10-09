@@ -33,7 +33,7 @@ if __name__ == '__main__':
     refineBmin = False
 
     # Batch Name
-    batchName = 'Projection2'
+    batchName = 'HQREZ'
     params = sim.runParameters(batchName)
     params.firstRun(True)  # Overwrite?
 
@@ -64,8 +64,8 @@ if __name__ == '__main__':
     # How many lines should it do at each point?
     lines = 1
     # params.maxIons(100)
-    # params.lamPrimeRez(500)
-    # params.lamRez(200)
+    params.lamPrimeRez(1000)
+    params.lamRez(1000)
 
     # Run in parallel?
     sim.batchjob.usePool = False
@@ -192,7 +192,7 @@ if __name__ == '__main__':
         env = sim.envrs(envsName).loadEnv(params)
         an = sim.analysis(env)
 
-        # env.fLoad('Remastered2')
+        # env.fLoad('current')
         # env.fLoad_lin('Remastered_lin2')
         # env.save()
         # env.fPlot()
@@ -211,15 +211,61 @@ if __name__ == '__main__':
         # an.thermalTempPlot('Wind 0', True)
         # an.losBehavior(0.02, save=True)
         # an.fadeInWindPlotVelocity(save=True)
-        # an.windCvRPlotAll(True)
-        an.incidentChoices(False)
-        # an.reDistContour(False)
+        # an.windCvRPlotAll_square(True)
+        # an.incidentChoices_square(True)
+        # an.reDistContour(True)
         # an.boostLook(save=True)
         # env.makeTable()
-        # an.projectionPlot(batchName, True)
+        an.projectionPlot(saveFig=True, saveData=False)
+        # an.moranPlot1(False)
+
+        # an.moranPlot2(True)
 
 
 
+        if False:
+            #This was to determine what was wrong with the intensities
+            import copy
+
+            params = sim.runParameters()
+            params.smooth()
+            params.useWind(True)
+            params.resolution(150)
+
+            params.r_core()
+            coreP = copy.copy(params)
+            params.r_full()
+            fullP = copy.copy(params)
+
+
+
+
+
+            xmax=15
+            useIon = 2
+            nCases = 5
+            import matplotlib as mpl
+            colors = [mpl.cm.coolwarm_r(x) for x in np.linspace(0, 1, nCases)]
+
+            fig,ax = plt.subplots()
+
+            for ls, param in zip(['-'],[coreP]):
+                for ii, bz in enumerate(np.logspace(np.log10(0.02), 1, nCases)):
+                    b=np.round(bz,2)+1
+                    print("Plotting {}".format(b))
+                    thisLine = grid.sightline([-xmax, 0., b], [xmax, 0., b], coords='Cart')
+                    env.loadParams(param)
+                    line2 = sim.simulate(thisLine, env, getProf=True)
+                    rInt = line2.get('intR', ion=useIon)
+                    absiss = line2.get('cPos', 0)
+                    ax.plot(absiss, rInt, label=b, color = colors[ii], ls = ls)
+                    #
+
+
+            ax.legend(loc='lower right')
+            ax.set_yscale('log')
+            # plt.title('Core')
+            plt.show()
 
         # an.contributionAtHeights()
 
@@ -313,7 +359,9 @@ if __name__ == '__main__':
             params = sim.runParameters()
             # params.maxIons(3)
             params.smooth()
-            params.resolution(N, False)
+            params.resolution(3000, False)
+            params.lamPrimeRez(3000)
+            params.lamRez(3000)
             # params.flatSpectrum(True)
             env = sim.envrs(envsName).loadEnv(params)
             t = time.time()
