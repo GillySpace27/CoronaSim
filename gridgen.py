@@ -7,6 +7,7 @@ Created on Tue May 24 00:59:12 2016
 
 import numpy as np
 import os
+import coronasim as sim
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from scipy import io
@@ -19,7 +20,7 @@ zero = 1e-8
 class generator:
     
     rstar = 1
-
+    params = None
     backflag1 = True
     backflag2 = True
     
@@ -98,14 +99,17 @@ class generator:
     def quadAx(self, quad = True):
         fig = plt.figure("CoronaSim")
         dataAxis = plt.subplot2grid((2,4), (0,2), colspan=2, rowspan = 2)
+
+        aspect = 'auto'
+
         if quad:
-            ax1 = plt.subplot2grid((2,4), (0,0), projection = '3d', aspect = 'equal')
+            ax1 = plt.subplot2grid((2,4), (0,0), projection = '3d', aspect=aspect)
             ax1.view_init(elev=0., azim=0.)
-            ax2 = plt.subplot2grid((2,4), (0,1), projection = '3d', aspect = 'equal')
+            ax2 = plt.subplot2grid((2,4), (0,1), projection = '3d', aspect=aspect)
             ax2.view_init(elev=90, azim=0.)
-            ax3 = plt.subplot2grid((2,4), (1,0), projection = '3d', aspect = 'equal')
+            ax3 = plt.subplot2grid((2,4), (1,0), projection = '3d', aspect=aspect)
             ax3.view_init(elev=0, azim=90)
-            ax4 = plt.subplot2grid((2,4), (1,1), projection = '3d', aspect = 'equal')
+            ax4 = plt.subplot2grid((2,4), (1,1), projection = '3d', aspect=aspect)
             quadAxis = [ax1, ax2, ax3, ax4]
         else:
             ax1 = plt.subplot2grid((2,4), (0,0), colspan=2, rowspan = 2, projection = '3d', aspect = 'equal')
@@ -115,14 +119,15 @@ class generator:
 
     def quadAxOnly(self):
         fig = plt.figure("CoronaSim")
+        aspect = 'equal'
 
-        ax1 = plt.subplot2grid((2,2), (0,0), projection = '3d', aspect = 'equal')
+        ax1 = plt.subplot2grid((2,2), (0,0), projection = '3d', aspect=aspect)
         ax1.view_init(elev=0., azim=0.)
-        ax2 = plt.subplot2grid((2,2), (0,1), projection = '3d', aspect = 'equal')
+        ax2 = plt.subplot2grid((2,2), (0,1), projection = '3d', aspect=aspect)
         ax2.view_init(elev=90, azim=0.)
-        ax3 = plt.subplot2grid((2,2), (1,0), projection = '3d', aspect = 'equal')
+        ax3 = plt.subplot2grid((2,2), (1,0), projection = '3d', aspect=aspect)
         ax3.view_init(elev=0, azim=90)
-        ax4 = plt.subplot2grid((2,2), (1,1), projection = '3d', aspect = 'equal')
+        ax4 = plt.subplot2grid((2,2), (1,1), projection = '3d', aspect=aspect)
         quadAxis = [ax1, ax2, ax3, ax4]
         dataAxis = []
         return fig, dataAxis, quadAxis
@@ -173,6 +178,22 @@ class generator:
         for ii in sorted(myVars.keys()):
             print(ii, " : ", myVars[ii])
 
+    def loadParams(self, params=None):
+        if params is None:
+            params = sim.runParameters()
+        self.params = params
+        self.setN()
+
+    def loadParams_env(self, env):
+        self.params = env.params
+        self.setN()
+
+    def setN(self, N=None):
+        if N is None:
+            self.N = self.params._N_line
+        else:
+            self.N = N
+
             
 #A line of points between two given points
 class sightline(generator):
@@ -210,19 +231,9 @@ class sightline(generator):
         self.ngrad = self.gradArr / self.norm
         self.normCm = self.norm * 695.5 * 1e8  # in cm
 
-    def loadParams(self, params):
-        self.params = params
-        self.setN()
 
-    def loadParams_env(self, env):
-        self.params = env.params
-        self.setN()
 
-    def setN(self, N=None):
-        if N is None:
-            self.N = self.params._N_line
-        else:
-            self.N = N
+
 
     def returnC(self):
         self.give = self.cPoint
@@ -245,7 +256,7 @@ class sightline(generator):
         self.exact = [outPoints, sArray]
 
 
-    def get_points(self, N=None, adapt=True):
+    def get_points(self, N=None, adapt=False):
         """Return the points and steps"""
 
         if not self.exact is None:
@@ -381,15 +392,19 @@ class sightline(generator):
         return np.concatenate((sArray1, sArray2, sArray3))
 
     def oneRegion(self, sBounds):
+        if self.N == 'auto':
+            L1 = np.abs(sBounds[0] - sBounds[1]) * self.norm
+            r1 = self.r1
+            self.N = int(np.round(r1 * L1))
         return np.linspace(sBounds[0], sBounds[1], self.N, endpoint=True)
 
 #A plane normal to a given vector
 class plane(generator):
     #TODO Make plane adaptive
-    default_N = 1000
+    default_N = 20
     norm = 1 #THIS IS WRONG
 
-    def __init__(self, normal = [1,0,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False, absolute = False, envInd = 0):
+    def __init__(self, normal = [1,0,0], offset = [0,3,-3], iL = 6, rotAxis = [-1,1,1], ncoords = 'Cart', findT = False, absolute = False, envInd = 0, params=None):
         #print("Initializing Plane, normal = {}, offset = {}".format(normal, offset))
         self.absolute = absolute
         self.findT = findT
@@ -407,6 +422,7 @@ class plane(generator):
                 self.offset = [normal[0], offset[0], offset[1]]
         
         self.findGrads()
+        self.loadParams(params)
 
         
     def __next__(self):
@@ -414,7 +430,7 @@ class plane(generator):
             raise StopIteration
         return (self.defGrid.pop(0), 1/self.N)
 
-    def setN(self, N):
+    def setN(self, N=None):
         self.defGrid = self.cGrid(N = N, iL = self.iL)
         
     def findCoords(self):
@@ -456,10 +472,12 @@ class plane(generator):
             self.noffset = self.offset 
         else:
             self.noffset = self.nnormal*self.offset[0] + self.ngrad1*self.offset[1] + self.ngrad2*self.offset[2]
+        self.normCm = self.norm * 695.5 * 1e8  # in cm
+
 
     def cGrid(self, N = None, iL = 1, N2 = None, iL2 = None):
         #Return a list of points in the plane
-        if N is None: self.N = self.default_N
+        if N is None: self.N = self.params.resolution()[0]
         else: self.N = N
         if N2 is None: self.N2 = self.N
         else: self.N2 = N2
@@ -476,16 +494,27 @@ class plane(generator):
         self.crossA = self.baseA +sGrad2
         self.crossB = self.baseA -sGrad2
 
-        baseLine = sightline(self.baseA, self.baseB).cGrid(self.N)
-        pos0 = baseLine[0]
-        self.nx = len(baseLine)
-        self.ny = len(sightline(pos0+sGrad2, pos0-sGrad2).cGrid(self.N2))
+        baseLine = sightline(self.baseA, self.baseB, params=self.params).get_points(self.N)[0]
+        pos0 = baseLine[:,0]
+        self.nx = len(baseLine[0,:])
+        llll = sightline(pos0+sGrad2, pos0-sGrad2, params=self.params)
+        self.ny = len(llll.get_points(self.N2)[0][0,:])
         self.shape = [self.nx, self.ny]
         self.Npoints = self.nx * self.ny
         thisPlane = []
-        for pos in baseLine:
-           thisPlane.extend(sightline(pos+sGrad2, pos-sGrad2).cGrid(self.N2))
+        for pos in baseLine.T:
+            thisPlane.extend(sightline(pos+sGrad2, pos-sGrad2, params=self.params).get_points(self.N2)[0].T)
+            # print(pos)
+        # import pdb; pdb.set_trace()
+
+        self.thisPlane = thisPlane
+        # import pdb; pdb.set_trace()
         return thisPlane
+
+    def get_points(self):
+        # import pdb; pdb.set_trace()
+        points = np.asarray(self.thisPlane).T
+        return points, np.ones_like(points)
 
     def pGrid(self, N = None, iL = 1, N2 = None):
         #Return a list of points in the plane in polar Coords
@@ -499,7 +528,7 @@ class plane(generator):
 #Generates default grids
 class defGrid:
 
-    def __init__(self):
+    def __init__(self, params=None):
         # print('Generating Default Grids...')
         #Above the Pole        
         iL = 1
@@ -533,7 +562,7 @@ class defGrid:
         self.primeLineVLong = sightline(position, target, coords = 'cart')
 
         #This line starts from north pole and goes out radially
-        self.poleLine = sightline([1,0,0],[10.0,0,0], coords = 'Sphere')
+        self.poleLine = sightline([1,0,0],[101,0,0], coords = 'Sphere')
 
         b = 1.03
         self.impLine = sightline([5,1e-8,b],[-5,1e-8,b])
